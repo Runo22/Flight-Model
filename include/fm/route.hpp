@@ -55,7 +55,9 @@ struct Runway {
 };
 
 struct TakeoffPlan {
-    Runway runway{};                       // fixed-wing: used for heading (position from state)
+    // Fixed-wing: runway direction. The run starts where the aircraft stands; empty = take
+    // off straight ahead along the current heading. Ignored by rotorcraft.
+    std::optional<Runway> runway;
     double climb_height = 0.0;             // m AGL where takeoff ends; 0 = vehicle default
     std::optional<Route> then;             // route to fly afterwards; empty = continue straight
 };

@@ -3,10 +3,10 @@
 // fixed-wing UAVs differ only by FixedWingParams.
 #pragma once
 
-#include <optional>
-
 #include "fm/atmosphere.hpp"
 #include "fm/flight_state.hpp"
+#include "fm/formation.hpp"
+#include "fm/guidance.hpp"
 #include "fm/route.hpp"
 #include "fm/route_tracker.hpp"
 #include "fm/terrain.hpp"
@@ -19,9 +19,10 @@ public:
     FixedWingAgent(FixedWingParams params, const InitialConditions& ic);
 
     // --- Commands -------------------------------------------------------------------
-    // Straight and level on the current heading, altitude and speed target.
+    // Straight and level: keeps the current ground track, altitude target and speed.
     void cruise();
-    void hold(double heading, double altitude, double speed,
+    // Straight and level on a new course (ground track) starting from here.
+    void hold(double course, double altitude, double speed,
               AltitudeRef altitude_ref = AltitudeRef::Absolute);
     void set_speed(double speed);
     void go_to(const Vec3& point, const GoToOptions& options = {});
@@ -29,8 +30,13 @@ public:
     // radius 0 = derived from turn performance.
     void loiter(const Vec3& center, double radius = 0.0, bool clockwise = true,
                 AltitudeRef altitude_ref = AltitudeRef::Absolute);
-    // Runway takeoff. Only valid while on the ground; returns false otherwise.
+    // Runway takeoff from the current position along plan.runway (default: current heading).
+    // Only valid while on the ground; returns false otherwise.
     bool takeoff(const TakeoffPlan& plan);
+    // Keep `slot` relative to a leader. Feed the leader with set_leader_state() every
+    // step; without updates for a few seconds the aircraft falls back to cruise().
+    void join_formation(const FormationSlot& slot);
+    void set_leader_state(const LeaderState& leader);
 
     // --- Simulation -----------------------------------------------------------------
     void step(double dt, const Environment& env);
@@ -48,10 +54,11 @@ public:
 private:
     struct Command {
         bool use_accel = false;
-        double heading = 0.0;
-        double lateral_accel = 0.0;
+        double heading = 0.0;          // used when !use_accel (and for ground steering)
+        double lateral_accel = 0.0;    // m/s^2, positive = right
         double altitude = 0.0;
         double speed = 0.0;
+        double speed_time_constant = 0.0;  // 0 = params default
         double bank_limit = 0.0;
         bool full_thrust = false;
         bool rotate = false;
@@ -61,20 +68,24 @@ private:
         double bank = 0.0;
         double gamma = 0.0;
         double throttle = 0.0;
+        double steer_heading = 0.0;  // ground steering target
         bool rotate = false;
         bool speed_brake = false;
     };
-    enum class TakeoffStage { Roll, Climb };
 
-    Command guidance(const AtmosphereSample& atm, const Vec3& wind);
+    Command guidance(const AtmosphereSample& atm, const Vec3& wind, const SlotReference& slot_ref);
     void guide_route(Command& cmd, const Vec2& ground_velocity, double lookahead);
-    void finish_route(const EndBehavior behavior);
+    void finish_route(EndBehavior behavior);
     void guide_takeoff(Command& cmd, const AtmosphereSample& atm);
+    void guide_formation(Command& cmd, const Vec2& ground_velocity, const SlotReference& ref);
     Control autopilot(const Command& cmd, const AtmosphereSample& atm);
     void integrate(const Control& c, const AtmosphereSample& atm, const Vec3& wind, double dt);
     void integrate_ground(const Control& c, const AtmosphereSample& atm, double dt);
     void update_output(const AtmosphereSample& atm, const Vec3& wind);
 
+    void hold_course(double course, const Vec2& anchor, double altitude, double speed,
+                     AltitudeRef altitude_ref);
+    L1Settings l1_settings(double ground_speed) const;
     double ground_elevation() const;
     double altitude_target_now(double lookahead) const;
     double thrust_available(double tas, const AtmosphereSample& atm) const;
@@ -104,12 +115,12 @@ private:
 
     // Targets
     FlightMode mode_ = FlightMode::Cruise;
-    double heading_target_ = 0.0;
-    double altitude_target_ = 0.0;      // absolute, or AGL when altitude_ref_ is AboveTerrain
+    double course_target_ = 0.0;
+    Vec2 course_anchor_{};               // a point on the held ground track
+    double altitude_target_ = 0.0;       // absolute, or AGL when altitude_ref_ is AboveTerrain
     AltitudeRef altitude_ref_ = AltitudeRef::Absolute;
     double resolved_altitude_target_ = 0.0;
     double speed_target_ = 0.0;
-    double speed_integrator_ = 0.0;
 
     RouteTracker route_;
     Vec3 loiter_center_{};
@@ -117,8 +128,15 @@ private:
     bool loiter_clockwise_ = true;
 
     TakeoffPlan takeoff_{};
-    TakeoffStage takeoff_stage_ = TakeoffStage::Roll;
+    Vec2 takeoff_origin_{};
+    double takeoff_heading_ = 0.0;
     double runway_elevation_ = 0.0;
+
+    FormationSlot slot_{};
+    LeaderState leader_{};
+    LeaderTracker leader_tracker_;
+    double leader_age_ = 0.0;            // s since the last leader update
+    double frame_time_ = 0.0;            // s since the start of the current step
 
     TerrainMonitor terrain_;
 };

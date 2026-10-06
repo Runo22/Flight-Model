@@ -4,8 +4,6 @@
 #include <cmath>
 #include <utility>
 
-#include "fm/guidance.hpp"
-
 namespace fm {
 
 namespace {
@@ -16,28 +14,34 @@ constexpr double kLowBankHeight = 30.0;    // m, bank is restricted below this h
 constexpr double kLowBankLimit = deg2rad(10.0);
 constexpr double kTakeoffBankLimit = deg2rad(15.0);
 constexpr double kWheelBrakeFriction = 0.3;
-constexpr double kStallMargin = 1.3;       // minimum speed = 1.3 Vs
+constexpr double kStallMargin = 1.3;       // minimum speed, clean: 1.3 Vs
+constexpr double kFlapsStallMargin = 1.2;  // minimum speed with flaps: 1.2 Vs
 constexpr double kTurnStallMargin = 1.2;   // bank limited to keep n <= n_stall / 1.2
+constexpr double kL1TurnFactor = 0.6;      // L1 distance >= 0.6 * K * turn radius
+constexpr double kLeaderTimeout = 2.0;     // s without leader updates before giving up
+constexpr double kFormationSpeedTau = 3.0; // s, speed response while station keeping
+constexpr double kFormationAlongGain = 0.1;  // 1/s, along-track error to speed
 }  // namespace
 
 FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& ic)
     : p_(std::move(params)), terrain_(std::max(1.0, p_.cruise_speed * 0.25)) {
     position_ = ic.position;
     heading_ = wrap_2pi(ic.heading);
-    heading_target_ = heading_;
+    course_target_ = heading_;
+    course_anchor_ = position_.xy();
     speed_target_ = p_.cruise_speed;
     runway_elevation_ = kNoGround;
     on_ground_ = ic.on_ground;
 
     const AtmosphereSample atm = isa(position_.z);
     if (on_ground_) {
-        // On the ground the given z is the ground elevation.
         runway_elevation_ = ic.position.z;
         position_.z = ic.position.z + p_.gear_height;
         tas_ = std::max(0.0, ic.speed);
         throttle_ = p_.engine.idle_throttle;
         phase_ = FlightPhase::Parked;
     } else {
+        // Start trimmed for level flight.
         tas_ = ic.speed > 0.0 ? ic.speed : p_.cruise_speed;
         speed_target_ = tas_;
         const double t_req = drag(tas_, 1.0, atm, false);
@@ -55,18 +59,26 @@ FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& 
 // --- Commands -------------------------------------------------------------------------
 
 void FixedWingAgent::cruise() {
-    hold(heading_, resolved_altitude_target_, speed_target_);
+    const double course = out_.ground_speed > 1.0 ? out_.track : heading_;
+    hold_course(course, position_.xy(), resolved_altitude_target_, speed_target_,
+                AltitudeRef::Absolute);
 }
 
-void FixedWingAgent::hold(double heading, double altitude, double speed, AltitudeRef altitude_ref) {
+void FixedWingAgent::hold(double course, double altitude, double speed, AltitudeRef altitude_ref) {
+    hold_course(course, position_.xy(), altitude, speed, altitude_ref);
+}
+
+void FixedWingAgent::hold_course(double course, const Vec2& anchor, double altitude, double speed,
+                                 AltitudeRef altitude_ref) {
     mode_ = FlightMode::Cruise;
     route_.clear();
-    heading_target_ = wrap_2pi(heading);
+    course_target_ = wrap_2pi(course);
+    course_anchor_ = anchor;
     if (altitude_ref != AltitudeRef::Keep) {
         altitude_target_ = altitude;
         altitude_ref_ = altitude_ref;
     }
-    if (!std::isnan(speed) && speed > 0.0) speed_target_ = speed;
+    set_speed(speed);
 }
 
 void FixedWingAgent::set_speed(double speed) {
@@ -95,7 +107,6 @@ void FixedWingAgent::follow_route(Route route) {
     if (on_ground_) {
         // A parked aircraft takes off along its current heading first.
         TakeoffPlan plan;
-        plan.runway = {position_, heading_};
         plan.then = std::move(route);
         takeoff(plan);
         return;
@@ -131,14 +142,29 @@ void FixedWingAgent::loiter(const Vec3& center, double radius, bool clockwise,
 bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
     if (!on_ground_ || phase_ == FlightPhase::TerrainContact) return false;
     takeoff_ = plan;
-    takeoff_stage_ = TakeoffStage::Roll;
+    takeoff_origin_ = position_.xy();
     mode_ = FlightMode::Takeoff;
     route_.clear();
-    heading_target_ = wrap_2pi(plan.runway.heading);
+    takeoff_heading_ = plan.runway ? wrap_2pi(plan.runway->heading) : heading_;
+    course_target_ = takeoff_heading_;
     runway_elevation_ = ground_elevation();
     flaps_ = true;
     phase_ = FlightPhase::TakeoffRoll;
     return true;
+}
+
+void FixedWingAgent::join_formation(const FormationSlot& slot) {
+    if (on_ground_) return;
+    mode_ = FlightMode::Formation;
+    route_.clear();
+    slot_ = slot;
+    leader_tracker_.reset();
+    leader_age_ = 0.0;
+}
+
+void FixedWingAgent::set_leader_state(const LeaderState& leader) {
+    leader_ = leader;
+    leader_age_ = 0.0;
 }
 
 // --- Simulation -----------------------------------------------------------------------
@@ -146,21 +172,37 @@ bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
 void FixedWingAgent::step(double dt, const Environment& env) {
     if (!(dt > 0.0)) return;
     terrain_.update(position_.xy(), env.terrain_elevation);
+
+    SlotReference slot_ref{};
+    if (mode_ == FlightMode::Formation) {
+        leader_age_ += dt;
+        if (leader_age_ > kLeaderTimeout) {
+            cruise();
+        } else if (leader_.valid) {
+            slot_ref = leader_tracker_.update(leader_, slot_, dt);
+        }
+    }
+
     const int substeps = std::max(1, static_cast<int>(std::ceil(dt / kMaxSubstep)));
     const double h = dt / substeps;
     AtmosphereSample atm{};
     for (int i = 0; i < substeps; ++i) {
         atm = isa(position_.z, env.temperature_offset);
-        const Command cmd = guidance(atm, env.wind);
+        // Extrapolate the slot inside the frame (the leader is only known at frame start).
+        frame_time_ = h * i;
+        SlotReference ref = slot_ref;
+        ref.position += ref.velocity * frame_time_;
+        const Command cmd = guidance(atm, env.wind, ref);
         const Control c = autopilot(cmd, atm);
         integrate(c, atm, env.wind, h);
     }
     update_output(atm, env.wind);
 }
 
-FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, const Vec3& wind) {
+FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, const Vec3& wind,
+                                                 const SlotReference& slot_ref) {
     Command cmd;
-    cmd.heading = heading_target_;
+    cmd.heading = course_target_;
     cmd.speed = speed_target_;
     cmd.bank_limit = p_.bank_max;
 
@@ -178,31 +220,39 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
         return cmd;
     }
 
-    if (mode_ == FlightMode::GoTo || mode_ == FlightMode::Route) {
-        if (route_.active()) guide_route(cmd, vg, lookahead);
-        // guide_route may finish the route and switch to Cruise/Loiter.
+    if ((mode_ == FlightMode::GoTo || mode_ == FlightMode::Route) && route_.active()) {
+        guide_route(cmd, vg, lookahead);  // may finish the route and switch mode
     }
     switch (mode_) {
         case FlightMode::Cruise:
-            cmd.heading = heading_target_;
+            cmd.use_accel = true;
+            cmd.lateral_accel = l1_line(course_anchor_, heading_vector(course_target_),
+                                        position_.xy(), vg, l1_settings(gs));
             cmd.altitude = altitude_target_now(lookahead);
             break;
-        case FlightMode::Loiter: {
-            const L1Settings l1{p_.l1_period, p_.l1_damping};
+        case FlightMode::Loiter:
             cmd.use_accel = true;
             cmd.lateral_accel = l1_loiter(loiter_center_.xy(), loiter_radius_, loiter_clockwise_,
-                                          position_.xy(), vg, l1);
+                                          position_.xy(), vg, l1_settings(gs));
             cmd.altitude = altitude_target_now(lookahead);
             break;
-        }
         case FlightMode::Takeoff:
             guide_takeoff(cmd, atm);
+            break;
+        case FlightMode::Formation:
+            if (leader_.valid) {
+                guide_formation(cmd, vg, slot_ref);
+            } else {  // waiting for the first leader update: keep flying straight
+                cmd.use_accel = true;
+                cmd.lateral_accel = l1_line(course_anchor_, heading_vector(course_target_),
+                                            position_.xy(), vg, l1_settings(gs));
+                cmd.altitude = altitude_target_now(lookahead);
+            }
             break;
         default:
             break;
     }
-    cmd.speed = speed_target_;
-    if (mode_ == FlightMode::Takeoff && flaps_) cmd.speed = 1.25 * stall_speed(atm.density, true);
+    if (mode_ != FlightMode::Takeoff && mode_ != FlightMode::Formation) cmd.speed = speed_target_;
     resolved_altitude_target_ = cmd.altitude;
 
     if (!on_ground_) {
@@ -213,8 +263,7 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
             cmd.altitude = std::max(cmd.altitude, floor);
             cmd.terrain_alert = position_.z < floor;
         }
-        const double ground = ground_elevation();
-        if (position_.z - p_.gear_height - ground < kLowBankHeight)
+        if (position_.z - p_.gear_height - ground_elevation() < kLowBankHeight)
             cmd.bank_limit = std::min(cmd.bank_limit, kLowBankLimit);
     }
     return cmd;
@@ -230,11 +279,11 @@ void FixedWingAgent::guide_route(Command& cmd, const Vec2& vg, double lookahead)
     double switch_distance = 0.0;
     if (next != nullptr && !wp.fly_over) {
         // Fly-by: start the turn early so the turn is tangent to both legs.
-        const Vec2 next_dir = (next->position.xy() - wp.position.xy()).normalized();
-        const double turn = std::min(std::abs(angle_right(lp.direction, next_dir)), deg2rad(150.0));
-        const double next_len = (next->position.xy() - wp.position.xy()).length();
+        const Vec2 next_leg = next->position.xy() - wp.position.xy();
+        const double turn =
+            std::min(std::abs(angle_right(lp.direction, next_leg.normalized())), deg2rad(150.0));
         switch_distance = std::min({turn_radius(gs) * std::tan(turn / 2.0), 0.5 * lp.length,
-                                    0.5 * next_len});
+                                    0.5 * next_leg.length()});
     }
     if (lp.remaining() <= switch_distance) {
         const EndBehavior end = route_.route().on_end;
@@ -246,36 +295,39 @@ void FixedWingAgent::guide_route(Command& cmd, const Vec2& vg, double lookahead)
     }
 
     const Waypoint& target = route_.target();
-    if (!std::isnan(target.speed) && target.speed > 0.0) speed_target_ = target.speed;
-    const L1Settings l1{p_.l1_period, p_.l1_damping};
+    set_speed(target.speed);
     cmd.use_accel = true;
-    cmd.lateral_accel = l1_leg(route_.leg_start(), route_.leg_end(), pos, vg, l1);
+    cmd.lateral_accel = l1_leg(route_.leg_start(), route_.leg_end(), pos, vg, l1_settings(gs));
     cmd.altitude = route_.altitude_target(lp, terrain_, lookahead, resolved_altitude_target_);
 }
 
 void FixedWingAgent::finish_route(EndBehavior behavior) {
     const Waypoint last = route_.target();
-    const double last_altitude = RouteTracker::resolve_altitude(
-        last, terrain_, 0.0, resolved_altitude_target_);
+    const double last_altitude =
+        RouteTracker::resolve_altitude(last, terrain_, 0.0, resolved_altitude_target_);
     const bool agl = last.altitude_ref == AltitudeRef::AboveTerrain;
+    const AltitudeRef ref = agl ? AltitudeRef::AboveTerrain : AltitudeRef::Absolute;
+    const double altitude = agl ? last.position.z : last_altitude;
     const double radius = route_.route().loiter_radius;
-    route_.clear();
+    const Vec2 leg = route_.leg_end() - route_.leg_start();
+
     if (behavior == EndBehavior::ContinueStraight) {
-        hold(heading_, agl ? last.position.z : last_altitude, speed_target_,
-             agl ? AltitudeRef::AboveTerrain : AltitudeRef::Absolute);
+        // Continue on the extension of the last leg.
+        const double course = leg.length() > 1.0 ? heading_of(leg) : heading_;
+        hold_course(course, last.position.xy(), altitude, speed_target_, ref);
         return;
     }
     // Fixed-wing aircraft cannot hover or land vertically: orbit the last waypoint.
-    Vec3 center = last.position;
-    if (!agl) center.z = last_altitude;
-    loiter(center, radius, true, agl ? AltitudeRef::AboveTerrain : AltitudeRef::Absolute);
+    loiter({last.position.x, last.position.y, altitude}, radius, true, ref);
 }
 
 void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
     const double climb_height =
         takeoff_.climb_height > 0.0 ? takeoff_.climb_height : p_.takeoff_climb_height;
-    cmd.heading = wrap_2pi(takeoff_.runway.heading);
+    cmd.heading = takeoff_heading_;
     cmd.altitude = runway_elevation_ + climb_height;
+    const double vs_flaps = stall_speed(atm.density, true);
+    const double vs_clean = stall_speed(atm.density, false);
 
     if (on_ground_) {
         cmd.full_thrust = true;
@@ -285,11 +337,20 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
         return;
     }
 
-    takeoff_stage_ = TakeoffStage::Climb;
     phase_ = FlightPhase::InitialClimb;
+    cmd.use_accel = true;
+    cmd.lateral_accel = l1_line(takeoff_origin_, heading_vector(cmd.heading), position_.xy(),
+                                heading_vector(heading_) * tas_, l1_settings(tas_));
     cmd.bank_limit = std::min(p_.bank_max, kTakeoffBankLimit);
     const double height = position_.z - p_.gear_height - runway_elevation_;
-    if (flaps_ && height > p_.flaps_up_height) flaps_ = false;
+    // Retract flaps once high enough and fast enough to fly clean.
+    if (flaps_ && height > p_.flaps_up_height && tas_ > 1.05 * kStallMargin * vs_clean)
+        flaps_ = false;
+    if (!flaps_) {
+        cmd.speed = speed_target_;
+    } else {
+        cmd.speed = height > p_.flaps_up_height ? 1.5 * vs_clean : 1.25 * vs_flaps;
+    }
 
     if (height >= climb_height - 15.0) {
         phase_ = FlightPhase::Airborne;
@@ -299,8 +360,53 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
             takeoff_.then.reset();
             follow_route(std::move(r));
         } else {
-            hold(takeoff_.runway.heading, runway_elevation_ + climb_height, speed_target_);
+            hold_course(takeoff_heading_, takeoff_origin_, runway_elevation_ + climb_height,
+                        speed_target_, AltitudeRef::Absolute);
         }
+    }
+}
+
+void FixedWingAgent::guide_formation(Command& cmd, const Vec2& vg, const SlotReference& ref) {
+    const Vec2 pos = position_.xy();
+    const Vec2 dir = heading_vector(ref.heading);
+    const Vec2 err = ref.position.xy() - pos;
+    const double along = dot(err, dir);
+    const double gs = std::max(vg.length(), 1.0);
+    const double join_delta = 0.15 * p_.cruise_speed;
+    const double wind_offset = tas_ - gs;  // rough airspeed/groundspeed difference
+    const L1Settings l1 = l1_settings(gs);
+    const double join_distance =
+        std::max(3.0 * l1_distance(l1, gs), 10.0 * p_.formation_min_separation);
+
+    cmd.use_accel = true;
+    cmd.altitude = ref.position.z;
+    if (err.length() > join_distance) {
+        // Rejoin: head for where the slot will be, slightly faster (or slower) than it.
+        const double t_go = std::clamp(err.length() / gs, 0.0, 60.0);
+        const Vec2 aim = ref.position.xy() + ref.velocity.xy() * t_go;
+        cmd.lateral_accel = l1_point(aim, pos, vg, l1);
+        const double closing = along >= 0.0 ? join_delta : -join_delta;
+        cmd.speed = ref.velocity.xy().length() + wind_offset + closing;
+    } else {
+        // Station keeping: track the slot line, anticipate the leader's turn and match
+        // its along-track speed.
+        const L1Settings tight{p_.l1_period * 0.6, p_.l1_damping, 0.0};
+        cmd.lateral_accel = l1_line(ref.position.xy(), dir, pos, vg, tight) + ref.turn_rate * gs;
+        const double speed_error = dot(ref.velocity.xy(), dir) + kFormationAlongGain * along -
+                                   dot(vg, dir);
+        cmd.speed = tas_ + std::clamp(speed_error, -join_delta, join_delta);
+        cmd.speed_time_constant = std::min(p_.speed_time_constant, kFormationSpeedTau);
+    }
+
+    // Separation: never get closer to the leader than the minimum distance.
+    const double min_sep =
+        slot_.min_separation > 0.0 ? slot_.min_separation : p_.formation_min_separation;
+    const Vec3 to_leader = leader_.position + leader_.velocity * frame_time_ - position_;
+    if (to_leader.length() < min_sep) {
+        const double side = slot_.offset.z > 0.0 ? 1.0 : -1.0;
+        cmd.altitude = leader_.position.z + side * min_sep;
+        if (dot(to_leader.xy(), heading_vector(heading_)) > 0.0)
+            cmd.speed = std::min(cmd.speed, tas_ - 0.5 * join_delta);
     }
 }
 
@@ -309,7 +415,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     c.rotate = cmd.rotate;
     if (on_ground_) {
         c.throttle = cmd.full_thrust ? 1.0 : p_.engine.idle_throttle;
-        c.bank = cmd.heading;  // ground steering target (heading)
+        c.steer_heading = cmd.heading;
         return c;
     }
 
@@ -318,7 +424,8 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const double v = std::max(tas_, kMinAirspeed);
 
     // Speed envelope
-    const double v_min = kStallMargin * stall_speed(atm.density, flaps_);
+    const double v_min =
+        (flaps_ ? kFlapsStallMargin : kStallMargin) * stall_speed(atm.density, flaps_);
     const double v_max = std::max(v_min, std::min(p_.max_speed / std::sqrt(atm.sigma),
                                                   p_.mach_max * atm.speed_of_sound));
     const double v_cmd = std::clamp(cmd.speed, v_min, v_max);
@@ -347,19 +454,24 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const double excess = (t_max - drag(v, n_now, atm, false)) / m;
     const double idle_accel = (t_idle - drag(v, n_now, atm, has_brake)) / m;
 
+    // Half of the excess thrust goes to acceleration when climbing and accelerating at once;
+    // below the minimum speed all of it, and none when the terrain floor is violated.
     double accel_cap = 0.5 * std::max(excess, 0.0);
     if (v < v_min) accel_cap = std::max(excess, 0.0);
     else if (cmd.terrain_alert) accel_cap = 0.0;
     const double decel_cap = std::max(-idle_accel, 0.0);
-    const double vdot_cmd =
-        std::clamp((v_cmd - v) / p_.speed_time_constant, -decel_cap, accel_cap);
+    const double tau_v = cmd.speed_time_constant > 0.0 ? cmd.speed_time_constant
+                                                       : p_.speed_time_constant;
+    const double vdot_cmd = std::clamp((v_cmd - v) / tau_v, -decel_cap, accel_cap);
 
     const double hdot_cmd = std::clamp((cmd.altitude - position_.z) / p_.altitude_time_constant,
                                        -p_.descent_rate_max, p_.climb_rate_max);
     double gamma_cmd = std::asin(std::clamp(hdot_cmd / v, -0.9, 0.9));
     gamma_cmd = std::clamp(gamma_cmd, -p_.descent_angle_max, p_.climb_angle_max);
 
-    const double gamma_lo = std::min(std::asin(std::clamp((idle_accel - vdot_cmd) / g, -0.9, 0.9)), 0.0);
+    // Flight path limited by the energy available at full and idle thrust.
+    const double gamma_lo =
+        std::min(std::asin(std::clamp((idle_accel - vdot_cmd) / g, -0.9, 0.9)), 0.0);
     double gamma_hi = std::asin(std::clamp((excess - vdot_cmd) / g, -0.9, 0.9));
     if (v >= v_min) gamma_hi = std::max(gamma_hi, std::min(gamma_cmd, 0.0));
     gamma_cmd = std::clamp(gamma_cmd, gamma_lo, std::max(gamma_lo, gamma_hi));
@@ -390,6 +502,7 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
                                         -p_.roll_rate_max, p_.roll_rate_max);
     bank_ += roll_rate * dt;
 
+    // Load factor needed to follow the commanded flight path, limited by structure/stall.
     const double v = std::max(tas_, kMinAirspeed);
     const double qs = 0.5 * atm.density * v * v * p_.wing_area;
     const double n_hi = std::min(p_.load_factor_max, qs * cl_max() / w);
@@ -399,6 +512,7 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
     const double n = std::clamp((std::cos(gamma_) + v * gamma_rate_cmd / g) / cos_bank, n_lo, n_hi);
     load_factor_ = n;
 
+    // Point-mass equations of motion in the wind axes.
     const double gamma_dot = g / v * (n * std::cos(bank_) - std::cos(gamma_));
     const double heading_dot = g * n * std::sin(bank_) / (v * std::max(std::cos(gamma_), 0.1));
     alpha_ = (n * w / qs - cl0()) / p_.cl_alpha;
@@ -421,6 +535,11 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
         ground_pitch_ = std::max(0.0, gamma_ + alpha_);
         gamma_ = 0.0;
         bank_ = 0.0;
+        if (mode_ == FlightMode::Takeoff && gentle) {
+            // Wheels touched again right after lift-off (e.g. rising ground): keep rolling.
+            phase_ = FlightPhase::Rotation;
+            return;
+        }
         phase_ = gentle ? FlightPhase::Landed : FlightPhase::TerrainContact;
         mode_ = FlightMode::Cruise;
         route_.clear();
@@ -430,18 +549,18 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
 }
 
 void FixedWingAgent::integrate_ground(const Control& c, const AtmosphereSample& atm, double dt) {
-    const double g = kGravity;
     const double m = p_.mass;
-    const double w = m * g;
+    const double w = m * kGravity;
     const double v = tas_;
 
-    // Nose wheel steering towards the commanded heading (stored in c.bank on the ground).
-    heading_ = wrap_2pi(heading_ + std::clamp(wrap_pi(c.bank - heading_), -deg2rad(5.0) * dt,
-                                              deg2rad(5.0) * dt));
+    // Nose wheel steering towards the commanded heading.
+    heading_ = wrap_2pi(heading_ + std::clamp(wrap_pi(c.steer_heading - heading_),
+                                              -deg2rad(5.0) * dt, deg2rad(5.0) * dt));
     double rotation_pitch = p_.rotation_pitch;
     if (rotation_pitch <= 0.0) {
-        const double cl_lof = (cl_max() / 1.3225);  // lift-off near 1.15 Vs
-        rotation_pitch = std::clamp((cl_lof - cl0()) / p_.cl_alpha, deg2rad(5.0), deg2rad(12.0));
+        const double cl_liftoff = cl_max() / 1.3225;  // lift-off near 1.15 Vs
+        rotation_pitch =
+            std::clamp((cl_liftoff - cl0()) / p_.cl_alpha, deg2rad(5.0), deg2rad(12.0));
     }
     ground_pitch_ = approach(ground_pitch_, c.rotate ? rotation_pitch : 0.0, p_.rotation_rate * dt);
     alpha_ = ground_pitch_;
@@ -450,24 +569,22 @@ void FixedWingAgent::integrate_ground(const Control& c, const AtmosphereSample& 
     const double cl = std::min(cl0() + p_.cl_alpha * alpha_, cl_max());
     const double lift = qs * cl;
     const double aero_drag = qs * (cd0() + p_.induced_drag_k * cl * cl);
-    const double normal = std::max(w - lift, 0.0);
+    // Runway slope along the direction of travel, estimated from the terrain samples.
+    const double slope = terrain_.valid() ? std::atan(terrain_.slope()) : 0.0;
+    const double normal = std::max(w * std::cos(slope) - lift, 0.0);
     const bool braking = mode_ != FlightMode::Takeoff;
     const double friction = (braking ? kWheelBrakeFriction : p_.rolling_friction) * normal;
-    const double thrust = throttle_ * thrust_available(v, atm);
+    const double net = throttle_ * thrust_available(v, atm) - aero_drag - w * std::sin(slope);
+    // At rest the aircraft only starts rolling once thrust overcomes friction.
+    const double v_dot = (v > 1e-3 ? net - friction : std::max(net - friction, 0.0)) / m;
 
-    double v_dot = (thrust - aero_drag) / m;
-    if (v > 1e-3 || std::abs(thrust - aero_drag) > friction) {
-        v_dot -= (v > 1e-3 ? friction : std::copysign(friction, thrust - aero_drag)) / m;
-    } else {
-        v_dot = 0.0;  // static friction holds the aircraft
-    }
     tas_ = std::max(0.0, v + v_dot * dt);
-    const Vec2 step = heading_vector(heading_) * (tas_ * dt);
+    const Vec2 step = heading_vector(heading_) * (tas_ * std::cos(slope) * dt);
     position_.x += step.x;
     position_.y += step.y;
     position_.z = ground_elevation() + p_.gear_height;
     load_factor_ = lift / w;
-    gamma_ = 0.0;
+    gamma_ = slope;  // the velocity follows the runway surface; lift-off starts from here
     bank_ = 0.0;
 
     if (mode_ == FlightMode::Takeoff && lift > w) {
@@ -484,7 +601,7 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
     out_.velocity = on_ground_ ? air : air + wind;
     out_.attitude.heading = heading_;
     out_.attitude.roll = bank_;
-    out_.attitude.pitch = on_ground_ ? ground_pitch_ : gamma_ + alpha_ * std::cos(bank_);
+    out_.attitude.pitch = on_ground_ ? gamma_ + ground_pitch_ : gamma_ + alpha_ * std::cos(bank_);
     out_.airspeed = tas_;
     out_.ground_speed = out_.velocity.xy().length();
     out_.vertical_speed = out_.velocity.z;
@@ -494,9 +611,12 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
     out_.load_factor = load_factor_;
     out_.throttle = throttle_;
     out_.mach = tas_ / atm.speed_of_sound;
-    out_.height_above_terrain =
-        terrain_.valid() ? position_.z - terrain_.current()
-                         : (runway_elevation_ > kNoGround ? position_.z - runway_elevation_ : kUnknown);
+    if (terrain_.valid()) {
+        out_.height_above_terrain = position_.z - terrain_.current();
+    } else {
+        out_.height_above_terrain =
+            runway_elevation_ > kNoGround ? position_.z - runway_elevation_ : kUnknown;
+    }
     out_.on_ground = on_ground_;
     out_.speed_brake = speed_brake_;
     out_.flaps = flaps_;
@@ -504,6 +624,12 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
 }
 
 // --- Helpers --------------------------------------------------------------------------
+
+L1Settings FixedWingAgent::l1_settings(double ground_speed) const {
+    L1Settings s{p_.l1_period, p_.l1_damping, 0.0};
+    s.min_distance = kL1TurnFactor * l1_distance_for_turn_radius(s, turn_radius(ground_speed));
+    return s;
+}
 
 double FixedWingAgent::ground_elevation() const {
     return terrain_.valid() ? terrain_.current() : runway_elevation_;

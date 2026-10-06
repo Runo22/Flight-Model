@@ -37,7 +37,20 @@ LegProgress leg_progress(const Vec2& a, const Vec2& b, const Vec2& p) {
 double angle_right(const Vec2& v, const Vec2& t) { return std::atan2(-cross(v, t), dot(v, t)); }
 
 double l1_distance(const L1Settings& s, double ground_speed) {
-    return std::max(s.damping * s.period * ground_speed / kPi, 1.0);
+    return std::max({s.damping * s.period * ground_speed / kPi, s.min_distance, 1.0});
+}
+
+double l1_distance_for_turn_radius(const L1Settings& s, double radius) {
+    // Maximum demand (nu = 90 deg) is K * V^2 / L1; it equals V^2 / R when L1 = K * R.
+    return gain(s) * radius;
+}
+
+double l1_line(const Vec2& point, const Vec2& direction, const Vec2& position, const Vec2& v,
+               const L1Settings& s) {
+    const double vg = std::max(v.length(), 1.0);
+    const double l1 = l1_distance(s, vg);
+    const double crosstrack = dot(position - point, right_of(direction));
+    return accel_from_nu(nu_on_line(direction, crosstrack, v, l1), vg, l1, s);
 }
 
 double l1_leg(const Vec2& a, const Vec2& b, const Vec2& position, const Vec2& v,

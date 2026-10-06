@@ -50,6 +50,7 @@ FixedWingParams fast_jet() {
     p.terrain_lookahead = 15.0;
     p.takeoff_climb_height = 600.0;
     p.flaps_up_height = 60.0;
+    p.formation_min_separation = 20.0;
     return p;
 }
 
@@ -70,7 +71,7 @@ FixedWingParams airliner_jet() {
     p.flaps_dcd0 = 0.02;
     p.speedbrake_dcd0 = 0.02;
     p.engine.type = EngineType::Jet;
-    p.engine.max_thrust = 240000.0;
+    p.engine.max_thrust = 220000.0;
     p.engine.density_exponent = 0.9;
     p.engine.mach_lapse = 0.3;  // high bypass: thrust drops with speed
     p.engine.spool_time = 4.0;
@@ -79,7 +80,7 @@ FixedWingParams airliner_jet() {
     p.load_factor_min = 0.5;
     p.bank_max = deg2rad(25.0);
     p.roll_rate_max = deg2rad(7.0);
-    p.climb_angle_max = deg2rad(12.0);
+    p.climb_angle_max = deg2rad(10.0);
     p.descent_angle_max = deg2rad(6.0);
     p.climb_rate_max = 18.0;
     p.descent_rate_max = 15.0;
@@ -99,6 +100,7 @@ FixedWingParams airliner_jet() {
     p.terrain_lookahead = 30.0;
     p.takeoff_climb_height = 900.0;
     p.flaps_up_height = 300.0;
+    p.formation_min_separation = 60.0;
     return p;
 }
 
@@ -148,6 +150,7 @@ FixedWingParams regional_turboprop() {
     p.terrain_lookahead = 30.0;
     p.takeoff_climb_height = 600.0;
     p.flaps_up_height = 200.0;
+    p.formation_min_separation = 40.0;
     return p;
 }
 
@@ -197,6 +200,7 @@ FixedWingParams light_propeller() {
     p.terrain_lookahead = 20.0;
     p.takeoff_climb_height = 300.0;
     p.flaps_up_height = 100.0;
+    p.formation_min_separation = 15.0;
     return p;
 }
 
@@ -246,6 +250,7 @@ FixedWingParams fixed_wing_uav() {
     p.terrain_lookahead = 10.0;
     p.takeoff_climb_height = 80.0;
     p.flaps_up_height = 30.0;
+    p.formation_min_separation = 5.0;
     return p;
 }
 

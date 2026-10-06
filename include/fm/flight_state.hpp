@@ -25,8 +25,9 @@ enum class FlightMode {
     Route,    // follow a waypoint route / trajectory
     Loiter,   // orbit a point
     Takeoff,  // takeoff run / vertical takeoff and initial climb
-    Land,     // rotorcraft vertical landing
-    Hover,    // rotorcraft position hold
+    Land,      // rotorcraft vertical landing
+    Hover,     // rotorcraft position hold
+    Formation, // keep a slot relative to a leader entity
 };
 
 enum class FlightPhase {
@@ -61,7 +62,9 @@ struct FlightState {
     FlightPhase phase = FlightPhase::Airborne;
 };
 
-// Starting conditions. Position is the vehicle reference point in ENU meters.
+// Starting conditions in ENU meters. Airborne: position is the vehicle reference point.
+// On the ground: position.z is the ground elevation and the model raises its reference
+// point by the gear height.
 struct InitialConditions {
     Vec3 position{};
     double heading = 0.0;   // rad

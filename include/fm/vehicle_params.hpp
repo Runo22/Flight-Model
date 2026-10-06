@@ -81,6 +81,7 @@ struct FixedWingParams {
     double terrain_lookahead = 20.0;       // s
     double takeoff_climb_height = 450.0;   // m AGL where takeoff mode ends by default
     double flaps_up_height = 150.0;        // m AGL
+    double formation_min_separation = 30.0;  // m, minimum distance kept to a leader
 };
 
 struct RotorcraftParams {
@@ -102,6 +103,7 @@ struct RotorcraftParams {
     double min_terrain_clearance = 5.0;
     double terrain_lookahead = 4.0;    // s
     double takeoff_height = 10.0;      // m AGL
+    double formation_min_separation = 3.0;  // m
 };
 
 using VehicleParams = std::variant<FixedWingParams, RotorcraftParams>;
