@@ -126,3 +126,97 @@ TEST_CASE("flecs: parked aircraft takes off when given a route") {
     CHECK(pose_of(e).position.z < -1000.0);  // flew north = -Z
     CHECK(pose_of(e).position.y > 60.0);
 }
+
+// --- Geodetic worlds -------------------------------------------------------------------
+
+namespace {
+double hot(double lat, double lon) {  // stand-in for the game's height-of-terrain query
+    return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
+}
+
+const ecs::GeoPose& geo_pose_of(flecs::entity e) { return *ecs::compat::try_get<ecs::GeoPose>(e); }
+
+void step_geo(flecs::world& world, flecs::entity e) {
+    const ecs::GeoPose& g = geo_pose_of(e);
+    e.set<ecs::TerrainHeight>({hot(g.latitude, g.longitude)});
+    world.progress(kDt);
+}
+}  // namespace
+
+TEST_CASE("flecs geo: takeoff and route in latitude/longitude") {
+    flecs::world world;
+    world.import<ecs::FlightModule>();
+    ecs::set_geo_origin(world, 41.0, 29.0);
+    CHECK(ecs::geo(world) != nullptr);
+
+    const GeoPoint runway{41.02, 28.95, hot(41.02, 28.95)};
+    flecs::entity plane = world.entity();
+    ecs::attach_geo(plane, presets::regional_turboprop(), runway, 90.0, 0.0, true);
+    CHECK_NEAR(geo_pose_of(plane).latitude, runway.latitude, 1e-9);
+    CHECK_NEAR(geo_pose_of(plane).longitude, runway.longitude, 1e-9);
+    CHECK_NEAR(geo_pose_of(plane).yaw, 90.0, 1e-6);
+
+    Route r;
+    Waypoint w1, w2;
+    w1.position = ecs::to_local(world, {41.10, 29.30, 2500.0});
+    w2.position = ecs::to_local(world, {41.30, 29.30, 1000.0});
+    w2.altitude_ref = AltitudeRef::AboveTerrain;  // z = height above terrain
+    w2.position.z = 1000.0;
+    r.waypoints = {w1, w2};
+    r.on_end = EndBehavior::Loiter;
+    ecs::agent(plane)->follow_route(r);
+
+    double min_agl = 1e9;
+    for (int i = 0; i < static_cast<int>(900.0 / kDt); ++i) {
+        step_geo(world, plane);
+        const ecs::GeoPose& g = geo_pose_of(plane);
+        if (!pose_of(plane).on_ground) min_agl = std::min(min_agl, g.altitude - hot(g.latitude, g.longitude));
+    }
+    const ecs::GeoPose& g = geo_pose_of(plane);
+    CHECK(pose_of(plane).mode == FlightMode::Loiter);
+    CHECK_NEAR(g.latitude, 41.30, 0.1);
+    CHECK_NEAR(g.altitude - hot(g.latitude, g.longitude), 1000.0, 60.0);
+    CHECK(min_agl > 0.0);
+}
+
+TEST_CASE("flecs geo: yaw is the true heading away from the origin") {
+    flecs::world world;
+    world.import<ecs::FlightModule>();
+    ecs::set_geo_origin(world, 41.0, 29.0);
+    flecs::entity e = world.entity();
+    // 1.5 deg east of the origin, flying true north: grid heading differs by ~1 deg.
+    ecs::attach_geo(e, presets::light_propeller(), {41.0, 30.5, 1500.0}, 0.0, 55.0, false);
+    const double grid = ecs::agent(e)->state().attitude.heading;
+    CHECK(std::abs(rad2deg(wrap_pi(grid))) > 0.5);
+    run(world, 5.0);
+    CHECK(std::abs(wrap_pi(deg2rad(geo_pose_of(e).yaw))) < deg2rad(0.05));
+    CHECK(geo_pose_of(e).latitude > 41.0);
+    CHECK_NEAR(geo_pose_of(e).longitude, 30.5, 1e-4);
+}
+
+TEST_CASE("flecs geo: drone follows a vehicle given in latitude/longitude") {
+    flecs::world world;
+    world.import<ecs::FlightModule>();
+    ecs::set_geo_origin(world, 39.9, 32.8);
+    flecs::entity car = world.entity().set<ecs::TrackedGeoPose>({{39.9, 32.8, 900.0}});
+    flecs::entity drone = world.entity();
+    ecs::attach_geo(drone, presets::multirotor(), {39.8998, 32.7998, 920.0}, 0.0, 0.0, false);
+    FormationSlot slot = formation::trail(0, 10.0);
+    slot.offset.z = 20.0;
+    CHECK(ecs::follow(drone, car, slot));
+    const GeoProjection& proj = *ecs::geo(world);
+    double max_error = 0.0;
+    for (int i = 0; i < static_cast<int>(60.0 / kDt); ++i) {
+        const double t = i * kDt;
+        const GeoPoint car_at{39.9 + 6.0 * t / 111000.0, 32.8, 900.0};  // ~6 m/s north
+        car.set<ecs::TrackedGeoPose>({car_at});
+        world.progress(kDt);
+        if (t > 30.0) {
+            const Vec3 slot_pos = proj.to_local(car_at) + Vec3{0.0, -10.0, 20.0};
+            const ecs::GeoPose& g = geo_pose_of(drone);
+            const Vec3 now = proj.to_local({g.latitude, g.longitude, g.altitude});
+            max_error = std::max(max_error, (now - slot_pos).length());
+        }
+    }
+    CHECK(max_error < 3.0);
+}

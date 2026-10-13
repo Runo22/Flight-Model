@@ -25,6 +25,7 @@ add_library(flight_model
   src/flight_agent.cpp
   src/formation.cpp
   src/frames.cpp
+  src/geo.cpp
   src/guidance.cpp
   src/math.cpp
   src/presets.cpp

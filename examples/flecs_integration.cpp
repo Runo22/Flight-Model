@@ -1,9 +1,15 @@
-// How a game plugs the flight model into its own Flecs world:
-//  - the game owns Transform and a height-of-terrain (HOT) component,
-//  - PreUpdate:  the game's HOT system fills HotData at each entity position,
-//                a bridge system copies it into fm::ecs::TerrainHeight,
-//  - OnUpdate:   fm::ecs::FlightModule steps the agents,
-//  - PostUpdate: a bridge system copies fm::ecs::FlightPose into Transform.
+// How a game with a geodetic Transform plugs the flight model into its Flecs world.
+//
+// The game owns:
+//   game::Transform  { lat, lon (deg), alt (m), roll, pitch, yaw (deg) }
+//   game::Hot        height of terrain under the entity (m), filled by the game's own system
+//
+// Frame order:
+//   PreUpdate   game::HotSystem       Transform -> Hot              (game code, already exists)
+//               bridge::TerrainIn     Hot -> fm::ecs::TerrainHeight
+//               bridge::TrackedIn     Transform -> fm::ecs::TrackedGeoPose (followable entities)
+//   OnUpdate    fm::ecs::FlightModule steps every agent, writes fm::ecs::GeoPose
+//   PostUpdate  bridge::TransformOut  fm::ecs::GeoPose -> Transform
 #include <cmath>
 #include <cstdio>
 
@@ -12,92 +18,151 @@
 
 namespace game {
 
-// The game's own components (Unity-like axes: +Y up, +Z north, meters).
 struct Transform {
-    float position[3];
-    float rotation[4];  // x, y, z, w
-};
-struct HotData {
-    float terrain_height;  // ground height under the entity
+    double lat = 0.0;    // deg
+    double lon = 0.0;    // deg
+    double alt = 0.0;    // m
+    double roll = 0.0;   // deg, right wing down positive
+    double pitch = 0.0;  // deg, nose up positive
+    double yaw = 0.0;    // deg, true heading clockwise from North
 };
 
-float sample_terrain(float x, float z) { return 50.0f + 30.0f * std::sin(x / 900.0f) * std::cos(z / 1300.0f); }
+struct Hot {
+    double height = 0.0;  // m, terrain height under the entity
+};
+
+// A ground vehicle moved by game logic (not by the flight model).
+struct GroundVehicle {
+    double speed = 0.0;   // m/s
+};
+
+// Stand-in for the game's height-of-terrain query.
+double query_hot(double lat, double lon) {
+    return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
+}
 
 }  // namespace game
+
+namespace {
+
+void register_bridges(flecs::world& world) {
+    world.system<const game::Transform, game::Hot>("game::HotSystem")
+        .kind(flecs::PreUpdate)
+        .each([](const game::Transform& t, game::Hot& hot) { hot.height = game::query_hot(t.lat, t.lon); });
+
+    world.system<const game::Hot, fm::ecs::TerrainHeight>("bridge::TerrainIn")
+        .kind(flecs::PreUpdate)
+        .each([](const game::Hot& hot, fm::ecs::TerrainHeight& terrain) { terrain.value = hot.height; });
+
+    world.system<const game::Transform, fm::ecs::TrackedGeoPose>("bridge::TrackedIn")
+        .kind(flecs::PreUpdate)
+        .each([](const game::Transform& t, fm::ecs::TrackedGeoPose& tracked) {
+            tracked.position = {t.lat, t.lon, t.alt};
+            tracked.yaw = t.yaw;
+        });
+
+    world.system<const fm::ecs::GeoPose, game::Transform>("bridge::TransformOut")
+        .kind(flecs::PostUpdate)
+        .each([](const fm::ecs::GeoPose& pose, game::Transform& t) {
+            t.lat = pose.latitude;
+            t.lon = pose.longitude;
+            t.alt = pose.altitude;
+            t.roll = pose.roll;
+            t.pitch = pose.pitch;
+            t.yaw = pose.yaw;
+        });
+
+    // Game logic for the ground vehicle: drives along its yaw at a constant speed.
+    world.system<game::Transform, const game::GroundVehicle>("game::Drive")
+        .kind(flecs::OnUpdate)
+        .each([](flecs::iter& it, size_t, game::Transform& t, const game::GroundVehicle& v) {
+            const double d = v.speed * it.delta_time();
+            const double yaw = fm::deg2rad(t.yaw);
+            t.lat += d * std::cos(yaw) / 111132.0;
+            t.lon += d * std::sin(yaw) / (111320.0 * std::cos(fm::deg2rad(t.lat)));
+            t.alt = game::query_hot(t.lat, t.lon);
+        });
+}
+
+// Creates an entity with the game's components and gives it a flight AI. For a parked
+// aircraft, `t.alt` is ignored and the ground height is used.
+flecs::entity spawn_aircraft(flecs::world& world, const char* name, const fm::VehicleParams& params,
+                             game::Transform t, double speed, bool on_ground) {
+    if (on_ground) t.alt = game::query_hot(t.lat, t.lon);
+    flecs::entity e = world.entity(name)
+                          .set<game::Transform>(t)
+                          .set<game::Hot>({game::query_hot(t.lat, t.lon)})
+                          .set<fm::ecs::TerrainHeight>({game::query_hot(t.lat, t.lon)});
+    fm::ecs::attach_geo(e, params, {t.lat, t.lon, t.alt}, t.yaw, speed, on_ground);
+    return e;
+}
+
+fm::Waypoint waypoint(flecs::world& world, double lat, double lon, double alt,
+                      fm::AltitudeRef ref = fm::AltitudeRef::Absolute) {
+    fm::Waypoint w;
+    w.position = fm::ecs::to_local(world, {lat, lon, alt});
+    w.position.z = alt;  // absolute altitude or height above terrain, see `ref`
+    w.altitude_ref = ref;
+    return w;
+}
+
+void print(flecs::world& world, int seconds) {
+    std::printf("--- t = %d s\n", seconds);
+    world.each([](flecs::entity e, const game::Transform& t) {
+        std::printf("%-10s lat %9.5f lon %9.5f alt %7.1f m | roll %6.1f pitch %5.1f yaw %6.1f\n",
+                    e.name().c_str(), t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw);
+    });
+}
+
+}  // namespace
 
 int main() {
     flecs::world world;
     world.import<fm::ecs::FlightModule>();
-    fm::ecs::set_frame(world, fm::WorldFrame::unity());
+    fm::ecs::set_geo_origin(world, 41.1, 29.1);  // middle of the play area
+    register_bridges(world);
 
-    // Game side: height of terrain for every entity with a Transform.
-    world.system<const game::Transform, game::HotData>("game::HotSystem")
-        .kind(flecs::PreUpdate)
-        .each([](const game::Transform& t, game::HotData& hot) {
-            hot.terrain_height = game::sample_terrain(t.position[0], t.position[2]);
-        });
-    // Bridge in: HOT -> flight model terrain input.
-    world.system<const game::HotData, fm::ecs::TerrainHeight>("bridge::Terrain")
-        .kind(flecs::PreUpdate)
-        .each([](const game::HotData& hot, fm::ecs::TerrainHeight& terrain) {
-            terrain.value = hot.terrain_height;
-        });
-    // Bridge out: flight pose -> game transform.
-    world.system<const fm::ecs::FlightPose, game::Transform>("bridge::Transform")
-        .kind(flecs::PostUpdate)
-        .each([](const fm::ecs::FlightPose& pose, game::Transform& t) {
-            t.position[0] = static_cast<float>(pose.position.x);
-            t.position[1] = static_cast<float>(pose.position.y);
-            t.position[2] = static_cast<float>(pose.position.z);
-            t.rotation[0] = static_cast<float>(pose.rotation.x);
-            t.rotation[1] = static_cast<float>(pose.rotation.y);
-            t.rotation[2] = static_cast<float>(pose.rotation.z);
-            t.rotation[3] = static_cast<float>(pose.rotation.w);
-        });
-
-    auto spawn = [&](const char* name, const fm::VehicleParams& params, fm::Vec3 world_pos,
-                     double heading_deg, double speed, bool on_ground) {
-        flecs::entity e = world.entity(name)
-                              .set<game::Transform>({{0, 0, 0}, {0, 0, 0, 1}})
-                              .set<game::HotData>({0.0f})
-                              .set<fm::ecs::TerrainHeight>({0.0});
-        if (on_ground) world_pos.y = game::sample_terrain(static_cast<float>(world_pos.x),
-                                                          static_cast<float>(world_pos.z));
-        fm::ecs::attach_at(e, params, world_pos, fm::deg2rad(heading_deg), speed, on_ground);
-        return e;
-    };
-
-    // A turboprop on the runway gets a route: it takes off on its own first.
-    flecs::entity airliner = spawn("Turboprop", fm::presets::regional_turboprop(), {0, 0, 0}, 0.0, 0.0, true);
+    // 1) A turboprop parked on a runway (true heading 090) gets a route: it takes off first.
+    flecs::entity turboprop = spawn_aircraft(world, "Turboprop", fm::presets::regional_turboprop(),
+                                             {41.02, 28.95, 0.0, 0.0, 0.0, 90.0}, 0.0, true);
     fm::Route route;
-    fm::Waypoint wp;
-    wp.position = {8000, 15000, 2500};  // ENU meters: east, north, altitude
-    route.waypoints.push_back(wp);
+    route.waypoints = {waypoint(world, 41.10, 29.30, 2500.0),
+                       waypoint(world, 41.30, 29.30, 1000.0, fm::AltitudeRef::AboveTerrain)};
     route.on_end = fm::EndBehavior::Loiter;
-    fm::ecs::agent(airliner)->follow_route(route);
+    fm::ecs::agent(turboprop)->follow_route(route);
 
-    // A jet leads, two jets fly in echelon.
-    flecs::entity lead = spawn("Lead", fm::presets::fast_jet(), {2000, 3000, 0}, 90.0, 220.0, false);
+    // 2) Three jets: a lead flying east, two wingmen in right echelon.
+    flecs::entity lead = spawn_aircraft(world, "Lead", fm::presets::fast_jet(),
+                                        {41.15, 28.90, 3000.0, 0.0, 0.0, 90.0}, 220.0, false);
     for (int k = 0; k < 2; ++k) {
-        flecs::entity w = spawn(k == 0 ? "Wing1" : "Wing2", fm::presets::fast_jet(),
-                                {1500.0 - 200.0 * k, 3000, -300.0 - 200.0 * k}, 90.0, 220.0, false);
-        fm::ecs::follow(w, lead, fm::formation::echelon_right(k, 40.0));
+        flecs::entity wing = spawn_aircraft(world, k == 0 ? "Wing1" : "Wing2", fm::presets::fast_jet(),
+                                            {41.14 - 0.01 * k, 28.88 - 0.01 * k, 3000.0, 0.0, 0.0, 90.0},
+                                            220.0, false);
+        fm::ecs::follow(wing, lead, fm::formation::echelon_right(k, 40.0));
     }
 
-    // A quadcopter follows the turboprop's start point at a safe height (any entity works).
-    flecs::entity drone = spawn("Drone", fm::presets::multirotor(), {30, 0, 30}, 0.0, 0.0, true);
-    fm::ecs::agent(drone)->takeoff();
+    // 3) A drone follows a ground vehicle from 15 m behind and 25 m above.
+    flecs::entity truck = world.entity("Truck")
+                              .set<game::Transform>({41.05, 29.05, game::query_hot(41.05, 29.05), 0, 0, 0})
+                              .set<game::GroundVehicle>({12.0})
+                              .set<fm::ecs::TrackedGeoPose>({});
+    flecs::entity drone = spawn_aircraft(world, "Drone", fm::presets::multirotor(),
+                                         {41.0498, 29.0498, game::query_hot(41.05, 29.05) + 25.0, 0, 0, 0},
+                                         0.0, false);
+    fm::FormationSlot behind = fm::formation::trail(0, 15.0);
+    behind.offset.z = 25.0;
+    fm::ecs::follow(drone, truck, behind);
 
-    for (int frame = 0; frame <= 60 * 120; ++frame) {
+    for (int frame = 0; frame <= 60 * 180; ++frame) {
+        const int seconds = frame / 60;
+        // At t = 60 s the lead turns to true course 180 at 2500 m; the wingmen follow.
+        if (frame == 60 * 60) {
+            const game::Transform& t = *fm::ecs::compat::try_get<game::Transform>(lead);
+            const double course = fm::ecs::local_heading(world, 180.0, {t.lat, t.lon, t.alt});
+            fm::ecs::agent(lead)->hold(course, 2500.0, 220.0);
+        }
         world.progress(1.0f / 60.0f);
-        if (frame % (60 * 20) != 0) continue;
-        std::printf("--- t = %d s\n", frame / 60);
-        world.each([](flecs::entity e, const fm::ecs::FlightPose& p) {
-            std::printf("%-10s pos(%8.0f %6.0f %8.0f) hdg %5.1f pitch %5.1f roll %6.1f  %5.1f m/s  mode %d\n",
-                        e.name().c_str(), p.position.x, p.position.y, p.position.z, p.heading,
-                        p.pitch, p.roll, p.airspeed, static_cast<int>(p.mode));
-        });
+        if (frame % (60 * 30) == 0) print(world, seconds);
     }
-    (void)drone;
     return 0;
 }

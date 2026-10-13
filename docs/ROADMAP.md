@@ -36,8 +36,11 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   uçuşa dönüş. Lider olarak her entity kullanılabilir (`TrackedPose`).
 - **Arazi:** minimum yükseklik koruması, AGL irtifa (arazi takibi), eğimli pistten kalkış.
 - **Koordinat sistemleri:** ENU, Unity, Unreal (cm), Godot, NED ve özel tanım.
+- **Geodetik dünya:** WGS-84 enlem/boylam/irtifa; yatayda teğet düzlem projeksiyonu,
+  dikeyde doğrudan irtifa; yaw için harita kuzeyi–gerçek kuzey düzeltmesi. Flecs'te
+  `GeoPose` çıktısı, `TrackedGeoPose` girdisi, `set_geo_origin` / `attach_geo` / `to_local`.
 - **Flecs modülü:** 4.0.5, 4.1.2 ve 4.1.6 ile derlenip test edildi.
-- **Testler:** 24 çekirdek + 5 Flecs senaryo testi; AddressSanitizer/UBSan temiz.
+- **Testler:** 28 çekirdek + 8 Flecs senaryo testi; AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
 
@@ -68,6 +71,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 ### Faz 5 — Çoklu ajan davranışları
 - Ajanlar arası çarpışma önleme (ayrılma kuralları).
 - Formasyon değişimi (dizilim geçişleri), lider değişimi, slot yeniden atama.
+- Takipçisi olan liderin dönüşlerde yatışı sınırlaması (dış taraftaki uçaklar dağılmasın).
+- Çok geniş haritalar (> 500 km) için ajan başına projeksiyon merkezini kaydırma.
 - Kalkış/iniş sıralaması (aynı pistte birden fazla uçak).
 
 ### Faz 6 — Ek model tipleri

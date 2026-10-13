@@ -41,6 +41,7 @@ include/fm/, src/          Flecs-independent core (C++20, builds as C++23 too)
   fixed_wing, rotorcraft    the agents: dynamics + autopilot + navigation modes
   flight_agent              single entry point (std::variant over the models)
   frames                    ENU <-> engine world frames (Unity, Unreal, Godot, NED)
+  geo                       WGS-84 latitude/longitude/altitude <-> local frame
 adapters/flecs/             Flecs module (the only code that includes flecs.h)
   include/fm/ecs/compat.hpp all Flecs version differences live here
 tests/                      core and Flecs tests (no external test framework)
@@ -110,10 +111,39 @@ Per frame:
 * **Inputs (optional)**: `fm::ecs::TerrainHeight` (ground height under the entity, world
   units along the world up axis) or `fm::ecs::HeightAboveGround`, and `fm::ecs::Wind`.
 * **Output**: `fm::ecs::FlightPose` (world position, rotation quaternion for the asset,
-  velocity, heading/pitch/roll in degrees, speeds, mode, phase). Copy it into your own
-  transform in a later phase; see [`examples/flecs_integration.cpp`](examples/flecs_integration.cpp).
+  velocity, heading/pitch/roll in degrees, speeds, mode, phase) and, in geodetic worlds,
+  `fm::ecs::GeoPose`. Copy it into your own transform in a later phase.
 * Systems run in `OnUpdate`: `FollowSystem` (single threaded) then `FlightSystem`
   (multi-thread safe).
+
+### Geodetic worlds (latitude / longitude / altitude)
+
+When the game's transform is geodetic, set a projection origin near the middle of the play
+area. Agents then fly in a local frame whose z is the geodetic altitude, so level flight
+keeps its altitude over the curved Earth and terrain heights are used as they are.
+
+```cpp
+fm::ecs::set_geo_origin(world, 41.1, 29.1);
+
+// Parked on a runway, true heading 090 (yaw in degrees); altitude = ground height.
+fm::ecs::attach_geo(plane, fm::presets::regional_turboprop(), {41.02, 28.95, ground}, 90.0, 0.0, true);
+
+// Commands take local positions: convert latitude/longitude with to_local().
+fm::ecs::agent(plane)->go_to(fm::ecs::to_local(world, {41.30, 29.30, 2500.0}));
+// True courses (deg) become local headings with local_heading().
+fm::ecs::agent(plane)->hold(fm::ecs::local_heading(world, 180.0, here), 2500.0, 140.0);
+```
+
+* Input: `TerrainHeight` in meters (the height-of-terrain under the entity).
+* Output: `fm::ecs::GeoPose { latitude, longitude, altitude, roll, pitch, yaw }` (degrees,
+  meters, yaw = true heading).
+* Followable non-flying entities provide `fm::ecs::TrackedGeoPose`.
+* Accuracy: exact round trip; horizontal scale error 0.01% at 100 km and 0.1% at 300 km
+  from the origin.
+
+[`examples/flecs_integration.cpp`](examples/flecs_integration.cpp) shows a complete game
+setup with a `Transform { lat, lon, alt, roll, pitch, yaw }` component, a height-of-terrain
+system, bridge systems, a runway takeoff, a jet formation and a drone following a truck.
 
 ### Flecs upgrades
 

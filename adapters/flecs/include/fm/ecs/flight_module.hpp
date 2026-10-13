@@ -1,12 +1,17 @@
 // Flecs integration of the flight model core. The core is Flecs-independent; this module
 // only stores agents in components, feeds them environment/leader data and publishes poses.
 //
+// Cartesian worlds:
 //   world.import<fm::ecs::FlightModule>();
 //   fm::ecs::set_frame(world, fm::WorldFrame::unity());
-//   auto e = world.entity();
 //   fm::ecs::attach_at(e, fm::presets::airliner_jet(), runway_point, heading, 0.0, true);
-//   fm::ecs::agent(e)->follow_route(route);
-//   // each frame: write TerrainHeight on e, world.progress(dt), read FlightPose from e
+//   // each frame: write TerrainHeight, world.progress(dt), read FlightPose
+//
+// Geodetic worlds (latitude/longitude/altitude):
+//   fm::ecs::set_geo_origin(world, 41.0, 29.0);
+//   fm::ecs::attach_geo(e, fm::presets::airliner_jet(), {lat, lon, ground_alt}, yaw_deg, 0.0, true);
+//   fm::ecs::agent(e)->go_to(fm::ecs::to_local(world, {lat2, lon2, 3000.0}));
+//   // each frame: write TerrainHeight (meters), world.progress(dt), read GeoPose
 #pragma once
 
 #include <cmath>
@@ -16,14 +21,18 @@
 #include "fm/ecs/compat.hpp"
 #include "fm/flight_agent.hpp"
 #include "fm/frames.hpp"
+#include "fm/geo.hpp"
 
 namespace fm::ecs {
 
 // --- Configuration ---------------------------------------------------------------------
 
-// World singleton: how core ENU meters map to the game's world space.
+// World singleton: how core ENU meters map to the game's world space. When `geo` is set,
+// the world is geodetic: agents fly in the projection's local frame (z = altitude) and
+// GeoPose / TrackedGeoPose carry latitude/longitude/altitude.
 struct FrameConfig {
     WorldFrame frame = WorldFrame::enu();
+    std::optional<GeoProjection> geo;
 };
 
 // --- Components ------------------------------------------------------------------------
@@ -53,7 +62,24 @@ struct TrackedPose {
     double heading = std::numeric_limits<double>::quiet_NaN();  // rad, clockwise from North
 };
 
+// Geodetic counterpart of TrackedPose. Yaw NaN = derived from motion.
+struct TrackedGeoPose {
+    GeoPoint position{};
+    double yaw = std::numeric_limits<double>::quiet_NaN();  // deg, true heading
+};
+
 // Output, written every frame ----------------------------------------------------------
+// Geodetic pose (only in geodetic worlds, on entities created with attach_geo or that
+// have the component). Angles use the aviation convention.
+struct GeoPose {
+    double latitude = 0.0;   // deg
+    double longitude = 0.0;  // deg
+    double altitude = 0.0;   // m
+    double roll = 0.0;       // deg, right wing down positive
+    double pitch = 0.0;      // deg, nose up positive
+    double yaw = 0.0;        // deg, true heading, clockwise from North, [0, 360)
+};
+
 struct FlightPose {
     Vec3 position{};       // world units
     Quat rotation{};       // asset local axes -> world
@@ -102,6 +128,23 @@ void attach_at(flecs::entity e, const VehicleParams& params, const Vec3& world_p
                double heading, double speed, bool on_ground);
 // ENU heading of a world-space forward vector.
 double heading_from_world_forward(const flecs::world& world, const Vec3& world_forward);
+
+// --- Geodetic worlds -------------------------------------------------------------------
+
+// Makes the world geodetic with the projection origin at (latitude, longitude) in degrees.
+// Choose a point near the middle of the play area (accuracy: 0.1% scale at 300 km).
+void set_geo_origin(flecs::world& world, double latitude, double longitude);
+// The projection, or nullptr for Cartesian worlds.
+const GeoProjection* geo(const flecs::world& world);
+// Geodetic point -> local frame used by commands (go_to, routes, loiter centers).
+// If no origin is set yet, `p` becomes the origin.
+Vec3 to_local(flecs::world& world, const GeoPoint& p);
+// True heading/course in degrees at `near` -> local heading in radians (hold(), runways).
+double local_heading(flecs::world& world, double true_heading_deg, const GeoPoint& near);
+// Gives `e` a flight AI at a geodetic position and adds GeoPose. `yaw` is the true heading
+// in degrees. When on_ground, `at.altitude` is the ground altitude.
+void attach_geo(flecs::entity e, const VehicleParams& params, const GeoPoint& at, double yaw,
+                double speed, bool on_ground);
 
 // The agent of `e`, or nullptr. The pointer is valid until components are added to or
 // removed from `e`; issue commands right away instead of storing it.
