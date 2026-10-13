@@ -157,6 +157,47 @@ tests have been built against Flecs **4.0.5, 4.1.2 and 4.1.6**. To try another v
 cmake -S . -B build -DFM_FLECS_TAG=v4.x.y
 ```
 
+### Plugin DLLs (load / unload at runtime)
+
+When the module lives in a plugin that the game loads and unloads:
+
+1. **One Flecs runtime.** The plugin must link the Flecs library the host uses
+   (`flecs.dll` / `libflecs.so`), the same version, and on Windows the same C runtime
+   (`/MD`). A static copy of Flecs inside the plugin has its own, uninitialized OS API and
+   its own component-id counter: the first allocation crashes (`ecs_os_strdup` on Windows)
+   and component ids get mixed up. Point the build at the host's Flecs:
+
+   ```cmake
+   add_library(host_flecs SHARED IMPORTED)            # the game's prebuilt Flecs
+   set_target_properties(host_flecs PROPERTIES
+     IMPORTED_LOCATION "${GAME_SDK}/bin/flecs.dll"
+     IMPORTED_IMPLIB   "${GAME_SDK}/lib/flecs.lib"
+     INTERFACE_INCLUDE_DIRECTORIES "${GAME_SDK}/include")
+   set(FM_FLECS_TARGET host_flecs CACHE STRING "" FORCE)
+   add_subdirectory(flight-model)
+   target_link_libraries(my_plugin PRIVATE fm::flecs)
+   ```
+
+   (`-DFM_FLECS_SHARED=ON` instead builds the fetched Flecs as a shared library.) Do not
+   define `flecs_STATIC` in the plugin. `fm::ecs::load()` checks the runtime first and
+   refuses to load, with a message, instead of crashing.
+2. **Load** with `fm::ecs::load(world)` instead of `world.import<>()`, and create the
+   plugin's own systems in the module scope (`world.set_scope(fm::ecs::module_entity(world))`).
+3. **Unload** with `fm::ecs::unload(world)` before `FreeLibrary` / `dlclose`. It deletes the
+   systems, removes the components from all entities while their destructors are still
+   loaded and deletes the module entity. Entities stay alive and keep your components; the
+   agents' state is gone, so re-adopt aircraft from your transform after a reload.
+4. Inside systems (deferred mode) `attach*()` is safe; give commands through its `setup`
+   callback, because the components only appear at the end of the frame.
+5. Host code should not keep queries or cached ids of the module's components across an
+   unload.
+
+[`examples/plugin`](examples/plugin) contains a host that loads, unloads and reloads the
+plugin while the world keeps running, the plugin itself, and a test plugin linked against
+its own static Flecs that must be rejected (`fm_plugin_reload`, `fm_plugin_wrong_flecs`;
+built when Flecs is shared, e.g. `-DFM_FLECS_SHARED=ON`). On Windows, put `flecs.dll` next
+to the host executable.
+
 ## Coordinate frames
 
 The core uses ENU meters (x East, y North, z Up), heading clockwise from North, pitch nose

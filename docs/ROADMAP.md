@@ -40,8 +40,11 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   dikeyde doğrudan irtifa; yaw için harita kuzeyi–gerçek kuzey düzeltmesi. Flecs'te
   `GeoPose` çıktısı, `TrackedGeoPose` girdisi, `set_geo_origin` / `attach_geo` / `to_local`.
 - **Flecs modülü:** 4.0.5, 4.1.2 ve 4.1.6 ile derlenip test edildi.
+- **Plugin DLL desteği:** `fm::ecs::load()` (yanlış bağlanmış Flecs kopyasını yakalar),
+  `fm::ecs::unload()` (sistemleri ve component'leri temizler, DLL güvenle boşaltılır),
+  `FM_FLECS_TARGET` / `FM_FLECS_SHARED`, gerçek yükle–boşalt–tekrar yükle testi.
 - **İniş:** pist yaklaşması, süzülüş yolu, pas geçme, flare, teker koyma, frenleme.
-- **Testler:** 31 çekirdek + 8 Flecs senaryo testi; AddressSanitizer/UBSan temiz.
+- **Testler:** 31 çekirdek + 10 Flecs + 2 plugin testi; AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
 

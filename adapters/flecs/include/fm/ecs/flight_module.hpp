@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <optional>
 
@@ -115,17 +116,42 @@ struct FlightModule {
     explicit FlightModule(flecs::world& world);
 };
 
+// --- Loading and unloading (plugin DLLs) -------------------------------------------------
+//
+// The module must use the same Flecs runtime as the binary that created the world. A plugin
+// DLL that links its own static copy of Flecs while the host uses flecs.dll has a second,
+// uninitialized runtime: the first allocation (ecs_os_strdup) crashes and component ids get
+// mixed up. Link the plugin against the host's Flecs (see README, "Plugin DLLs").
+
+// Imports FlightModule after checking the Flecs runtime. Returns the module entity, or an
+// empty entity (reason printed to stderr) when this binary has its own uninitialized copy
+// of Flecs. Use it instead of world.import<FlightModule>() in plugins.
+flecs::entity load(flecs::world& world);
+// Removes everything the module added so the binary can be unloaded: systems, components
+// (removed from all entities, destructors run in this binary), the frame singleton and
+// systems created in the module scope. Entities stay alive. load() works again afterwards.
+void unload(flecs::world& world);
+// The module entity (empty if not loaded). Create bridge systems in its scope so unload()
+// removes them too, e.g. with world.set_scope(fm::ecs::module_entity(world)).
+flecs::entity module_entity(const flecs::world& world);
+
 // --- Helpers ---------------------------------------------------------------------------
+// attach*() are safe to call from systems (deferred mode). Their optional `setup` callback
+// gets the new agent before it is stored, so commands can be issued right away even when
+// the component is not visible yet. agent() and follow() need the FlightController to exist.
+
+using AgentSetup = std::function<void(FlightAgent&)>;
 
 void set_frame(flecs::world& world, const WorldFrame& frame);
 const WorldFrame& frame(const flecs::world& world);
 
 // Gives `e` a flight AI. `ic` is in core ENU meters.
-void attach(flecs::entity e, const VehicleParams& params, const InitialConditions& ic);
+void attach(flecs::entity e, const VehicleParams& params, const InitialConditions& ic,
+            const AgentSetup& setup = {});
 // Same, with a world-space position. `heading` is ENU (radians clockwise from North, see
 // heading_from_world_forward). When on_ground, `world_position` is the ground point.
 void attach_at(flecs::entity e, const VehicleParams& params, const Vec3& world_position,
-               double heading, double speed, bool on_ground);
+               double heading, double speed, bool on_ground, const AgentSetup& setup = {});
 // ENU heading of a world-space forward vector.
 double heading_from_world_forward(const flecs::world& world, const Vec3& world_forward);
 
@@ -144,7 +170,7 @@ double local_heading(flecs::world& world, double true_heading_deg, const GeoPoin
 // Gives `e` a flight AI at a geodetic position and adds GeoPose. `yaw` is the true heading
 // in degrees. When on_ground, `at.altitude` is the ground altitude.
 void attach_geo(flecs::entity e, const VehicleParams& params, const GeoPoint& at, double yaw,
-                double speed, bool on_ground);
+                double speed, bool on_ground, const AgentSetup& setup = {});
 
 // The agent of `e`, or nullptr. The pointer is valid until components are added to or
 // removed from `e`; issue commands right away instead of storing it.

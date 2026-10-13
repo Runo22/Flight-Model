@@ -1,6 +1,7 @@
 // Flecs adapter: module import, world frames, inputs, outputs and follow relations.
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include "fm/ecs/flight_module.hpp"
 #include "fm/presets.hpp"
@@ -219,4 +220,65 @@ TEST_CASE("flecs geo: drone follows a vehicle given in latitude/longitude") {
         }
     }
     CHECK(max_error < 3.0);
+}
+
+// --- Plugin lifecycle -------------------------------------------------------------------
+
+TEST_CASE("flecs: unload removes the module and load works again") {
+    flecs::world world;
+    const flecs::entity module = ecs::load(world);
+    CHECK(module.is_valid());
+    CHECK(ecs::module_entity(world) == module);
+    ecs::set_geo_origin(world, 41.0, 29.0);
+    flecs::entity lead = world.entity("lead");
+    flecs::entity wing = world.entity("wing");
+    ecs::attach_geo(lead, presets::light_propeller(), {41.0, 29.0, 1000.0}, 90.0, 50.0, false);
+    ecs::attach_geo(wing, presets::light_propeller(), {40.995, 28.99, 1000.0}, 90.0, 50.0, false);
+    CHECK(ecs::follow(wing, lead, formation::trail(0, 80.0)));
+    run(world, 5.0);
+
+    ecs::unload(world);
+    CHECK(!ecs::module_entity(world).is_valid());
+    CHECK(!world.lookup("fm::ecs::FlightModule::FlightController").is_valid());
+    CHECK(!world.lookup("fm::ecs::FlightModule::FlightSystem").is_valid());
+    CHECK(lead.is_alive());
+    CHECK(wing.is_alive());
+    CHECK(std::string(lead.type().str().c_str()).find("Flight") == std::string::npos);
+    run(world, 2.0);  // the world keeps running without the module
+
+    CHECK(ecs::load(world).is_valid());
+    CHECK(ecs::geo(world) == nullptr);  // configuration went with the module
+    ecs::set_geo_origin(world, 41.0, 29.0);
+    ecs::attach_geo(lead, presets::light_propeller(), {41.0, 29.0, 1000.0}, 90.0, 50.0, false);
+    run(world, 10.0);
+    CHECK(geo_pose_of(lead).longitude > 29.005);
+    CHECK(ecs::agent(lead) != nullptr);
+}
+
+TEST_CASE("flecs: attach from a system with commands in the setup callback") {
+    struct NeedsFlightAi {};
+    flecs::world world;
+    ecs::load(world);
+    ecs::set_geo_origin(world, 41.0, 29.0);
+    world.component<NeedsFlightAi>();
+    const Vec3 target = ecs::to_local(world, {41.0, 29.0005, 50.0});
+    world.system<>("Adopt")
+        .with<NeedsFlightAi>()
+        .each([target](flecs::entity e) {
+            // Deferred: the components only appear at the end of the frame, so the go_to
+            // command is given through the setup callback.
+            ecs::attach_geo(e, presets::multirotor(), {41.0, 29.0, 50.0}, 0.0, 5.0, false,
+                            [&](FlightAgent& a) {
+                                GoToOptions opt;
+                                opt.on_arrival = EndBehavior::Loiter;  // hover there
+                                a.go_to(target, opt);
+                            });
+            e.remove<NeedsFlightAi>();
+        });
+    flecs::entity drone = world.entity().add<NeedsFlightAi>();
+    run(world, 30.0);
+    CHECK(ecs::agent(drone) != nullptr);
+    CHECK(!drone.has<NeedsFlightAi>());
+    CHECK_NEAR(geo_pose_of(drone).longitude, 29.0005, 2e-5);
+    CHECK(pose_of(drone).mode == FlightMode::Hover);
 }

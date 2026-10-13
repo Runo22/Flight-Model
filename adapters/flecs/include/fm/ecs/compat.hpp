@@ -45,4 +45,19 @@ const T* try_get_singleton(const flecs::world& world) {
 #endif
 }
 
+// Forgets the component id this binary cached for T, so that T is registered again on its
+// next use (needed after the component entity was deleted, e.g. by fm::ecs::unload).
+template <typename T>
+void reset_cached_id() {
+    flecs::_::type<T>::reset();
+}
+
+// True when this binary's Flecs runtime has been initialized. A plugin that links its own
+// static copy of Flecs while the host created the world with another copy (typically
+// flecs.dll) sees an uninitialized runtime: using the world from it crashes in the first
+// allocation (ecs_os_strdup) and corrupts component ids.
+inline bool runtime_initialized() {
+    return ecs_os_api.malloc_ != nullptr && ecs_os_api.strdup_ != nullptr;
+}
+
 }  // namespace fm::ecs::compat

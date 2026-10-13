@@ -7,3 +7,17 @@ if(TARGET fm::flecs)
   target_link_libraries(fm_flecs_integration PRIVATE fm::flecs)
   target_compile_options(fm_flecs_integration PRIVATE ${FM_WARNINGS})
 endif()
+
+# The plugin example needs Flecs as a shared library (configure with FM_FLECS_SHARED=ON or
+# point FM_FLECS_TARGET at a shared Flecs).
+if(TARGET fm::flecs AND FM_FLECS_LINK)
+  set(fm_flecs_real ${FM_FLECS_LINK})
+  get_target_property(fm_flecs_aliased ${FM_FLECS_LINK} ALIASED_TARGET)
+  if(fm_flecs_aliased)
+    set(fm_flecs_real ${fm_flecs_aliased})
+  endif()
+  get_target_property(fm_flecs_type ${fm_flecs_real} TYPE)
+  if(fm_flecs_type STREQUAL "SHARED_LIBRARY")
+    add_subdirectory(plugin)
+  endif()
+endif()

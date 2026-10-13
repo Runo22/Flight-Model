@@ -1,5 +1,6 @@
 #include "fm/ecs/flight_module.hpp"
 
+#include <cstdio>
 #include <utility>
 
 namespace fm::ecs {
@@ -79,9 +80,32 @@ std::optional<LeaderState> leader_state(const FrameConfig& cfg, FollowLeader& fo
     return std::nullopt;
 }
 
-const GeoProjection& ensure_geo(flecs::world& world, const GeoPoint& origin) {
-    if (!geo(world)) set_geo_origin(world, origin.latitude, origin.longitude);
-    return *geo(world);
+// Returns the world's projection, creating it at `origin` when missing. Returned by value
+// so it also works in deferred mode, where the new singleton is not visible yet.
+GeoProjection ensure_geo(flecs::world& world, const GeoPoint& origin) {
+    if (const GeoProjection* proj = geo(world)) return *proj;
+    set_geo_origin(world, origin.latitude, origin.longitude);
+    return GeoProjection(origin.latitude, origin.longitude);
+}
+
+// Adds the agent and its outputs without reading the components back (deferred-safe).
+void attach_agent(flecs::entity e, FlightAgent agent, const std::optional<GeoProjection>& proj,
+                  const AgentSetup& setup) {
+    if (setup) setup(agent);
+    FlightPose pose;
+    write_pose(frame(e.world()), agent, pose);
+    GeoPose geo_pose;
+    if (proj) write_geo_pose(*proj, agent, geo_pose);
+    FlightController fc;
+    fc.agent.emplace(std::move(agent));
+    e.set<FlightController>(std::move(fc));
+    e.set<FlightPose>(pose);
+    if (proj) e.set<GeoPose>(geo_pose);
+}
+
+template <typename... T>
+void reset_cached_ids() {
+    (compat::reset_cached_id<T>(), ...);
 }
 
 }  // namespace
@@ -158,29 +182,52 @@ FlightModule::FlightModule(flecs::world& world) {
         });
 }
 
+flecs::entity load(flecs::world& world) {
+    if (!compat::runtime_initialized()) {
+        std::fprintf(stderr,
+                     "fm::ecs::load: this binary has its own, uninitialized copy of Flecs. "
+                     "Link it against the Flecs library the host uses (e.g. flecs.dll) "
+                     "instead of a static Flecs; see README, \"Plugin DLLs\".\n");
+        return flecs::entity();
+    }
+    return world.import<FlightModule>();
+}
+
+void unload(flecs::world& world) {
+    // Deleting the module entity deletes its children: the systems, everything created in
+    // its scope and the components, which flecs removes from all entities first.
+    if (flecs::entity module = module_entity(world)) module.destruct();
+    // This binary may stay loaded and call load() again: forget the cached ids.
+    reset_cached_ids<FlightModule, FrameConfig, FlightController, TerrainHeight,
+                     HeightAboveGround, Wind, TrackedPose, TrackedGeoPose, FlightPose, GeoPose,
+                     FollowLeader>();
+}
+
+flecs::entity module_entity(const flecs::world& world) {
+    return world.lookup("fm::ecs::FlightModule");
+}
+
 void set_frame(flecs::world& world, const WorldFrame& frame) {
     world.set<FrameConfig>({frame, std::nullopt});
 }
 
 const WorldFrame& frame(const flecs::world& world) { return config_of(world).frame; }
 
-void attach(flecs::entity e, const VehicleParams& params, const InitialConditions& ic) {
-    FlightController fc;
-    fc.agent.emplace(params, ic);
-    FlightPose pose;
-    write_pose(frame(e.world()), *fc.agent, pose);
-    e.set<FlightController>(std::move(fc));
-    e.set<FlightPose>(pose);
+void attach(flecs::entity e, const VehicleParams& params, const InitialConditions& ic,
+            const AgentSetup& setup) {
+    const GeoProjection* proj = geo(e.world());
+    attach_agent(e, FlightAgent(params, ic),
+                 proj ? std::optional<GeoProjection>(*proj) : std::nullopt, setup);
 }
 
 void attach_at(flecs::entity e, const VehicleParams& params, const Vec3& world_position,
-               double heading, double speed, bool on_ground) {
+               double heading, double speed, bool on_ground, const AgentSetup& setup) {
     InitialConditions ic;
     ic.position = frame(e.world()).to_enu(world_position);
     ic.heading = heading;
     ic.speed = speed;
     ic.on_ground = on_ground;
-    attach(e, params, ic);
+    attach(e, params, ic, setup);
 }
 
 double heading_from_world_forward(const flecs::world& world, const Vec3& world_forward) {
@@ -199,23 +246,20 @@ const GeoProjection* geo(const flecs::world& world) {
 Vec3 to_local(flecs::world& world, const GeoPoint& p) { return ensure_geo(world, p).to_local(p); }
 
 double local_heading(flecs::world& world, double true_heading_deg, const GeoPoint& near) {
-    const GeoProjection& proj = ensure_geo(world, near);
+    const GeoProjection proj = ensure_geo(world, near);
     return proj.grid_heading(deg2rad(true_heading_deg), proj.to_local(near));
 }
 
 void attach_geo(flecs::entity e, const VehicleParams& params, const GeoPoint& at, double yaw,
-                double speed, bool on_ground) {
+                double speed, bool on_ground, const AgentSetup& setup) {
     flecs::world world = e.world();
-    const GeoProjection& proj = ensure_geo(world, at);
+    const GeoProjection proj = ensure_geo(world, at);
     InitialConditions ic;
     ic.position = proj.to_local(at);
     ic.heading = proj.grid_heading(deg2rad(yaw), ic.position);
     ic.speed = speed;
     ic.on_ground = on_ground;
-    attach(e, params, ic);
-    GeoPose pose;
-    write_geo_pose(proj, *agent(e), pose);
-    e.set<GeoPose>(pose);
+    attach_agent(e, FlightAgent(params, ic), proj, setup);
 }
 
 FlightAgent* agent(flecs::entity e) {

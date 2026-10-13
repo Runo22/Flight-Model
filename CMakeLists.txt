@@ -39,6 +39,8 @@ target_include_directories(flight_model PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_compile_features(flight_model PUBLIC cxx_std_20)
 target_compile_options(flight_model PRIVATE ${FM_WARNINGS})
+# Linked into plugin shared libraries.
+set_target_properties(flight_model PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- Flecs adapter ----------------------------------------------------------------------
 if(FM_BUILD_FLECS_MODULE)
