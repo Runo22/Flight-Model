@@ -33,6 +33,10 @@ public:
     // Runway takeoff from the current position along plan.runway (default: current heading).
     // Only valid while on the ground; returns false otherwise.
     bool takeoff(const TakeoffPlan& plan);
+    // Approach and landing on `runway` (start = threshold, heading = landing direction):
+    // positioning to the extended centerline, 3 deg glide path, flare, touchdown and
+    // braking. Unstable approaches go around and try again. Returns false on the ground.
+    bool land(const Runway& runway);
     // Keep `slot` relative to a leader. Feed the leader with set_leader_state() every
     // step; without updates for a few seconds the aircraft falls back to cruise().
     void join_formation(const FormationSlot& slot);
@@ -63,12 +67,17 @@ private:
         bool full_thrust = false;
         bool rotate = false;
         bool terrain_alert = false;
+        bool terrain_floor = true;        // keep the minimum terrain clearance
+        double vertical_speed_ff = 0.0;   // m/s, feedforward added to the altitude loop
+        bool idle_thrust = false;         // flare: idle, flight path from vertical speed only
+        double gamma_time_constant = 0.0; // s, 0 = params default (flare uses a quicker one)
     };
     struct Control {
         double bank = 0.0;
         double gamma = 0.0;
         double throttle = 0.0;
         double steer_heading = 0.0;  // ground steering target
+        double gamma_time_constant = 0.0;  // s, 0 = params default
         bool rotate = false;
         bool speed_brake = false;
     };
@@ -78,6 +87,7 @@ private:
     void finish_route(EndBehavior behavior);
     void guide_takeoff(Command& cmd, const AtmosphereSample& atm);
     void guide_formation(Command& cmd, const Vec2& ground_velocity, const SlotReference& ref);
+    void guide_landing(Command& cmd, const AtmosphereSample& atm, const Vec2& ground_velocity);
     Control autopilot(const Command& cmd, const AtmosphereSample& atm);
     void integrate(const Control& c, const AtmosphereSample& atm, const Vec3& wind, double dt);
     void integrate_ground(const Control& c, const AtmosphereSample& atm, double dt);
@@ -94,6 +104,8 @@ private:
     double cl_max() const;
     double cd0() const;
     double loiter_radius_default() const;
+    double approach_speed(double density) const;
+    Vec3 aim_point() const;  // glide path touchdown aim point on the runway
 
     FixedWingParams p_;
     FlightState out_{};
@@ -111,6 +123,7 @@ private:
     bool on_ground_ = false;
     bool flaps_ = false;
     bool speed_brake_ = false;
+    bool gear_down_ = true;
     FlightPhase phase_ = FlightPhase::Airborne;
 
     // Targets
@@ -130,6 +143,12 @@ private:
     TakeoffPlan takeoff_{};
     Vec2 takeoff_origin_{};
     double takeoff_heading_ = 0.0;
+
+    enum class LandingStage { Positioning, Final, Flare, GoAround, Rollout };
+    Runway runway_{};
+    LandingStage landing_stage_ = LandingStage::Positioning;
+    double flare_height_ = 0.0;  // m, wheel height where the flare started (lag included)
+    double flare_sink_ = 0.0;    // m/s, sink rate at the flare start
     double runway_elevation_ = 0.0;
 
     FormationSlot slot_{};

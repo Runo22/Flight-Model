@@ -36,10 +36,46 @@ enum class FlightPhase {
     Rotation,
     InitialClimb,
     Airborne,
-    Landing,
+    Approach,        // fixed-wing: positioning and final approach to a runway
+    GoAround,        // fixed-wing: unstable approach, climbing out for another attempt
+    Flare,           // fixed-wing: last meters before touchdown
+    Landing,         // rotorcraft: vertical descent
+    Rollout,         // fixed-wing: braking on the runway after touchdown
     Landed,
     TerrainContact,  // touched the ground while airborne (crash / unplanned)
 };
+
+constexpr const char* to_string(FlightMode m) {
+    switch (m) {
+        case FlightMode::Cruise: return "Cruise";
+        case FlightMode::GoTo: return "GoTo";
+        case FlightMode::Route: return "Route";
+        case FlightMode::Loiter: return "Loiter";
+        case FlightMode::Takeoff: return "Takeoff";
+        case FlightMode::Land: return "Land";
+        case FlightMode::Hover: return "Hover";
+        case FlightMode::Formation: return "Formation";
+    }
+    return "?";
+}
+
+constexpr const char* to_string(FlightPhase p) {
+    switch (p) {
+        case FlightPhase::Parked: return "Parked";
+        case FlightPhase::TakeoffRoll: return "TakeoffRoll";
+        case FlightPhase::Rotation: return "Rotation";
+        case FlightPhase::InitialClimb: return "InitialClimb";
+        case FlightPhase::Airborne: return "Airborne";
+        case FlightPhase::Approach: return "Approach";
+        case FlightPhase::GoAround: return "GoAround";
+        case FlightPhase::Flare: return "Flare";
+        case FlightPhase::Landing: return "Landing";
+        case FlightPhase::Rollout: return "Rollout";
+        case FlightPhase::Landed: return "Landed";
+        case FlightPhase::TerrainContact: return "TerrainContact";
+    }
+    return "?";
+}
 
 // Output of the models: everything a renderer or game logic needs.
 struct FlightState {
@@ -59,6 +95,7 @@ struct FlightState {
     bool on_ground = false;
     bool speed_brake = false;
     bool flaps = false;
+    bool gear_down = true;
     FlightPhase phase = FlightPhase::Airborne;
 };
 

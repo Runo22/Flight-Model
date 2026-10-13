@@ -51,6 +51,16 @@ FixedWingParams fast_jet() {
     p.takeoff_climb_height = 600.0;
     p.flaps_up_height = 60.0;
     p.formation_min_separation = 20.0;
+    p.retractable_gear = true;
+    p.gear_dcd0 = 0.02;
+    p.gear_up_height = 10.0;
+    p.final_approach_distance = 8000.0;
+    p.touchdown_distance = 300.0;
+    p.approach_speed_factor = 1.25;
+    p.flare_height = 6.0;
+    p.touchdown_sink_rate = 0.8;
+    p.decision_height = 60.0;
+    p.brake_deceleration = 3.0;
     return p;
 }
 
@@ -101,6 +111,16 @@ FixedWingParams airliner_jet() {
     p.takeoff_climb_height = 900.0;
     p.flaps_up_height = 300.0;
     p.formation_min_separation = 60.0;
+    p.retractable_gear = true;
+    p.gear_dcd0 = 0.02;
+    p.gear_up_height = 15.0;
+    p.final_approach_distance = 12000.0;
+    p.touchdown_distance = 300.0;
+    p.approach_speed_factor = 1.3;
+    p.flare_height = 12.0;
+    p.touchdown_sink_rate = 0.7;
+    p.decision_height = 60.0;
+    p.brake_deceleration = 2.5;
     return p;
 }
 
@@ -151,6 +171,16 @@ FixedWingParams regional_turboprop() {
     p.takeoff_climb_height = 600.0;
     p.flaps_up_height = 200.0;
     p.formation_min_separation = 40.0;
+    p.retractable_gear = true;
+    p.gear_dcd0 = 0.02;
+    p.gear_up_height = 15.0;
+    p.final_approach_distance = 8000.0;
+    p.touchdown_distance = 250.0;
+    p.approach_speed_factor = 1.3;
+    p.flare_height = 8.0;
+    p.touchdown_sink_rate = 0.7;
+    p.decision_height = 50.0;
+    p.brake_deceleration = 2.5;
     return p;
 }
 
@@ -201,6 +231,16 @@ FixedWingParams light_propeller() {
     p.takeoff_climb_height = 300.0;
     p.flaps_up_height = 100.0;
     p.formation_min_separation = 15.0;
+    p.retractable_gear = false;
+    p.gear_dcd0 = 0.0;
+    p.gear_up_height = 0.0;
+    p.final_approach_distance = 3000.0;
+    p.touchdown_distance = 100.0;
+    p.approach_speed_factor = 1.3;
+    p.flare_height = 3.0;
+    p.touchdown_sink_rate = 0.5;
+    p.decision_height = 30.0;
+    p.brake_deceleration = 2.0;
     return p;
 }
 
@@ -251,6 +291,16 @@ FixedWingParams fixed_wing_uav() {
     p.takeoff_climb_height = 80.0;
     p.flaps_up_height = 30.0;
     p.formation_min_separation = 5.0;
+    p.retractable_gear = false;
+    p.gear_dcd0 = 0.0;
+    p.gear_up_height = 0.0;
+    p.final_approach_distance = 600.0;
+    p.touchdown_distance = 30.0;
+    p.approach_speed_factor = 1.3;
+    p.flare_height = 1.5;
+    p.touchdown_sink_rate = 0.4;
+    p.decision_height = 10.0;
+    p.brake_deceleration = 1.5;
     return p;
 }
 

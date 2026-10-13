@@ -55,8 +55,11 @@ public:
     bool takeoff(const TakeoffPlan& plan = {});
     // Rotorcraft holds position; fixed-wing aircraft orbit the current position.
     void hover();
-    // Rotorcraft vertical landing. Fixed-wing landing is not implemented yet (returns false).
+    // Rotorcraft: vertical landing here. Fixed-wing: needs a runway (returns false).
     bool land();
+    // Fixed-wing: approach and landing on the runway. Rotorcraft: fly to the runway start
+    // at the current altitude and land vertically there.
+    bool land(const Runway& runway);
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
 

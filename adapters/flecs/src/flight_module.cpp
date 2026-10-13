@@ -42,7 +42,8 @@ void write_geo_pose(const GeoProjection& proj, const FlightAgent& agent, GeoPose
     pose.altitude = p.altitude;
     pose.roll = rad2deg(s.attitude.roll);
     pose.pitch = rad2deg(s.attitude.pitch);
-    pose.yaw = rad2deg(wrap_2pi(s.attitude.heading - proj.convergence(p)));
+    const double yaw = rad2deg(wrap_2pi(s.attitude.heading - proj.convergence(p)));
+    pose.yaw = yaw >= 360.0 - 1e-9 ? 0.0 : yaw;  // keep [0, 360) free of rounding to 360
 }
 
 // Smoothed velocity of a leader that only reports positions.

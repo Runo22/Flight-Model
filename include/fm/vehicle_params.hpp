@@ -39,11 +39,13 @@ struct FixedWingParams {
     double mach_critical = 0.75;    // wave drag onset
     double wave_drag = 0.0;         // extra CD0 at Mach 1
 
-    // Takeoff high-lift configuration (flaps/slats)
+    // High-lift configuration (flaps/slats) for takeoff and landing
     double flaps_dcl0 = 0.3;
     double flaps_dcl_max = 0.4;
     double flaps_dcd0 = 0.015;
     double speedbrake_dcd0 = 0.0;   // 0 = no speed brake
+    bool retractable_gear = true;
+    double gear_dcd0 = 0.015;       // extra drag with a retractable gear down
 
     EngineParams engine;
 
@@ -81,7 +83,18 @@ struct FixedWingParams {
     double terrain_lookahead = 20.0;       // s
     double takeoff_climb_height = 450.0;   // m AGL where takeoff mode ends by default
     double flaps_up_height = 150.0;        // m AGL
+    double gear_up_height = 10.0;          // m AGL, gear retraction after lift-off
     double formation_min_separation = 30.0;  // m, minimum distance kept to a leader
+
+    // Approach and landing
+    double glide_slope = 0.0524;           // rad (3 deg)
+    double final_approach_distance = 6000.0;  // m from the aim point to the final approach fix
+    double touchdown_distance = 150.0;     // m from the runway threshold to the aim point
+    double approach_speed_factor = 1.3;    // approach speed = factor * stall speed (flaps)
+    double flare_height = 6.0;             // m wheel height where the flare starts
+    double touchdown_sink_rate = 0.6;      // m/s target sink rate at touchdown
+    double decision_height = 40.0;         // m, approach stability check (go-around)
+    double brake_deceleration = 2.5;       // m/s^2 during the landing roll
 };
 
 struct RotorcraftParams {

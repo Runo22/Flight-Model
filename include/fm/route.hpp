@@ -18,7 +18,15 @@ enum class AltitudeRef {
 enum class EndBehavior {
     ContinueStraight,  // keep the last heading/altitude/speed (Cruise)
     Loiter,            // orbit the last waypoint (fixed-wing) / hover (rotorcraft)
-    Land,              // rotorcraft only: land at the last waypoint; fixed-wing loiters
+    Land,              // rotorcraft: land at the last waypoint;
+                       // fixed-wing: land on Route::runway (loiters when it is not set)
+};
+
+// Takeoff: `start` is where the run begins. Landing: `start` is the threshold the aircraft
+// lands after, `heading` the landing direction. z = runway elevation.
+struct Runway {
+    Vec3 start{};
+    double heading = 0.0;  // rad
 };
 
 struct Waypoint {
@@ -40,6 +48,7 @@ struct Route {
     EndBehavior on_end = EndBehavior::ContinueStraight;
     VerticalProfile vertical = VerticalProfile::Linear;
     double loiter_radius = 0.0;  // m, 0 = derived from turn performance
+    std::optional<Runway> runway;  // fixed-wing landing runway for EndBehavior::Land
 };
 
 struct GoToOptions {
@@ -47,11 +56,6 @@ struct GoToOptions {
     double speed = kUnknown;
     EndBehavior on_arrival = EndBehavior::ContinueStraight;
     VerticalProfile vertical = VerticalProfile::Linear;
-};
-
-struct Runway {
-    Vec3 start{};          // takeoff start point on the centerline; z = runway elevation
-    double heading = 0.0;  // rad
 };
 
 struct TakeoffPlan {

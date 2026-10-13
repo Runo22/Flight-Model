@@ -22,7 +22,8 @@ agent contains its own autopilot.
 | `follow_route(route)` | fly-by/fly-over waypoints, linear altitude profile, loops | same, plus waypoint hold times |
 | `loiter(center, radius)` | orbit | orbit, or hover when radius is 0 |
 | `takeoff(plan)` | runway takeoff: roll, rotation, lift-off, flap retraction, climb-out | vertical takeoff |
-| `land()` | not implemented yet | vertical landing |
+| `land(runway)` | approach to the runway: positioning on the extended centerline, 3 deg glide path, flaps/gear, flare, touchdown, braking; go-around and a new attempt when unstable | fly to the runway point and land vertically (`land()` lands where it is) |
+| route `on_end = Land` | lands on `route.runway` | lands at the last waypoint |
 | `join_formation(slot)` + `set_leader_state()` | formation flight / follow another entity | same |
 
 Altitudes can be absolute or **above terrain** (terrain following). Terrain is only
@@ -183,5 +184,6 @@ handedness.
 
 ## Limitations
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md). Notably: no fixed-wing landing yet, no sideslip
-(coordinated flight), wind is ignored during the ground roll, ISA atmosphere up to 20 km.
+See [`docs/ROADMAP.md`](docs/ROADMAP.md). Notably: no taxiing, no sideslip (coordinated
+flight, the aircraft crabs into crosswind until touchdown), wind is ignored on the ground,
+ISA atmosphere up to 20 km.

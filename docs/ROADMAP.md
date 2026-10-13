@@ -40,15 +40,20 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   dikeyde doğrudan irtifa; yaw için harita kuzeyi–gerçek kuzey düzeltmesi. Flecs'te
   `GeoPose` çıktısı, `TrackedGeoPose` girdisi, `set_geo_origin` / `attach_geo` / `to_local`.
 - **Flecs modülü:** 4.0.5, 4.1.2 ve 4.1.6 ile derlenip test edildi.
-- **Testler:** 28 çekirdek + 8 Flecs senaryo testi; AddressSanitizer/UBSan temiz.
+- **İniş:** pist yaklaşması, süzülüş yolu, pas geçme, flare, teker koyma, frenleme.
+- **Testler:** 31 çekirdek + 8 Flecs senaryo testi; AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
 
 ### Faz 1 — Sabit kanat iniş ve yer hareketleri
-- Yaklaşma (final hattına giriş), süzülüş açısı takibi, flare, teker koyma, frenleme.
-- Pas geçme (go-around) ve iniş pisti tanımı (`Runway` uç noktaları).
-- Yerde taksi: taksi yolu (waypoint listesi) üzerinde düşük hızlı hareket ve dönüş.
-- Yerdeyken rüzgâr etkisi (şu an yok sayılıyor).
+- [x] Yaklaşma: pist ekseni uzantısına konumlanma, final yaklaşma fiksi, 3° süzülüş yolu
+  (alttan yakalama + dikey hız ileri besleme), flap/iniş takımı, yaklaşma hızı 1.3 Vs.
+- [x] Karar yüksekliğinde stabilite kontrolü, pas geçme ve otomatik yeni deneme.
+- [x] Gecikme telafili flare, yumuşak teker koyma (0.4–1.0 m/s), frenleme, park durumu.
+- [x] Rota sonunda iniş (`Route::runway` + `EndBehavior::Land`), inişten sonra tekrar kalkış.
+- [ ] Yerde taksi: taksi yolu (waypoint listesi) üzerinde düşük hızlı hareket ve dönüş.
+- [ ] Yerdeyken rüzgâr etkisi, yan rüzgârda teker koymadan önce crab'dan çıkma (decrab).
+- [ ] Pist uzunluğu ve pist sonu kontrolü (kısa pistte pas geçme / kalkış iptali).
 
 ### Faz 2 — Veri odaklı parametreler
 - Uçak tiplerini JSON'dan okuma (glaze veya nlohmann/json), hot-reload.
@@ -104,7 +109,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 
 ## 6. Bilinen sınırlamalar
 
-- Sabit kanat iniş yok (Faz 1); `land()` sabit kanatta `false` döner.
+- Taksi yok; pistten çıkış/park yeri yok (Faz 1).
 - Yan kayma (sideslip) yok; uçuş her zaman koordineli.
 - Yerdeyken rüzgâr yok sayılır.
 - Atmosfer modeli 20 km'ye kadar (ISA).

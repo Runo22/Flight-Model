@@ -34,7 +34,7 @@ Waypoint waypoint(double x, double y, double z) {
     return w;
 }
 
-// Airliner takes off from a runway, flies a route and continues straight afterwards.
+// Airliner takes off from a runway, flies a route and lands back on the same runway.
 void takeoff_route() {
     InitialConditions ic;
     ic.position = {0, 0, hilly_terrain(0, 0)};
@@ -46,9 +46,11 @@ void takeoff_route() {
     Route r;
     r.waypoints = {waypoint(25000, 0, 3000), waypoint(40000, 20000, 4000),
                    waypoint(20000, 40000, 4000)};
+    r.on_end = EndBehavior::Land;
+    r.runway = Runway{ic.position, ic.heading};
     plan.then = r;
     a.takeoff(plan);
-    for (int i = 0; i < static_cast<int>(900.0 / kDt); ++i) {
+    for (int i = 0; i < static_cast<int>(2400.0 / kDt); ++i) {
         Environment env;
         env.terrain_elevation = hilly_terrain(a.state().position.x, a.state().position.y);
         a.step(kDt, env);

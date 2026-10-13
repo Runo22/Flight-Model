@@ -68,6 +68,17 @@ bool FlightAgent::land() {
     return false;
 }
 
+bool FlightAgent::land(const Runway& runway) {
+    if (auto* fw = fixed_wing()) return fw->land(runway);
+    RotorcraftAgent& rc = *rotorcraft();
+    if (rc.state().on_ground) return false;
+    GoToOptions options;
+    options.altitude_ref = AltitudeRef::Keep;
+    options.on_arrival = EndBehavior::Land;
+    rc.go_to(runway.start, options);
+    return true;
+}
+
 void FlightAgent::join_formation(const FormationSlot& slot) {
     std::visit([&](auto& m) { m.join_formation(slot); }, impl_);
 }

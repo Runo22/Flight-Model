@@ -109,8 +109,10 @@ fm::Waypoint waypoint(flecs::world& world, double lat, double lon, double alt,
 void print(flecs::world& world, int seconds) {
     std::printf("--- t = %d s\n", seconds);
     world.each([](flecs::entity e, const game::Transform& t) {
-        std::printf("%-10s lat %9.5f lon %9.5f alt %7.1f m | roll %6.1f pitch %5.1f yaw %6.1f\n",
-                    e.name().c_str(), t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw);
+        const auto* pose = fm::ecs::compat::try_get<fm::ecs::FlightPose>(e);
+        std::printf("%-10s lat %9.5f lon %9.5f alt %7.1f m | roll %6.1f pitch %5.1f yaw %6.1f | %s\n",
+                    e.name().c_str(), t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw,
+                    pose ? fm::to_string(pose->phase) : "game logic");
     });
 }
 
@@ -122,13 +124,18 @@ int main() {
     fm::ecs::set_geo_origin(world, 41.1, 29.1);  // middle of the play area
     register_bridges(world);
 
-    // 1) A turboprop parked on a runway (true heading 090) gets a route: it takes off first.
+    // 1) A turboprop parked on a runway (true heading 090) gets a route that ends with a
+    //    landing back on the same runway: it takes off, flies the route, positions itself
+    //    on the extended centerline, flies the glide path, flares, lands and brakes.
+    const fm::GeoPoint runway_threshold{41.02, 28.95, game::query_hot(41.02, 28.95)};
     flecs::entity turboprop = spawn_aircraft(world, "Turboprop", fm::presets::regional_turboprop(),
                                              {41.02, 28.95, 0.0, 0.0, 0.0, 90.0}, 0.0, true);
     fm::Route route;
-    route.waypoints = {waypoint(world, 41.10, 29.30, 2500.0),
-                       waypoint(world, 41.30, 29.30, 1000.0, fm::AltitudeRef::AboveTerrain)};
-    route.on_end = fm::EndBehavior::Loiter;
+    route.waypoints = {waypoint(world, 41.08, 29.10, 1500.0),
+                       waypoint(world, 41.12, 28.95, 600.0, fm::AltitudeRef::AboveTerrain)};
+    route.on_end = fm::EndBehavior::Land;
+    route.runway = fm::Runway{fm::ecs::to_local(world, runway_threshold),
+                              fm::ecs::local_heading(world, 90.0, runway_threshold)};
     fm::ecs::agent(turboprop)->follow_route(route);
 
     // 2) Three jets: a lead flying east, two wingmen in right echelon.
@@ -153,7 +160,7 @@ int main() {
     behind.offset.z = 25.0;
     fm::ecs::follow(drone, truck, behind);
 
-    for (int frame = 0; frame <= 60 * 180; ++frame) {
+    for (int frame = 0; frame <= 60 * 900; ++frame) {
         const int seconds = frame / 60;
         // At t = 60 s the lead turns to true course 180 at 2500 m; the wingmen follow.
         if (frame == 60 * 60) {
@@ -162,7 +169,7 @@ int main() {
             fm::ecs::agent(lead)->hold(course, 2500.0, 220.0);
         }
         world.progress(1.0f / 60.0f);
-        if (frame % (60 * 30) == 0) print(world, seconds);
+        if (frame % (60 * 90) == 0) print(world, seconds);
     }
     return 0;
 }

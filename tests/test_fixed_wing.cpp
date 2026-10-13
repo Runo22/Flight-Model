@@ -221,3 +221,97 @@ TEST_CASE("fixed-wing: losing the leader falls back to straight flight") {
     simulate(a, 3.0);  // no more leader updates
     CHECK(a.mode() == FlightMode::Cruise);
 }
+
+// --- Approach and landing ---------------------------------------------------------------
+
+namespace {
+struct LandingResult {
+    bool landed = false;
+    bool crashed = false;
+    bool went_around = false;
+    double touchdown_x = 0.0;
+    double touchdown_sink = 0.0;
+    double stop_x = 0.0;
+};
+
+LandingResult fly_landing(FixedWingAgent& a, double seconds, double runway_elevation,
+                          const Vec3& wind = {}) {
+    LandingResult r;
+    double last_vs = 0.0;
+    bool airborne = !a.state().on_ground;
+    simulate(a, seconds, [runway_elevation](double, double) { return runway_elevation; }, wind,
+             [&](const FlightState& s, double) {
+                 r.went_around = r.went_around || s.phase == FlightPhase::GoAround;
+                 r.crashed = r.crashed || s.phase == FlightPhase::TerrainContact;
+                 if (airborne && s.on_ground) {
+                     r.touchdown_x = s.position.x;
+                     r.touchdown_sink = -last_vs;
+                 }
+                 airborne = !s.on_ground;
+                 last_vs = s.vertical_speed;
+                 if (s.phase == FlightPhase::Landed && !r.landed) {
+                     r.landed = true;
+                     r.stop_x = s.position.x;
+                 }
+             });
+    return r;
+}
+}  // namespace
+
+TEST_CASE("fixed-wing: approach and landing for every preset") {
+    for (const FixedWingParams& p : {presets::fast_jet(), presets::airliner_jet(),
+                                     presets::regional_turboprop(), presets::light_propeller(),
+                                     presets::fixed_wing_uav()}) {
+        // Start abeam the runway on the wrong side, flying the opposite direction.
+        const double k = p.final_approach_distance / 12000.0;
+        FixedWingAgent a(p, airborne({20000 * k, 12000 * k, 200 + 2500 * k}, 270.0, p.cruise_speed));
+        CHECK(a.land(Runway{{0, 0, 200}, deg2rad(90.0)}));
+        CHECK(a.mode() == FlightMode::Land);
+        const LandingResult r = fly_landing(a, 1500.0, 200.0, {-4.0, 3.0, 0.0});
+        CHECK(r.landed);
+        CHECK(!r.crashed);
+        // Touchdown in the touchdown zone (aim point plus the flare float), softly.
+        CHECK(r.touchdown_x > 0.5 * p.touchdown_distance);
+        CHECK(r.touchdown_x < 2.0 * p.touchdown_distance + 50.0);
+        CHECK(r.touchdown_sink < 1.5);
+        CHECK(r.stop_x > r.touchdown_x);
+        CHECK_NEAR(a.state().position.y, 0.0, 5.0);  // stopped on the centerline
+        CHECK(a.state().on_ground);
+        CHECK(a.mode() == FlightMode::Cruise);       // parked
+        CHECK(a.state().gear_down);
+    }
+}
+
+TEST_CASE("fixed-wing: unstable approach goes around and lands on the next attempt") {
+    const FixedWingParams p = presets::regional_turboprop();
+    // Lined up on final but 1.5 km above the runway at 7 km: far above the glide path,
+    // cannot get down in time and must not land long.
+    FixedWingAgent a(p, airborne({-7000, 0, 200 + 1500}, 90.0, 80.0));
+    a.land(Runway{{0, 0, 200}, deg2rad(90.0)});
+    const LandingResult r = fly_landing(a, 1500.0, 200.0);
+    CHECK(r.went_around);
+    CHECK(r.landed);
+    CHECK(!r.crashed);
+}
+
+TEST_CASE("fixed-wing: route ending with a landing, then another takeoff") {
+    const FixedWingParams p = presets::light_propeller();
+    FixedWingAgent a(p, airborne({0, 0, 900}, 0.0, p.cruise_speed));
+    Route r;
+    Waypoint w;
+    w.position = {3000, 6000, 900};
+    r.waypoints.push_back(w);
+    r.on_end = EndBehavior::Land;
+    r.runway = Runway{{5000, 0, 100}, deg2rad(180.0)};  // runway heading south
+    a.follow_route(r);
+    const LandingResult result = fly_landing(a, 900.0, 100.0);
+    CHECK(result.landed);
+    CHECK(a.state().on_ground);
+    CHECK_NEAR(a.state().position.x, 5000.0, 5.0);
+    CHECK(a.state().position.y < -p.touchdown_distance);
+    CHECK(angle_diff_deg(a.state().attitude.heading, deg2rad(180.0)) < 1.0);
+    // The parked aircraft can take off again.
+    CHECK(a.takeoff({}));
+    simulate(a, 120.0, [](double, double) { return 100.0; });
+    CHECK(!a.state().on_ground);
+}
