@@ -49,6 +49,7 @@ adapters/flecs/             Flecs module (the only code that includes flecs.h)
 tests/                      core and Flecs tests (no external test framework)
 examples/                   headless CSV scenarios, Flecs integration example
 docs/ROADMAP.md             roadmap (Turkish)
+docs/EXTENDING.md           adding a new vehicle type (Turkish)
 ```
 
 Every agent runs the same pipeline each step:
@@ -287,8 +288,10 @@ handedness.
 * **Model at runtime** (e.g. level of detail): `FlightAgent::snapshot()` returns initial
   conditions reproducing the current state; build the new agent from it and re-issue the
   command.
-* **New model types** implement the `fm::FlightModel` concept (see
-  [`flight_agent.hpp`](include/fm/flight_agent.hpp)) and join the variant.
+* **New vehicle types** (helicopter, balloon, glider, VTOL ...): a params struct, an agent
+  class implementing the `fm::FlightModel` concept and one line in `fm::AgentVariant`; the
+  Flecs module needs no change. Step-by-step guide with a complete worked example:
+  [`docs/EXTENDING.md`](docs/EXTENDING.md) (Turkish).
 
 ## Examples
 

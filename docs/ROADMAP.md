@@ -50,7 +50,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   eder (`FlightAgent::relocate`, Flecs'te otomatik algılama, `bind_geo_transform`).
   Küçük düzeltmeler görevi bozmaz; büyük sıçramalarda rota bacağı, düz uçuş hattı,
   yaklaşma yeni konumdan yeniden kurulur; yer/hava geçişleri ve saçma değerler ele alınır.
-- **Testler:** 46 çekirdek + 16 Flecs + 2 plugin testi; AddressSanitizer/UBSan temiz.
+- **Testler:** 51 çekirdek + 19 Flecs + 2 plugin testi; AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
 
@@ -106,7 +106,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 |---|---|
 | Farklı uçak tipi | Farklı parametre seti (preset veya kendi `FixedWingParams`/`RotorcraftParams`); kod değişmez. |
 | Çalışırken model/parametre değişimi (LOD) | `FlightAgent::snapshot()` → yeni ajan → komutu tekrar ver. |
-| Yeni model tipi | `FlightModel` concept'ini sağlayan sınıf yazılır, `FlightAgent` içindeki `std::variant`'a eklenir. |
+| Yeni model tipi | `FlightModel` concept'ini sağlayan sınıf yazılır, `AgentVariant`'a eklenir; adım adım rehber: [`EXTENDING.md`](EXTENDING.md). |
 
 ## 5. Flecs güncelleme prosedürü
 
