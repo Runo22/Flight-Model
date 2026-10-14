@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.21)
 project(flight_model VERSION 0.1.0 LANGUAGES C CXX)
 
 option(FM_BUILD_FLECS_MODULE "Build the Flecs adapter module" ON)
-option(FM_FETCH_FLECS "Fetch Flecs when no flecs target or package is available" ON)
+# Fetching is only allowed for standalone builds: inside a game the module must use the
+# game's Flecs (FM_FLECS_TARGET), never a private copy.
+option(FM_FETCH_FLECS "Fetch Flecs when no flecs target or package is available"
+       ${PROJECT_IS_TOP_LEVEL})
 option(FM_BUILD_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
 option(FM_BUILD_EXAMPLES "Build the examples" ${PROJECT_IS_TOP_LEVEL})
 set(FM_FLECS_TAG "v4.1.2" CACHE STRING "Flecs git tag fetched when FM_FETCH_FLECS is ON")

@@ -190,6 +190,15 @@ flecs::entity load(flecs::world& world) {
                      "instead of a static Flecs; see README, \"Plugin DLLs\".\n");
         return flecs::entity();
     }
+    const compat::RuntimeVersion v = compat::runtime_version();
+    if (!v.matches) {
+        std::fprintf(stderr,
+                     "fm::ecs::load: compiled against Flecs %d.%d.%d but the runtime is "
+                     "%d.%d.%d; rebuild against the host's Flecs headers and library.\n",
+                     FLECS_VERSION_MAJOR, FLECS_VERSION_MINOR, FLECS_VERSION_PATCH, v.major,
+                     v.minor, v.patch);
+        return flecs::entity();
+    }
     return world.import<FlightModule>();
 }
 

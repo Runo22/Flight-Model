@@ -225,6 +225,8 @@ TEST_CASE("flecs geo: drone follows a vehicle given in latitude/longitude") {
 // --- Plugin lifecycle -------------------------------------------------------------------
 
 TEST_CASE("flecs: unload removes the module and load works again") {
+    CHECK(ecs::compat::runtime_initialized());
+    CHECK(ecs::compat::runtime_version().matches);
     flecs::world world;
     const flecs::entity module = ecs::load(world);
     CHECK(module.is_valid());

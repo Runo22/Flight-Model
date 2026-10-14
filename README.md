@@ -73,13 +73,16 @@ Options:
 | Option | Default | |
 |---|---|---|
 | `FM_BUILD_FLECS_MODULE` | `ON` | build `fm::flecs` |
-| `FM_FETCH_FLECS` | `ON` | fetch Flecs (`FM_FLECS_TAG`, default `v4.1.2`) when no `flecs::flecs_static` / `flecs::flecs` target or package exists |
+| `FM_FLECS_TARGET` | empty | Flecs target to link, e.g. your project's `flecs_library`; must be the Flecs the host uses |
+| `FM_FETCH_FLECS` | top-level only | fetch Flecs (`FM_FLECS_TAG`, default `v4.1.2`) when no Flecs target exists; never when added with `add_subdirectory` |
+| `FM_FLECS_SHARED` | `OFF` | build fetched Flecs as a shared library |
 | `FM_BUILD_TESTS`, `FM_BUILD_EXAMPLES` | top-level only | |
 
-As a subdirectory of a game that already builds Flecs, the existing Flecs target is used:
+As a subdirectory of a game that already has Flecs, name its Flecs target (a target
+called `flecs::flecs` or `flecs::flecs_static` is picked up automatically):
 
 ```cmake
-add_subdirectory(external/flecs)        # your Flecs
+set(FM_FLECS_TARGET flecs_library CACHE STRING "" FORCE)   # your Flecs target
 add_subdirectory(external/flight-model)
 target_link_libraries(game PRIVATE fm::flecs)   # or fm::core without Flecs
 ```
@@ -162,25 +165,36 @@ cmake -S . -B build -DFM_FLECS_TAG=v4.x.y
 When the module lives in a plugin that the game loads and unloads:
 
 1. **One Flecs runtime.** The plugin must link the Flecs library the host uses
-   (`flecs.dll` / `libflecs.so`), the same version, and on Windows the same C runtime
-   (`/MD`). A static copy of Flecs inside the plugin has its own, uninitialized OS API and
-   its own component-id counter: the first allocation crashes (`ecs_os_strdup` on Windows)
-   and component ids get mixed up. Point the build at the host's Flecs:
+   (`flecs.dll` / `libflecs.so`), built from exactly the same version (Flecs has no ABI
+   guarantee even between patch releases) and on Windows with the same C runtime (`/MD`).
+   A static copy of Flecs inside the plugin has its own, uninitialized OS API and its own
+   component-id counter: the first allocation crashes (`ecs_os_strdup` on Windows) and
+   component ids get mixed up.
+
+   When this project is added with `add_subdirectory`, it never downloads Flecs: tell it
+   which Flecs target your project already links, before adding it:
 
    ```cmake
-   add_library(host_flecs SHARED IMPORTED)            # the game's prebuilt Flecs
-   set_target_properties(host_flecs PROPERTIES
-     IMPORTED_LOCATION "${GAME_SDK}/bin/flecs.dll"
-     IMPORTED_IMPLIB   "${GAME_SDK}/lib/flecs.lib"
-     INTERFACE_INCLUDE_DIRECTORIES "${GAME_SDK}/include")
-   set(FM_FLECS_TARGET host_flecs CACHE STRING "" FORCE)
+   # flecs_library: the game's Flecs (flecs.dll + flecs.lib), e.g. an IMPORTED target
+   set(FM_FLECS_TARGET flecs_library CACHE STRING "" FORCE)
    add_subdirectory(flight-model)
    target_link_libraries(my_plugin PRIVATE fm::flecs)
    ```
 
-   (`-DFM_FLECS_SHARED=ON` instead builds the fetched Flecs as a shared library.) Do not
-   define `flecs_STATIC` in the plugin. `fm::ecs::load()` checks the runtime first and
-   refuses to load, with a message, instead of crashing.
+   Without `FM_FLECS_TARGET` (and no `flecs::flecs` / `flecs::flecs_static` target) the
+   configuration stops with an error. If you have no target yet, create one:
+
+   ```cmake
+   add_library(flecs_library SHARED IMPORTED)
+   set_target_properties(flecs_library PROPERTIES
+     IMPORTED_LOCATION "${GAME_SDK}/bin/flecs.dll"
+     IMPORTED_IMPLIB   "${GAME_SDK}/lib/flecs.lib"
+     INTERFACE_INCLUDE_DIRECTORIES "${GAME_SDK}/include")
+   ```
+
+   Do not define `flecs_STATIC` in the plugin. At load time `fm::ecs::load()` refuses (with
+   a message, instead of crashing) when the plugin has its own Flecs copy or was compiled
+   against other Flecs headers than the running library.
 2. **Load** with `fm::ecs::load(world)` instead of `world.import<>()`, and create the
    plugin's own systems in the module scope (`world.set_scope(fm::ecs::module_entity(world))`).
 3. **Unload** with `fm::ecs::unload(world)` before `FreeLibrary` / `dlclose`. It deletes the

@@ -20,7 +20,10 @@ else()
 
   if(NOT TARGET flecs::flecs_static AND NOT TARGET flecs::flecs)
     if(NOT FM_FETCH_FLECS)
-      message(FATAL_ERROR "Flecs not found. Set FM_FLECS_TARGET or enable FM_FETCH_FLECS.")
+      message(FATAL_ERROR
+        "flight_model_flecs: no Flecs target found. Set FM_FLECS_TARGET to the Flecs target "
+        "your project already links (e.g. set(FM_FLECS_TARGET flecs_library CACHE STRING \"\" "
+        "FORCE) before add_subdirectory). A private copy of Flecs inside a plugin crashes.")
     endif()
     include(FetchContent)
     set(FLECS_SHARED ${FM_FLECS_SHARED} CACHE BOOL "" FORCE)
@@ -56,6 +59,7 @@ target_compile_options(flight_model_flecs PRIVATE ${FM_WARNINGS})
 # Linked into plugin shared libraries.
 set_target_properties(flight_model_flecs PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # GCC marks template statics (Flecs component id caches) as unique symbols, which keeps a
-# plugin mapped after dlclose(); plugins must really unload.
-target_compile_options(flight_model_flecs PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fno-gnu-unique>)
+# plugin mapped after dlclose(); plugins must really unload. PUBLIC because the plugin's own
+# sources instantiate the same templates. No effect with MSVC/Clang.
+target_compile_options(flight_model_flecs PUBLIC $<$<CXX_COMPILER_ID:GNU>:-fno-gnu-unique>)
 set(FM_FLECS_LINK ${FM_FLECS_LINK} PARENT_SCOPE)

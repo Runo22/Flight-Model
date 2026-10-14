@@ -60,4 +60,26 @@ inline bool runtime_initialized() {
     return ecs_os_api.malloc_ != nullptr && ecs_os_api.strdup_ != nullptr;
 }
 
+// Flecs version this binary was compiled against (headers) vs. the runtime that executes it
+// (the host's Flecs library). Flecs has no ABI guarantee even between patch releases
+// (e.g. 4.1.6 headers need symbols 4.1.2 does not export), so only an exact match is safe.
+struct RuntimeVersion {
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+    bool matches = false;  // runtime == headers (major.minor.patch)
+};
+
+inline RuntimeVersion runtime_version() {
+    RuntimeVersion v;
+    if (const ecs_build_info_t* info = ecs_get_build_info()) {
+        v.major = info->version_major;
+        v.minor = info->version_minor;
+        v.patch = info->version_patch;
+    }
+    v.matches = v.major == FLECS_VERSION_MAJOR && v.minor == FLECS_VERSION_MINOR &&
+                v.patch == FLECS_VERSION_PATCH;
+    return v;
+}
+
 }  // namespace fm::ecs::compat
