@@ -65,8 +65,15 @@ GeoPoint GeoProjection::to_geo(const Vec3& local) const {
         const double a = dot(dlat, east_), b = dot(dlon, east_);
         const double c = dot(dlat, north_), e = dot(dlon, north_);
         const double det = a * e - b * c;
+        if (!(std::abs(det) > 1.0)) break;  // singular: 90 deg of arc from the origin
         lat += (e * ex - b * ey) / det;
         lon += (a * ey - c * ex) / det;
+    }
+    // The iteration may pass over a pole (|lat| > 90 deg): bring it back to valid ranges.
+    lat = wrap_pi(lat);
+    if (std::abs(lat) > kPi / 2.0) {
+        lat = std::copysign(kPi, lat) - lat;
+        lon += kPi;
     }
     return {rad2deg(lat), rad2deg(wrap_pi(lon)), local.z};
 }

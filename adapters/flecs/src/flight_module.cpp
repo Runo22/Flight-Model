@@ -68,6 +68,11 @@ void publish(const WorldFrame& f, const GeoProjection* proj, FlightController& f
     }
 }
 
+bool valid_geo(const GeoPoint& p) {
+    return std::abs(p.latitude) <= 90.0 && std::isfinite(p.longitude) &&
+           std::isfinite(p.altitude);
+}
+
 // Within a meter of each other on the Earth's surface.
 bool same_place(const GeoPoint& a, const GeoPoint& b) {
     const auto unit = [](const GeoPoint& p) {
@@ -79,8 +84,8 @@ bool same_place(const GeoPoint& a, const GeoPoint& b) {
 }
 
 bool relocate_geo(const GeoProjection& proj, FlightAgent& agent, const GeoPose& g) {
-    if (!(std::abs(g.latitude) <= 90.0) || !std::isfinite(g.longitude)) return false;
     const GeoPoint at{g.latitude, g.longitude, g.altitude};
+    if (!valid_geo(at)) return false;
     const Vec3 local = proj.to_local(at);
     // Points the projection cannot represent (towards the far side of the Earth).
     if (!same_place(proj.to_geo(local), at)) return false;
@@ -347,6 +352,10 @@ const WorldFrame& frame(const flecs::world& world) { return config_of(world).fra
 
 void attach(flecs::entity e, const VehicleParams& params, const InitialConditions& ic,
             const AgentSetup& setup) {
+    if (!is_finite(ic.position) || !std::isfinite(ic.heading)) {
+        std::fprintf(stderr, "fm::ecs::attach: non-finite position or heading, not attached\n");
+        return;
+    }
     const GeoProjection* proj = geo(e.world());
     attach_agent(e, FlightAgent(params, ic),
                  proj ? std::optional<GeoProjection>(*proj) : std::nullopt, setup);
@@ -367,6 +376,11 @@ double heading_from_world_forward(const flecs::world& world, const Vec3& world_f
 }
 
 void set_geo_origin(flecs::world& world, double latitude, double longitude) {
+    if (!valid_geo({latitude, longitude, 0.0})) {
+        std::fprintf(stderr, "fm::ecs::set_geo_origin: invalid origin %g, %g ignored\n",
+                     latitude, longitude);
+        return;
+    }
     world.set<FrameConfig>({WorldFrame::enu(), GeoProjection(latitude, longitude)});
 }
 
@@ -384,6 +398,10 @@ double local_heading(flecs::world& world, double true_heading_deg, const GeoPoin
 
 void attach_geo(flecs::entity e, const VehicleParams& params, const GeoPoint& at, double yaw,
                 double speed, bool on_ground, const AgentSetup& setup) {
+    if (!valid_geo(at) || !std::isfinite(yaw)) {
+        std::fprintf(stderr, "fm::ecs::attach_geo: invalid position or yaw, not attached\n");
+        return;
+    }
     flecs::world world = e.world();
     const GeoProjection proj = ensure_geo(world, at);
     InitialConditions ic;

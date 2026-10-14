@@ -471,3 +471,20 @@ TEST_CASE("flecs: followers of a deleted leader fly on by themselves") {
     run(world, 10.0);
     CHECK(!pose_of(wing).on_ground);
 }
+
+TEST_CASE("flecs: invalid coordinates attach nothing") {
+    flecs::world world;
+    ecs::load(world);
+    ecs::set_geo_origin(world, 95.0, 29.0);
+    CHECK(ecs::geo(world) == nullptr);
+    flecs::entity a = world.entity();
+    ecs::attach(a, presets::multirotor(), {{std::nan(""), 0.0, 50.0}, 0.0, 0.0, false});
+    CHECK(ecs::agent(a) == nullptr);
+    ecs::attach_geo(a, presets::multirotor(), {41.0, std::nan(""), 50.0}, 0.0, 0.0, false);
+    CHECK(ecs::agent(a) == nullptr);
+    CHECK(ecs::geo(world) == nullptr);
+    ecs::attach_geo(a, presets::multirotor(), {41.0, 29.0, 50.0}, 0.0, 0.0, false);
+    CHECK(ecs::agent(a) != nullptr);
+    run(world, 1.0);
+    CHECK_NEAR(geo_pose_of(a).latitude, 41.0, 1e-6);
+}

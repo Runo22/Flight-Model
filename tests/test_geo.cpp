@@ -23,6 +23,18 @@ TEST_CASE("geo: local <-> geodetic round trip up to 500 km") {
     }
 }
 
+TEST_CASE("geo: points beyond the projection still give valid coordinates") {
+    const GeoProjection proj(41.0, 29.0);
+    for (const Vec3& far : {Vec3{7.0e6, 0, 0}, Vec3{1.0e7, 0, 0}, Vec3{-2.0e7, 3.0e6, 0},
+                            Vec3{0, 1.5e7, 0}, Vec3{6.0e6, 6.0e6, 100}}) {
+        const GeoPoint g = proj.to_geo(far);
+        CHECK(std::isfinite(g.latitude) && std::isfinite(g.longitude));
+        CHECK(std::abs(g.latitude) <= 90.0);
+        CHECK(std::abs(g.longitude) <= 180.0);
+        CHECK_NEAR(g.altitude, far.z, 1e-12);
+    }
+}
+
 TEST_CASE("geo: distances, altitude and origin") {
     const GeoProjection proj(41.0, 29.0);
     const Vec3 o = proj.to_local({41.0, 29.0, 250.0});

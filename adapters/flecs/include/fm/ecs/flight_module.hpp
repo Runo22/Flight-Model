@@ -166,6 +166,7 @@ flecs::entity module_entity(const flecs::world& world);
 // attach*() are safe to call from systems (deferred mode). Their optional `setup` callback
 // gets the new agent before it is stored, so commands can be issued right away even when
 // the component is not visible yet. agent() and follow() need the FlightController to exist.
+// Invalid coordinates (NaN, latitude beyond 90) attach nothing and print a message.
 
 using AgentSetup = std::function<void(FlightAgent&)>;
 

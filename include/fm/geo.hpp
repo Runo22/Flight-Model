@@ -29,6 +29,8 @@ public:
     double origin_longitude() const { return rad2deg(lon0_); }
 
     Vec3 to_local(const GeoPoint& p) const;
+    // Exact up to about 6000 km from the origin. Farther points are not reliably
+    // representable by the tangent plane; they still give a valid latitude/longitude.
     GeoPoint to_geo(const Vec3& local) const;
 
     // Angle from grid north to true north at a point, clockwise positive (rad).
