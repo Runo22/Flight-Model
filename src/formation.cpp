@@ -4,6 +4,10 @@
 
 namespace fm {
 
+namespace {
+constexpr double kMaxTurnRate = 3.0;  // rad/s, above every vehicle's turn and yaw rate
+}  // namespace
+
 namespace formation {
 
 FormationSlot echelon_right(int index, double spacing) {
@@ -49,7 +53,12 @@ SlotReference LeaderTracker::update(const LeaderState& leader, const FormationSl
         initialized_ = true;
     } else if (dt > 0.0) {
         const double raw_rate = wrap_pi(heading - heading_) / dt;
-        turn_rate_ = lag(turn_rate_, raw_rate, 1.0, dt);  // smooth noisy host data
+        // Faster than any vehicle turns: the leader was rotated by the host, not turning.
+        if (std::abs(raw_rate) > kMaxTurnRate) {
+            turn_rate_ = 0.0;
+        } else {
+            turn_rate_ = lag(turn_rate_, raw_rate, 1.0, dt);  // smooth noisy host data
+        }
         heading_ = heading;
     }
 

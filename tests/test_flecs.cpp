@@ -431,3 +431,24 @@ TEST_CASE("flecs geo: bind_geo_transform takes over moves made by the game") {
     CHECK_NEAR(transform().lat, before.lat, 1e-3);
     CHECK(ecs::agent(plane)->mode() == FlightMode::Cruise);
 }
+
+TEST_CASE("flecs: a teleported leader does not fling its followers") {
+    flecs::world world = make_world(WorldFrame::enu());
+    flecs::entity car = world.entity("car").set<ecs::TrackedPose>({{0, 0, 0}});
+    flecs::entity drone = world.entity("drone");
+    ecs::attach(drone, presets::multirotor(), {{0, -10, 15}, 0.0, 0.0, false});
+    FormationSlot slot = formation::trail(0, 10.0);
+    slot.offset.z = 15.0;
+    CHECK(ecs::follow(drone, car, slot));
+    Vec3 car_pos{};
+    double max_estimate = 0.0;
+    for (int i = 0; i < static_cast<int>(40.0 / kDt); ++i) {
+        car_pos.y += 5.0 * kDt;  // north at 5 m/s
+        if (i == static_cast<int>(20.0 / kDt)) car_pos.x += 3000.0;  // the game moves the car
+        car.set<ecs::TrackedPose>({car_pos});
+        world.progress(kDt);
+        const Vec3 v = ecs::compat::try_get<ecs::FollowLeader>(drone)->velocity;
+        max_estimate = std::max(max_estimate, v.length());
+    }
+    CHECK(max_estimate < 6.0);  // the jump is not taken for speed
+}

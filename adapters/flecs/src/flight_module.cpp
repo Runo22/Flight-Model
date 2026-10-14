@@ -9,6 +9,7 @@ namespace fm::ecs {
 namespace {
 
 constexpr double kLeaderVelocityTau = 0.3;  // s, smoothing of estimated leader velocity
+constexpr double kMaxLeaderSpeed = 1500.0;  // m/s, faster position changes are jumps
 
 const FrameConfig& config_or_default(const FrameConfig* config) {
     static const FrameConfig default_config{};
@@ -121,8 +122,11 @@ void take_over_moves(const WorldFrame& f, const GeoProjection* proj, FlightContr
 Vec3 estimate_velocity(FollowLeader& follow, const Vec3& position, double dt) {
     if (follow.has_last_position && dt > 0.0) {
         const Vec3 raw = (position - follow.last_position) / dt;
-        const double k = 1.0 - std::exp(-dt / kLeaderVelocityTau);
-        follow.velocity += (raw - follow.velocity) * k;
+        // Faster than anything flies: the game moved the leader. Keep the estimate.
+        if (raw.length() <= kMaxLeaderSpeed) {
+            const double k = 1.0 - std::exp(-dt / kLeaderVelocityTau);
+            follow.velocity += (raw - follow.velocity) * k;
+        }
     }
     follow.last_position = position;
     follow.has_last_position = true;

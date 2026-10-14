@@ -81,3 +81,15 @@ TEST_CASE("robustness: a non-finite leader update is skipped") {
     CHECK(finite_state(a.state()));
     CHECK(a.mode() == FlightMode::Formation);
 }
+
+TEST_CASE("robustness: a leader heading jump is not taken for a turn") {
+    LeaderTracker tracker;
+    const FormationSlot slot = formation::echelon_right(0, 50.0);
+    double max_rate = 0.0;
+    for (int i = 0; i < 120; ++i) {
+        const double heading = i < 60 ? 0.0 : deg2rad(120.0);  // rotated by the game
+        const SlotReference ref = tracker.update({{0, 0, 1000}, {0, 50, 0}, heading, true}, slot, 1.0 / 60.0);
+        max_rate = std::max(max_rate, std::abs(ref.turn_rate));
+    }
+    CHECK(max_rate < 0.01);
+}
