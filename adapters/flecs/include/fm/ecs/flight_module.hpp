@@ -214,7 +214,8 @@ void attach_geo(flecs::entity e, const VehicleParams& params, const GeoPoint& at
 FlightAgent* agent(flecs::entity e);
 
 // Make `follower` keep `slot` relative to `leader` (an entity with a FlightController or a
-// TrackedPose). Returns false when the follower has no agent or is on the ground.
+// TrackedPose). Returns false when the follower has no agent, is on the ground or is the
+// leader itself. When the leader is deleted, the follower flies on alone (cruise).
 bool follow(flecs::entity follower, flecs::entity leader, const FormationSlot& slot);
 // Ends formation flight; the follower continues straight ahead.
 void stop_following(flecs::entity follower);

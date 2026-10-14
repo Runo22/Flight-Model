@@ -224,6 +224,13 @@ FlightModule::FlightModule(flecs::world& world) {
                 auto controller = it.field<FlightController>(1);
                 for (auto i : it) {
                     FlightController& fc = controller[i];
+                    if (!follow[i].leader.is_alive()) {
+                        // The leader was deleted: end the relation, fly on alone.
+                        it.entity(i).remove<FollowLeader>();
+                        if (fc.agent && fc.agent->mode() == FlightMode::Formation)
+                            fc.agent->cruise();
+                        continue;
+                    }
                     if (!fc.agent || fc.agent->mode() != FlightMode::Formation) continue;
                     if (auto leader = leader_state(cfg, follow[i], dt))
                         fc.agent->set_leader_state(*leader);
@@ -394,7 +401,7 @@ FlightAgent* agent(flecs::entity e) {
 
 bool follow(flecs::entity follower, flecs::entity leader, const FormationSlot& slot) {
     FlightAgent* a = agent(follower);
-    if (!a || !leader.is_alive()) return false;
+    if (!a || !leader.is_alive() || leader == follower) return false;
     a->join_formation(slot);
     if (a->mode() != FlightMode::Formation) return false;
     FollowLeader relation;

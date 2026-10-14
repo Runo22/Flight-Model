@@ -452,3 +452,22 @@ TEST_CASE("flecs: a teleported leader does not fling its followers") {
     }
     CHECK(max_estimate < 6.0);  // the jump is not taken for speed
 }
+
+TEST_CASE("flecs: followers of a deleted leader fly on by themselves") {
+    flecs::world world = make_world(WorldFrame::enu());
+    const FixedWingParams p = presets::light_propeller();
+    flecs::entity lead = world.entity("lead");
+    flecs::entity wing = world.entity("wing");
+    ecs::attach(lead, p, {{0, 0, 1000}, 0.0, 50.0, false});
+    ecs::attach(wing, p, {{60, -60, 1000}, 0.0, 50.0, false});
+    CHECK(!ecs::follow(wing, wing, formation::trail(0, 50.0)));  // not itself
+    CHECK(ecs::follow(wing, lead, formation::echelon_right(0, 60.0)));
+    run(world, 10.0);
+    lead.destruct();
+    world.progress(kDt);
+    world.progress(kDt);
+    CHECK(!wing.has<ecs::FollowLeader>());
+    CHECK(ecs::agent(wing)->mode() == FlightMode::Cruise);
+    run(world, 10.0);
+    CHECK(!pose_of(wing).on_ground);
+}
