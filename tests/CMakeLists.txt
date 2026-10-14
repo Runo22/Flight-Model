@@ -4,6 +4,7 @@ add_executable(fm_tests
   test_fixed_wing.cpp
   test_geo.cpp
   test_relocation.cpp
+  test_robustness.cpp
   test_rotorcraft.cpp
 )
 target_link_libraries(fm_tests PRIVATE fm::core)

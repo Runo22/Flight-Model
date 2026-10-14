@@ -91,6 +91,9 @@ public:
     VehicleKind kind() const;
 
     // --- Commands (see the concrete agents for details) ------------------------------
+    // Commands with non-finite positions, courses or altitudes are ignored (takeoff/land
+    // return false); NaN speeds keep the current speed. Bad step inputs (NaN wind, infinite
+    // terrain, non-finite dt) are ignored too, so host data never poisons the state.
     void cruise();
     void hold(double course, double altitude, double speed,
               AltitudeRef altitude_ref = AltitudeRef::Absolute);

@@ -79,7 +79,7 @@ void RotorcraftAgent::hold(double course, double altitude, double speed, Altitud
 }
 
 void RotorcraftAgent::set_speed(double speed) {
-    if (!std::isnan(speed) && speed > 0.0) speed_target_ = std::min(speed, p_.max_speed);
+    if (std::isfinite(speed) && speed > 0.0) speed_target_ = std::min(speed, p_.max_speed);
 }
 
 void RotorcraftAgent::hover() {
@@ -253,8 +253,9 @@ bool RotorcraftAgent::relocate(const Vec3& position, double heading) {
 
 // --- Simulation -----------------------------------------------------------------------
 
-void RotorcraftAgent::step(double dt, const Environment& env) {
-    if (!(dt > 0.0)) return;
+void RotorcraftAgent::step(double dt, const Environment& input) {
+    if (!(dt > 0.0) || !std::isfinite(dt)) return;
+    const Environment env = sanitized(input);  // bad host data must not poison the state
     wind_ = env.wind;
     terrain_.update(position_.xy(), env.terrain_elevation);
     if (relocation_) {

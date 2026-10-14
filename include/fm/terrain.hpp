@@ -16,7 +16,7 @@ public:
     explicit TerrainMonitor(double sample_spacing = 10.0) : spacing_(sample_spacing) {}
 
     void reset();
-    // NaN elevations are ignored (terrain unknown at this position).
+    // Non-finite elevations are ignored (terrain unknown at this position).
     void update(const Vec2& position, double terrain_elevation);
 
     bool valid() const { return valid_; }

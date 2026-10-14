@@ -19,6 +19,15 @@ struct Environment {
     double temperature_offset = 0.0; // ISA deviation, K
 };
 
+// `env` with unusable values replaced: non-finite wind or temperature offset by calm ISA
+// air, a non-finite terrain elevation by "unknown".
+inline Environment sanitized(Environment env) {
+    if (!std::isfinite(env.terrain_elevation)) env.terrain_elevation = kUnknown;
+    if (!is_finite(env.wind)) env.wind = {};
+    if (!std::isfinite(env.temperature_offset)) env.temperature_offset = 0.0;
+    return env;
+}
+
 enum class FlightMode {
     Cruise,   // no target: straight and level on the held heading/altitude/speed
     GoTo,     // fly to a point

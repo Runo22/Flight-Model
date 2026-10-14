@@ -64,6 +64,11 @@ struct Vec3 {
     constexpr Vec2 xy() const { return {x, y}; }
 };
 
+inline bool is_finite(const Vec2& v) { return std::isfinite(v.x) && std::isfinite(v.y); }
+inline bool is_finite(const Vec3& v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
 constexpr Vec3 operator*(double s, const Vec3& v) { return v * s; }
 constexpr double dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 constexpr Vec3 cross(const Vec3& a, const Vec3& b) {

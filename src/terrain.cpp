@@ -20,7 +20,7 @@ void TerrainMonitor::update(const Vec2& position, double terrain_elevation) {
     last_position_ = position;
     has_position_ = true;
 
-    if (std::isnan(terrain_elevation)) return;
+    if (!std::isfinite(terrain_elevation)) return;
     current_ = terrain_elevation;
     valid_ = true;
 

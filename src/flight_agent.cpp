@@ -15,6 +15,25 @@ AgentVariant make_impl(const VehicleParams& params, const InitialConditions& ic)
         },
         params);
 }
+
+// Commands with non-finite values are ignored: they would poison the state for good.
+// NaN stays allowed where it means "keep" or "default" (speeds, radii, headings of leaders).
+bool usable_altitude(double z, AltitudeRef ref) {
+    return ref == AltitudeRef::Keep || std::isfinite(z);
+}
+bool usable(const Waypoint& w) {
+    return is_finite(w.position.xy()) && usable_altitude(w.position.z, w.altitude_ref);
+}
+bool usable(const Runway& r) { return is_finite(r.start) && std::isfinite(r.heading); }
+bool usable(const Route& r) {
+    for (const Waypoint& w : r.waypoints)
+        if (!usable(w)) return false;
+    return !std::isinf(r.loiter_radius) && (!r.runway || usable(*r.runway));
+}
+bool usable(const TakeoffPlan& p) {
+    return !std::isinf(p.climb_height) && (!p.runway || usable(*p.runway)) &&
+           (!p.then || usable(*p.then));
+}
 }  // namespace
 
 FlightAgent::FlightAgent(const VehicleParams& params, const InitialConditions& ic)
@@ -29,6 +48,7 @@ void FlightAgent::cruise() {
 }
 
 void FlightAgent::hold(double course, double altitude, double speed, AltitudeRef altitude_ref) {
+    if (!std::isfinite(course) || !usable_altitude(altitude, altitude_ref)) return;
     std::visit([&](auto& m) { m.hold(course, altitude, speed, altitude_ref); }, impl_);
 }
 
@@ -37,19 +57,24 @@ void FlightAgent::set_speed(double speed) {
 }
 
 void FlightAgent::go_to(const Vec3& point, const GoToOptions& options) {
+    if (!is_finite(point.xy()) || !usable_altitude(point.z, options.altitude_ref)) return;
     std::visit([&](auto& m) { m.go_to(point, options); }, impl_);
 }
 
 void FlightAgent::follow_route(Route route) {
+    if (!usable(route)) return;
     std::visit([&](auto& m) { m.follow_route(std::move(route)); }, impl_);
 }
 
 void FlightAgent::loiter(const Vec3& center, double radius, bool clockwise,
                          AltitudeRef altitude_ref) {
+    if (!is_finite(center.xy()) || !usable_altitude(center.z, altitude_ref) || std::isinf(radius))
+        return;
     std::visit([&](auto& m) { m.loiter(center, radius, clockwise, altitude_ref); }, impl_);
 }
 
 bool FlightAgent::takeoff(const TakeoffPlan& plan) {
+    if (!usable(plan)) return false;
     return std::visit([&](auto& m) { return m.takeoff(plan); }, impl_);
 }
 
@@ -62,15 +87,21 @@ bool FlightAgent::land() {
 }
 
 bool FlightAgent::land(const Runway& runway) {
+    if (!usable(runway)) return false;
     return std::visit([&](auto& m) { return m.land(runway); }, impl_);
 }
 
 void FlightAgent::join_formation(const FormationSlot& slot) {
+    if (!is_finite(slot.offset) || std::isinf(slot.min_separation)) return;
     std::visit([&](auto& m) { m.join_formation(slot); }, impl_);
 }
 
 void FlightAgent::set_leader_state(const LeaderState& leader) {
-    std::visit([&](auto& m) { m.set_leader_state(leader); }, impl_);
+    if (!is_finite(leader.position)) return;  // no update: followers time out if it lasts
+    LeaderState l = leader;
+    if (!is_finite(l.velocity)) l.velocity = {};
+    if (std::isinf(l.heading)) l.heading = kUnknown;
+    std::visit([&](auto& m) { m.set_leader_state(l); }, impl_);
 }
 
 bool FlightAgent::relocate(const Vec3& position, double heading) {

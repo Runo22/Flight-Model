@@ -79,7 +79,7 @@ void FixedWingAgent::hold_course(double course, const Vec2& anchor, double altit
 }
 
 void FixedWingAgent::set_speed(double speed) {
-    if (!std::isnan(speed) && speed > 0.0) speed_target_ = speed;
+    if (std::isfinite(speed) && speed > 0.0) speed_target_ = speed;
 }
 
 void FixedWingAgent::go_to(const Vec3& point, const GoToOptions& options) {
@@ -236,8 +236,9 @@ bool FixedWingAgent::relocate(const Vec3& position, double heading) {
 
 // --- Simulation -----------------------------------------------------------------------
 
-void FixedWingAgent::step(double dt, const Environment& env) {
-    if (!(dt > 0.0)) return;
+void FixedWingAgent::step(double dt, const Environment& input) {
+    if (!(dt > 0.0) || !std::isfinite(dt)) return;
+    const Environment env = sanitized(input);  // bad host data must not poison the state
     wind_ = env.wind;
     terrain_.update(position_.xy(), env.terrain_elevation);
     if (relocation_) {
