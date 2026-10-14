@@ -120,6 +120,20 @@ Per frame:
 * Systems run in `OnUpdate`: `FollowSystem` (single threaded) then `FlightSystem`
   (multi-thread safe).
 
+### Pausing
+
+The flight systems can be paused while the rest of the world keeps running, e.g. from an
+observer on the game's own pause state:
+
+```cpp
+fm::ecs::set_paused(world, true);   // all agents; fm::ecs::is_paused(world)
+fm::ecs::pause(entity);             // one agent (fm::ecs::Paused tag); resume(entity)
+fm::ecs::set_max_step(world, 0.25); // longest simulated time per frame (hitches)
+```
+
+A paused agent keeps its full state and continues where it stopped; the paused time is
+not simulated. Paused leaders report zero velocity to their followers.
+
 ### Geodetic worlds (latitude / longitude / altitude)
 
 When the game's transform is geodetic, set a projection origin near the middle of the play
