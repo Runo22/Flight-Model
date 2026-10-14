@@ -336,3 +336,98 @@ TEST_CASE("flecs: long frames are clamped to max_step") {
     world.progress(5.0f);  // e.g. a loading hitch
     CHECK(pose_of(plane).position.y < 50.0 * 0.1 * 1.2);
 }
+
+// --- The game moves entities ----------------------------------------------------------------
+
+TEST_CASE("flecs: the game moves an entity by writing FlightPose") {
+    flecs::world world = make_world(WorldFrame::unity());  // +X east, +Y up, +Z north
+    flecs::entity plane = world.entity();
+    ecs::attach_at(plane, presets::light_propeller(), {0, 800, 0}, 0.0, 50.0, false);
+    run(world, 5.0);
+    ecs::FlightPose moved = pose_of(plane);
+    moved.position = {5000, 1200, 3000};
+    moved.heading = 90.0;  // now facing east
+    plane.set<ecs::FlightPose>(moved);
+    run(world, 20.0);
+    const ecs::FlightPose& p = pose_of(plane);
+    CHECK(p.position.x > 5000.0 + 800.0);  // continued east from the new place
+    CHECK_NEAR(p.position.z, 3000.0, 20.0);
+    CHECK_NEAR(p.position.y, 1200.0, 10.0);
+    CHECK_NEAR(p.heading, 90.0, 2.0);
+}
+
+TEST_CASE("flecs: the game turns an entity by writing its rotation") {
+    flecs::world world = make_world(WorldFrame::unity());
+    flecs::entity drone = world.entity();
+    ecs::attach_at(drone, presets::multirotor(), {0, 50, 0}, 0.0, 8.0, false);  // north, 8 m/s
+    run(world, 5.0);
+    ecs::FlightPose turned = pose_of(drone);
+    turned.rotation = WorldFrame::unity().orientation({deg2rad(90.0), 0.0, 0.0});
+    drone.set<ecs::FlightPose>(turned);
+    run(world, 5.0);
+    CHECK(pose_of(drone).velocity.x > 7.0);  // flies east now
+    CHECK_NEAR(pose_of(drone).heading, 90.0, 3.0);
+}
+
+namespace {
+struct GameTransform {  // like a game's own transform component
+    double lat = 0.0;
+    double lon = 0.0;
+    double alt = 0.0;
+    double roll = 0.0;
+    double pitch = 0.0;
+    double yaw = 0.0;
+};
+static_assert(ecs::GeoTransform<GameTransform>);
+}  // namespace
+
+TEST_CASE("flecs geo: bind_geo_transform takes over moves made by the game") {
+    flecs::world world;
+    ecs::load(world);
+    ecs::set_geo_origin(world, 41.0, 29.0);
+    world.component<GameTransform>();
+    ecs::bind_geo_transform<GameTransform>(world);
+    CHECK(world.lookup("fm::ecs::FlightModule::GeoTransformIn").is_valid());
+
+    int frame = 0;
+    const GameTransform teleport{41.2, 29.2, 2000.0, 0.0, 0.0, 180.0};
+    // Game logic that runs after the flight systems and teleports during the frame.
+    world.system<GameTransform>("Game").kind(flecs::OnUpdate).each([&](GameTransform& t) {
+        if (frame == 300) t = teleport;
+    });
+    flecs::entity plane = world.entity().set<GameTransform>({41.0, 29.0, 1000.0, 0, 0, 90});
+    ecs::attach_geo(plane, presets::light_propeller(), {41.0, 29.0, 1000.0}, 90.0, 50.0, false);
+    const auto transform = [&] { return *ecs::compat::try_get<GameTransform>(plane); };
+
+    for (; frame < 300; ++frame) world.progress(kDt);
+    CHECK(transform().lon > 29.002);  // flew east, written to the game's transform
+    CHECK_NEAR(transform().yaw, 90.0, 0.5);
+
+    world.progress(kDt);  // frame 300: the game teleports after FlightSystem ran
+    ++frame;
+    CHECK_NEAR(transform().lat, teleport.lat, 1e-12);  // not overwritten
+    CHECK_NEAR(transform().lon, teleport.lon, 1e-12);
+    run(world, 30.0);
+    CHECK(transform().lat < teleport.lat - 0.005);     // flies south from there
+    CHECK_NEAR(transform().lon, teleport.lon, 1e-4);
+    CHECK_NEAR(transform().alt, teleport.alt, 10.0);
+    CHECK_NEAR(transform().yaw, 180.0, 1.0);
+
+    // Moved between frames while paused: continues from there after resuming.
+    ecs::set_paused(world, true);
+    plane.set<GameTransform>({41.1, 28.9, 1500.0, 0.0, 0.0, 0.0});
+    run(world, 1.0);
+    CHECK_NEAR(transform().lat, 41.1, 1e-12);
+    ecs::set_paused(world, false);
+    run(world, 10.0);
+    CHECK(transform().lat > 41.1 + 0.003);  // north
+    CHECK_NEAR(transform().lon, 28.9, 1e-4);
+    CHECK_NEAR(transform().alt, 1500.0, 5.0);
+
+    // An absurd transform is refused and replaced by the agent's pose.
+    const GameTransform before = transform();
+    plane.set<GameTransform>({95.0, 28.9, 1500.0, 0.0, 0.0, 0.0});
+    world.progress(kDt);
+    CHECK_NEAR(transform().lat, before.lat, 1e-3);
+    CHECK(ecs::agent(plane)->mode() == FlightMode::Cruise);
+}

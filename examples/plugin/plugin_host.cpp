@@ -128,6 +128,18 @@ int main(int argc, char** argv) {
             ++failures;
         }
 
+        // The game teleports UAV1 by writing its Transform; the plugin continues from there.
+        const game::Transform teleport{41.20, 29.20, 900.0, 0.0, 0.0, 180.0};
+        world.entity("UAV1").set<game::Transform>(teleport);
+        run(world, 20.0);
+        const game::Transform moved = read<game::Transform>(world, "UAV1");
+        if (!(moved.lat < teleport.lat - 0.002 && std::abs(moved.lon - teleport.lon) < 1e-3 &&
+              std::abs(moved.alt - teleport.alt) < 20.0)) {
+            std::printf("FAIL: UAV1 did not continue from where the game put it\n");
+            ++failures;
+        }
+        print(world, "20 s after the game teleported UAV1");
+
         plugin.unload(world);
         close_library(plugin.handle);
         std::printf("plugin unloaded (%s)\n",

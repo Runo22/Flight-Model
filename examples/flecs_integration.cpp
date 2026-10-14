@@ -8,8 +8,11 @@
 //   PreUpdate   game::HotSystem       Transform -> Hot              (game code, already exists)
 //               bridge::TerrainIn     Hot -> fm::ecs::TerrainHeight
 //               bridge::TrackedIn     Transform -> fm::ecs::TrackedGeoPose (followable entities)
+//               GeoTransformIn        Transform moved by the game -> fm::ecs::GeoPose
 //   OnUpdate    fm::ecs::FlightModule steps every agent, writes fm::ecs::GeoPose
-//   PostUpdate  bridge::TransformOut  fm::ecs::GeoPose -> Transform
+//   PostUpdate  GeoTransformOut       fm::ecs::GeoPose -> Transform
+// GeoTransformIn/Out come from fm::ecs::bind_geo_transform<game::Transform>(): whenever the
+// game itself changes a Transform (teleport, respawn), the agent continues from there.
 #include <cmath>
 #include <cstdio>
 
@@ -61,16 +64,7 @@ void register_bridges(flecs::world& world) {
             tracked.yaw = t.yaw;
         });
 
-    world.system<const fm::ecs::GeoPose, game::Transform>("bridge::TransformOut")
-        .kind(flecs::PostUpdate)
-        .each([](const fm::ecs::GeoPose& pose, game::Transform& t) {
-            t.lat = pose.latitude;
-            t.lon = pose.longitude;
-            t.alt = pose.altitude;
-            t.roll = pose.roll;
-            t.pitch = pose.pitch;
-            t.yaw = pose.yaw;
-        });
+    fm::ecs::bind_geo_transform<game::Transform>(world);
 
     // Game logic for the ground vehicle: drives along its yaw at a constant speed.
     world.system<game::Transform, const game::GroundVehicle>("game::Drive")
@@ -141,12 +135,14 @@ int main() {
     // 2) Three jets: a lead flying east, two wingmen in right echelon.
     flecs::entity lead = spawn_aircraft(world, "Lead", fm::presets::fast_jet(),
                                         {41.15, 28.90, 3000.0, 0.0, 0.0, 90.0}, 220.0, false);
+    flecs::entity wings[2];
     for (int k = 0; k < 2; ++k) {
-        flecs::entity wing = spawn_aircraft(world, k == 0 ? "Wing1" : "Wing2", fm::presets::fast_jet(),
-                                            {41.14 - 0.01 * k, 28.88 - 0.01 * k, 3000.0, 0.0, 0.0, 90.0},
-                                            220.0, false);
-        fm::ecs::follow(wing, lead, fm::formation::echelon_right(k, 40.0));
+        wings[k] = spawn_aircraft(world, k == 0 ? "Wing1" : "Wing2", fm::presets::fast_jet(),
+                                  {41.14 - 0.01 * k, 28.88 - 0.01 * k, 3000.0, 0.0, 0.0, 90.0},
+                                  220.0, false);
+        fm::ecs::follow(wings[k], lead, fm::formation::echelon_right(k, 40.0));
     }
+    const flecs::entity wing2 = wings[1];
 
     // 3) A drone follows a ground vehicle from 15 m behind and 25 m above.
     flecs::entity truck = world.entity("Truck")
@@ -167,6 +163,12 @@ int main() {
             const game::Transform& t = *fm::ecs::compat::try_get<game::Transform>(lead);
             const double course = fm::ecs::local_heading(world, 180.0, {t.lat, t.lon, t.alt});
             fm::ecs::agent(lead)->hold(course, 2500.0, 220.0);
+        }
+        // At t = 200 s the game teleports Wing2 (e.g. a respawn) just by writing its
+        // Transform: it continues from there and rejoins the formation.
+        if (frame == 60 * 200) {
+            const game::Transform& t = *fm::ecs::compat::try_get<game::Transform>(lead);
+            wing2.set<game::Transform>({t.lat + 0.1, t.lon - 0.1, 3500.0, 0.0, 0.0, 180.0});
         }
         world.progress(1.0f / 60.0f);
         if (frame % (60 * 90) == 0) print(world, seconds);

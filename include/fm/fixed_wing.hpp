@@ -3,10 +3,13 @@
 // fixed-wing UAVs differ only by FixedWingParams.
 #pragma once
 
+#include <optional>
+
 #include "fm/atmosphere.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/formation.hpp"
 #include "fm/guidance.hpp"
+#include "fm/relocation.hpp"
 #include "fm/route.hpp"
 #include "fm/route_tracker.hpp"
 #include "fm/terrain.hpp"
@@ -48,6 +51,9 @@ public:
     // step; without updates for a few seconds the aircraft falls back to cruise().
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
+    // The host moved the aircraft: continue from `position` / `heading` (NaN = keep), see
+    // FlightAgent::relocate. Speed, flight path and the current task are kept.
+    bool relocate(const Vec3& position, double heading);
 
     // --- Simulation -----------------------------------------------------------------
     void step(double dt, const Environment& env);
@@ -101,6 +107,10 @@ private:
     void integrate(const Control& c, const AtmosphereSample& atm, const Vec3& wind, double dt);
     void integrate_ground(const Control& c, const AtmosphereSample& atm, double dt);
     void update_output(const AtmosphereSample& atm, const Vec3& wind);
+    void finish_takeoff(double altitude);
+    void trim_level(const AtmosphereSample& atm);
+    void settle_relocation(const Relocation& r);  // once the ground at the new place is known
+    void start_flying_here();                     // a grounded aircraft placed in the air
 
     void hold_course(double course, const Vec2& anchor, double altitude, double speed,
                      AltitudeRef altitude_ref);
@@ -148,6 +158,7 @@ private:
     Vec3 loiter_center_{};
     double loiter_radius_ = 0.0;
     bool loiter_clockwise_ = true;
+    bool loiter_here_ = false;  // orbit from hover(): moves along when relocated
 
     TakeoffPlan takeoff_{};
     Vec2 takeoff_origin_{};
@@ -167,6 +178,8 @@ private:
     double frame_time_ = 0.0;            // s since the start of the current step
 
     TerrainMonitor terrain_;
+    Vec3 wind_{};                          // last wind, for outputs between steps
+    std::optional<Relocation> relocation_; // settled at the start of the next step
 };
 
 }  // namespace fm

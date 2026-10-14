@@ -45,11 +45,7 @@ FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& 
         // Start trimmed for level flight.
         tas_ = ic.speed > 0.0 ? ic.speed : p_.cruise_speed;
         speed_target_ = tas_;
-        const double t_req = drag(tas_, 1.0, atm, false);
-        throttle_ = std::clamp(t_req / std::max(thrust_available(tas_, atm), 1e-6),
-                               p_.engine.idle_throttle, 1.0);
-        const double qs = 0.5 * atm.density * tas_ * tas_ * p_.wing_area;
-        alpha_ = (p_.mass * kGravity / qs - cl0()) / p_.cl_alpha;
+        trim_level(atm);
         phase_ = FlightPhase::Airborne;
     }
     altitude_target_ = position_.z;
@@ -134,6 +130,7 @@ void FixedWingAgent::loiter(const Vec3& center, double radius, bool clockwise,
     loiter_center_ = center;
     loiter_radius_ = radius > 0.0 ? radius : loiter_radius_default();
     loiter_clockwise_ = clockwise;
+    loiter_here_ = false;
     if (altitude_ref != AltitudeRef::Keep) {
         altitude_target_ = center.z;
         altitude_ref_ = altitude_ref;
@@ -156,6 +153,7 @@ bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
 
 void FixedWingAgent::hover() {
     loiter(position_, 0.0, true, AltitudeRef::Absolute);
+    loiter_here_ = mode_ == FlightMode::Loiter;
 }
 
 bool FixedWingAgent::land(const Runway& runway) {
@@ -184,11 +182,69 @@ void FixedWingAgent::set_leader_state(const LeaderState& leader) {
     leader_age_ = 0.0;
 }
 
+bool FixedWingAgent::relocate(const Vec3& position, double heading) {
+    const Relocation r = classify_relocation(position_, heading_, position, heading);
+    // Samples from far away say nothing about the slope here.
+    if ((position - position_).xy().length() > 2.0 * terrain_.spacing()) terrain_.reset();
+    position_ = position;
+    heading_ = wrap_2pi(heading_ + r.turn);
+    // Ground contact is resolved in the next step, once the terrain there is known.
+    relocation_ = relocation_ ? combine(*relocation_, r) : r;
+
+    if (r.jump) {
+        // Restart the current task from here.
+        const Vec2 here = position_.xy();
+        switch (mode_) {
+            case FlightMode::Cruise:
+            case FlightMode::Formation:
+                course_target_ = wrap_2pi(course_target_ + r.turn);
+                course_anchor_ = here;
+                if (r.vertical_jump && altitude_ref_ == AltitudeRef::Absolute)
+                    altitude_target_ = position_.z;
+                leader_tracker_.reset();
+                break;
+            case FlightMode::GoTo:
+            case FlightMode::Route:
+                route_.restart_leg(position_,
+                                   r.vertical_jump ? position_.z : resolved_altitude_target_);
+                break;
+            case FlightMode::Loiter:
+                if (loiter_here_) {
+                    loiter_center_ = position_;
+                    if (r.vertical_jump) altitude_target_ = position_.z;
+                }
+                break;
+            case FlightMode::Takeoff:
+                takeoff_origin_ = here;
+                takeoff_heading_ = wrap_2pi(takeoff_heading_ + r.turn);
+                course_target_ = takeoff_heading_;
+                break;
+            case FlightMode::Land:
+                if (landing_stage_ == LandingStage::Rollout) {
+                    runway_.heading = wrap_2pi(runway_.heading + r.turn);
+                } else {
+                    landing_stage_ = LandingStage::Positioning;  // a new approach from here
+                }
+                break;
+            default:
+                break;
+        }
+    }
+    update_output(isa(position_.z), wind_);
+    return true;
+}
+
 // --- Simulation -----------------------------------------------------------------------
 
 void FixedWingAgent::step(double dt, const Environment& env) {
     if (!(dt > 0.0)) return;
+    wind_ = env.wind;
     terrain_.update(position_.xy(), env.terrain_elevation);
+    if (relocation_) {
+        const Relocation r = *relocation_;
+        relocation_.reset();
+        settle_relocation(r);
+    }
 
     SlotReference slot_ref{};
     if (mode_ == FlightMode::Formation) {
@@ -381,16 +437,22 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
     }
 
     if (height >= climb_height - 15.0) {
-        phase_ = FlightPhase::Airborne;
-        flaps_ = false;
-        if (takeoff_.then) {
-            Route r = std::move(*takeoff_.then);
-            takeoff_.then.reset();
-            follow_route(std::move(r));
-        } else {
-            hold_course(takeoff_heading_, takeoff_origin_, runway_elevation_ + climb_height,
-                        speed_target_, AltitudeRef::Absolute);
-        }
+        // Never back down when placed above the climb height (relocation).
+        finish_takeoff(std::max(runway_elevation_ + climb_height, position_.z));
+    }
+}
+
+void FixedWingAgent::finish_takeoff(double altitude) {
+    phase_ = FlightPhase::Airborne;
+    flaps_ = false;
+    resolved_altitude_target_ = altitude;  // the route's first leg starts from here
+    if (takeoff_.then) {
+        Route r = std::move(*takeoff_.then);
+        takeoff_.then.reset();
+        follow_route(std::move(r));
+    } else {
+        hold_course(takeoff_heading_, takeoff_origin_, altitude, speed_target_,
+                    AltitudeRef::Absolute);
     }
 }
 
@@ -806,7 +868,63 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
     out_.phase = phase_;
 }
 
+void FixedWingAgent::settle_relocation(const Relocation& r) {
+    // Without terrain input, a ground reference from far away is meaningless.
+    if (r.jump && !on_ground_ && !terrain_.valid() && mode_ != FlightMode::Land)
+        runway_elevation_ = kNoGround;
+    const double ground = ground_elevation();
+    const double wheel_height = position_.z - p_.gear_height - ground;
+
+    if (on_ground_) {
+        if (r.new_altitude && wheel_height > kRelocateLiftOffHeight) {
+            start_flying_here();
+            return;
+        }
+        // Stays on the ground (the host may only have moved it horizontally).
+        if (!terrain_.valid()) runway_elevation_ = position_.z - p_.gear_height;
+        position_.z = ground_elevation() + p_.gear_height;
+        if (mode_ == FlightMode::Takeoff) runway_elevation_ = ground_elevation();
+        if (r.jump && phase_ == FlightPhase::TerrainContact) phase_ = FlightPhase::Parked;
+        return;
+    }
+    if (ground > kNoGround && wheel_height < 0.0) {
+        position_.z = ground + p_.gear_height + kRelocateGroundClearance;
+        gamma_ = std::max(gamma_, 0.0);
+    }
+    // An initial climb continues to the climb height above the new ground.
+    if (mode_ == FlightMode::Takeoff && r.jump && terrain_.valid())
+        runway_elevation_ = terrain_.current();
+}
+
+void FixedWingAgent::start_flying_here() {
+    on_ground_ = false;
+    tas_ = std::max(tas_, p_.cruise_speed);
+    ground_pitch_ = 0.0;
+    flaps_ = false;
+    speed_brake_ = false;
+    gear_down_ = !p_.retractable_gear;
+    trim_level(isa(position_.z));
+    phase_ = FlightPhase::Airborne;
+    if (mode_ == FlightMode::Takeoff) {
+        takeoff_origin_ = position_.xy();
+        finish_takeoff(position_.z);
+    } else {
+        hold_course(heading_, position_.xy(), position_.z, speed_target_, AltitudeRef::Absolute);
+    }
+}
+
 // --- Helpers --------------------------------------------------------------------------
+
+void FixedWingAgent::trim_level(const AtmosphereSample& atm) {
+    gamma_ = 0.0;
+    bank_ = 0.0;
+    load_factor_ = 1.0;
+    const double t_req = drag(tas_, 1.0, atm, false);
+    throttle_ = std::clamp(t_req / std::max(thrust_available(tas_, atm), 1e-6),
+                           p_.engine.idle_throttle, 1.0);
+    const double qs = 0.5 * atm.density * tas_ * tas_ * p_.wing_area;
+    alpha_ = (p_.mass * kGravity / qs - cl0()) / p_.cl_alpha;
+}
 
 L1Settings FixedWingAgent::l1_settings(double ground_speed) const {
     L1Settings s{p_.l1_period, p_.l1_damping, 0.0};

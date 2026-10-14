@@ -40,6 +40,7 @@ include/fm/, src/          Flecs-independent core (C++20, builds as C++23 too)
   guidance, route_tracker   L1 path following, waypoint sequencing
   formation                 slots, layouts, leader tracking
   fixed_wing, rotorcraft    the agents: dynamics + autopilot + navigation modes
+  relocation                rules for continuing after the host moved a vehicle
   flight_agent              single entry point (std::variant over the models)
   frames                    ENU <-> engine world frames (Unity, Unreal, Godot, NED)
   geo                       WGS-84 latitude/longitude/altitude <-> local frame
@@ -117,6 +118,9 @@ Per frame:
 * **Output**: `fm::ecs::FlightPose` (world position, rotation quaternion for the asset,
   velocity, heading/pitch/roll in degrees, speeds, mode, phase) and, in geodetic worlds,
   `fm::ecs::GeoPose`. Copy it into your own transform in a later phase.
+* **Moving an entity**: writing a new position or heading into `FlightPose` / `GeoPose`
+  (or into your transform, see `bind_geo_transform`) teleports it; the agent continues
+  from there (see [Moving entities](#moving-entities-teleport-respawn)).
 * Systems run in `OnUpdate`: `FollowSystem` (single threaded) then `FlightSystem`
   (multi-thread safe).
 
@@ -133,6 +137,45 @@ fm::ecs::set_max_step(world, 0.25); // longest simulated time per frame (hitches
 
 A paused agent keeps its full state and continues where it stopped; the paused time is
 not simulated. Paused leaders report zero velocity to their followers.
+
+### Moving entities (teleport, respawn)
+
+The game does not call anything to move an entity: it changes its transform, and the
+module notices. Before each step `FlightSystem` compares `FlightPose` (position, heading,
+rotation) and `GeoPose` (latitude, longitude, altitude, yaw) with what it wrote in the
+previous frame; a difference means the game moved the entity, and the agent continues
+from the new pose (`FlightAgent::relocate`, also usable without Flecs):
+
+* **Corrections** (up to 50 m, 20 m vertically, 10 deg) only move the vehicle; its task
+  continues unchanged.
+* **Jumps** restart the current task from the new place: the route leg starts at the new
+  position (no flying back), straight-and-level flight continues on the new heading and
+  altitude, positions held "here" move along (orbits and hovers given a point stay),
+  a landing approach starts over, followers rejoin. Speed is kept; a drone's velocity
+  turns with its new heading.
+* **Ground**: a grounded vehicle given a new altitude more than 5 m above the ground starts
+  flying there (fixed-wing at cruise speed at least); otherwise it stays on the ground at
+  the new place, e.g. continuing a takeoff roll along its new heading. An airborne
+  vehicle placed below the ground is lifted just above it.
+* **Absurd poses** (NaN, latitude beyond 90, more than 100 km up, a point the geodetic
+  projection cannot represent) are refused and overwritten with the agent's pose.
+* Roll and pitch written by the game are ignored: the model computes the attitude.
+
+With a geodetic transform component, `bind_geo_transform` creates the bridge both ways:
+
+```cpp
+// game::Transform { double lat, lon, alt, roll, pitch, yaw; }  (degrees, alt in meters)
+fm::ecs::bind_geo_transform<game::Transform>(world);
+```
+
+* PreUpdate: a `Transform` the game changed is copied into `GeoPose`.
+* PostUpdate: `GeoPose` is copied into `Transform`, except when the game changed the
+  `Transform` during this frame (for example in a system after `FlightSystem`): that
+  change is taken over at the next PreUpdate instead of being overwritten.
+
+The systems are created in the module scope, so `unload()` removes them. With other
+transform layouts write the two bridges yourself: copy your transform into
+`FlightPose`/`GeoPose` in PreUpdate when it changed, and back in PostUpdate.
 
 ### Geodetic worlds (latitude / longitude / altitude)
 
@@ -156,12 +199,15 @@ fm::ecs::agent(plane)->hold(fm::ecs::local_heading(world, 180.0, here), 2500.0, 
 * Output: `fm::ecs::GeoPose { latitude, longitude, altitude, roll, pitch, yaw }` (degrees,
   meters, yaw = true heading).
 * Followable non-flying entities provide `fm::ecs::TrackedGeoPose`.
+* A game transform with `lat, lon, alt, roll, pitch, yaw` is bound with
+  `fm::ecs::bind_geo_transform<T>(world)` (both directions, teleports included).
 * Accuracy: exact round trip; horizontal scale error 0.01% at 100 km and 0.1% at 300 km
   from the origin.
 
 [`examples/flecs_integration.cpp`](examples/flecs_integration.cpp) shows a complete game
 setup with a `Transform { lat, lon, alt, roll, pitch, yaw }` component, a height-of-terrain
-system, bridge systems, a runway takeoff, a jet formation and a drone following a truck.
+system, bridge systems, a runway takeoff, a jet formation (one wingman is teleported by the
+game and rejoins) and a drone following a truck.
 
 ### Flecs upgrades
 

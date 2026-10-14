@@ -90,6 +90,7 @@ void RotorcraftAgent::hover() {
     mode_ = FlightMode::Hover;
     route_.clear();
     hold_point_ = position_.xy();
+    hold_here_ = true;
     altitude_target_ = resolved_altitude_target_;
     altitude_ref_ = AltitudeRef::Absolute;
 }
@@ -146,6 +147,7 @@ void RotorcraftAgent::loiter(const Vec3& center, double radius, bool clockwise,
     if (radius <= 0.0) {
         mode_ = FlightMode::Hover;
         hold_point_ = center.xy();
+        hold_here_ = false;
         return;
     }
     mode_ = FlightMode::Loiter;
@@ -197,11 +199,69 @@ void RotorcraftAgent::set_leader_state(const LeaderState& leader) {
     leader_age_ = 0.0;
 }
 
+bool RotorcraftAgent::relocate(const Vec3& position, double heading) {
+    const Relocation r = classify_relocation(position_, attitude_.heading, position, heading);
+    // Samples from far away say nothing about the slope here.
+    if ((position - position_).xy().length() > 2.0 * terrain_.spacing()) terrain_.reset();
+    position_ = position;
+    attitude_.heading = wrap_2pi(attitude_.heading + r.turn);
+    yaw_target_ = wrap_2pi(yaw_target_ + r.turn);
+    // The velocity turns with the vehicle (clockwise rotation by r.turn).
+    const double c = std::cos(r.turn);
+    const double s = std::sin(r.turn);
+    velocity_ = {c * velocity_.x + s * velocity_.y, c * velocity_.y - s * velocity_.x,
+                 velocity_.z};
+    // Ground contact is resolved in the next step, once the terrain there is known.
+    relocation_ = relocation_ ? combine(*relocation_, r) : r;
+
+    if (r.jump) {
+        // Restart the current task from here.
+        const Vec2 here = position_.xy();
+        const bool new_altitude = r.vertical_jump && altitude_ref_ == AltitudeRef::Absolute;
+        switch (mode_) {
+            case FlightMode::Cruise:
+                course_target_ = wrap_2pi(course_target_ + r.turn);
+                course_anchor_ = here;
+                if (new_altitude) altitude_target_ = position_.z;
+                break;
+            case FlightMode::Hover:
+                if (hold_here_) {
+                    hold_point_ = here;
+                    if (new_altitude) altitude_target_ = position_.z;
+                }
+                break;
+            case FlightMode::GoTo:
+            case FlightMode::Route:
+                route_.restart_leg(position_,
+                                   r.vertical_jump ? position_.z : resolved_altitude_target_);
+                break;
+            case FlightMode::Formation:
+                leader_tracker_.reset();
+                hold_point_ = here;
+                break;
+            case FlightMode::Takeoff:
+            case FlightMode::Land:
+                hold_point_ = here;  // vertical takeoff / landing right here
+                break;
+            default:
+                break;
+        }
+    }
+    update_output(isa(position_.z), wind_);
+    return true;
+}
+
 // --- Simulation -----------------------------------------------------------------------
 
 void RotorcraftAgent::step(double dt, const Environment& env) {
     if (!(dt > 0.0)) return;
+    wind_ = env.wind;
     terrain_.update(position_.xy(), env.terrain_elevation);
+    if (relocation_) {
+        const Relocation r = *relocation_;
+        relocation_.reset();
+        settle_relocation(r);
+    }
 
     SlotReference slot_ref{};
     if (mode_ == FlightMode::Formation) {
@@ -285,19 +345,8 @@ RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
             v_h = position_hold_velocity(hold_point_, 2.0);
             altitude = ground_reference_ + p_.gear_height + climb;
             vz = std::min(p_.climb_rate_max, std::max(1.0, kAltitudeGain * (altitude - position_.z)));
-            if (position_.z >= altitude - 0.5) {
-                phase_ = FlightPhase::Airborne;
-                altitude_target_ = altitude;
-                altitude_ref_ = AltitudeRef::Absolute;
-                resolved_altitude_target_ = altitude;
-                if (takeoff_.then) {
-                    Route r = std::move(*takeoff_.then);
-                    takeoff_.then.reset();
-                    follow_route(std::move(r));
-                } else {
-                    hover();
-                }
-            }
+            // Never back down when placed above the takeoff height (relocation).
+            if (position_.z >= altitude - 0.5) finish_takeoff(std::max(altitude, position_.z));
             break;
         }
         case FlightMode::Land: {
@@ -444,6 +493,7 @@ void RotorcraftAgent::finish_route(EndBehavior behavior) {
             } else {
                 mode_ = FlightMode::Hover;
                 hold_point_ = last.position.xy();
+                hold_here_ = false;
             }
             break;
         case EndBehavior::Land:
@@ -452,6 +502,57 @@ void RotorcraftAgent::finish_route(EndBehavior behavior) {
             hold_point_ = last.position.xy();
             break;
     }
+}
+
+void RotorcraftAgent::finish_takeoff(double altitude) {
+    phase_ = FlightPhase::Airborne;
+    altitude_target_ = altitude;
+    altitude_ref_ = AltitudeRef::Absolute;
+    resolved_altitude_target_ = altitude;
+    if (takeoff_.then) {
+        Route r = std::move(*takeoff_.then);
+        takeoff_.then.reset();
+        follow_route(std::move(r));
+    } else {
+        hover();
+    }
+}
+
+void RotorcraftAgent::settle_relocation(const Relocation& r) {
+    // Without terrain input, a ground reference from far away is meaningless.
+    if (r.jump && !on_ground_ && !terrain_.valid()) ground_reference_ = kNoGround;
+    const double ground = ground_elevation();
+    const double height = position_.z - p_.gear_height - ground;
+
+    if (on_ground_) {
+        if (r.new_altitude && height > kRelocateLiftOffHeight) {
+            // Placed in the air: hover there, or go on with the takeoff plan.
+            on_ground_ = false;
+            thrust_ = p_.mass * kGravity;
+            velocity_ = {};
+            if (mode_ == FlightMode::Takeoff) {
+                finish_takeoff(position_.z);
+            } else {
+                phase_ = FlightPhase::Airborne;
+                resolved_altitude_target_ = position_.z;
+                hover();
+            }
+            return;
+        }
+        // Stays on the ground (the host may only have moved it horizontally).
+        if (!terrain_.valid()) ground_reference_ = position_.z - p_.gear_height;
+        position_.z = ground_elevation() + p_.gear_height;
+        if (mode_ == FlightMode::Takeoff) ground_reference_ = ground_elevation();
+        if (r.jump && phase_ == FlightPhase::TerrainContact) phase_ = FlightPhase::Parked;
+        return;
+    }
+    if (ground > kNoGround && height < 0.0) {
+        position_.z = ground + p_.gear_height + kRelocateGroundClearance;
+        velocity_.z = std::max(velocity_.z, 0.0);
+    }
+    // A takeoff climb continues to the takeoff height above the new ground.
+    if (mode_ == FlightMode::Takeoff && r.jump && terrain_.valid())
+        ground_reference_ = terrain_.current();
 }
 
 void RotorcraftAgent::integrate(const Command& cmd, const AtmosphereSample& atm, const Vec3& wind,

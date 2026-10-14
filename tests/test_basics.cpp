@@ -126,6 +126,10 @@ public:
     bool land(const Runway&) { return false; }
     void join_formation(const FormationSlot&) {}
     void set_leader_state(const LeaderState&) {}
+    bool relocate(const Vec3& position, double) {
+        s_.position = position;
+        return true;
+    }
     void step(double dt, const Environment&) { s_.position.y += p_.speed * dt; }
     const FlightState& state() const { return s_; }
     FlightMode mode() const { return FlightMode::Cruise; }

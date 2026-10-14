@@ -47,11 +47,6 @@ struct FlightSettings {
 // Tag: this entity's agent is paused (not stepped, pose not written).
 struct Paused {};
 
-// The flight AI of an entity. Create it with attach() / attach_at().
-struct FlightController {
-    std::optional<FlightAgent> agent;
-};
-
 // Inputs written by the host (all optional) ------------------------------------------
 // Ground height below the entity, measured along the world up axis (world units).
 struct TerrainHeight {
@@ -79,6 +74,10 @@ struct TrackedGeoPose {
 };
 
 // Output, written every frame ----------------------------------------------------------
+// The game may also write FlightPose (position, heading or rotation) or GeoPose (latitude,
+// longitude, altitude or yaw) to move the entity: the agent continues from there, see
+// FlightAgent::relocate. bind_geo_transform() does this for a game transform component.
+
 // Geodetic pose (only in geodetic worlds, on entities created with attach_geo or that
 // have the component). Angles use the aviation convention.
 struct GeoPose {
@@ -106,6 +105,20 @@ struct FlightPose {
     bool on_ground = false;
 };
 
+// The flight AI of an entity. Create it with attach() / attach_at().
+struct FlightController {
+    std::optional<FlightAgent> agent;
+    // Pose as last written to FlightPose / GeoPose. FlightSystem compares those components
+    // with it before each step: a difference means the game moved the entity.
+    struct Written {
+        Vec3 position{};
+        Quat rotation{};
+        double heading = 0.0;
+        GeoPose geo{};
+        bool geo_valid = false;
+    } written;
+};
+
 // Formation / follow relation, managed by follow() and stop_following().
 struct FollowLeader {
     flecs::entity leader;
@@ -114,6 +127,11 @@ struct FollowLeader {
     Vec3 last_position{};
     Vec3 velocity{};
     bool has_last_position = false;
+};
+
+// Bookkeeping of bind_geo_transform(): the values last written to the game's transform.
+struct TransformLink {
+    GeoPose written{};
 };
 
 // --- Module ----------------------------------------------------------------------------
@@ -200,5 +218,82 @@ FlightAgent* agent(flecs::entity e);
 bool follow(flecs::entity follower, flecs::entity leader, const FormationSlot& slot);
 // Ends formation flight; the follower continues straight ahead.
 void stop_following(flecs::entity follower);
+
+// --- Game transform binding -------------------------------------------------------------
+
+namespace detail {
+// True when `pose` is more than 1 cm away from `reference` or turned by more than 0.01 deg.
+// Smaller differences are rounding in the game's code; NaN never counts as a move.
+inline bool geo_moved(const GeoPose& pose, const GeoPose& reference) {
+    constexpr double kDegrees = 1e-7;  // ~1 cm on the ground
+    constexpr double kMeters = 0.01;
+    constexpr double kYawDegrees = 0.01;
+    const double cos_lat = std::cos(deg2rad(reference.latitude));
+    return std::abs(pose.latitude - reference.latitude) > kDegrees ||
+           std::abs(std::remainder(pose.longitude - reference.longitude, 360.0)) * cos_lat >
+               kDegrees ||
+           std::abs(pose.altitude - reference.altitude) > kMeters ||
+           std::abs(std::remainder(pose.yaw - reference.yaw, 360.0)) > kYawDegrees;
+}
+}  // namespace detail
+
+// A game transform component with a geodetic position and attitude: lat, lon, roll, pitch
+// and yaw in degrees (yaw = true heading), alt in meters.
+template <typename T>
+concept GeoTransform = requires(T t) {
+    t.lat = 0.0;
+    t.lon = 0.0;
+    t.alt = 0.0;
+    t.roll = 0.0;
+    t.pitch = 0.0;
+    t.yaw = 0.0;
+};
+
+// Binds the game's transform component T to the flight AI, both ways:
+//   PreUpdate:  when the game changed T (teleport, respawn, editor move), its position and
+//               yaw go to GeoPose and the agent continues from there (FlightAgent::relocate).
+//               Roll and pitch always come from the model.
+//   PostUpdate: GeoPose -> T. Skipped when the game changed T during this frame: the change
+//               is taken over at the next PreUpdate instead of being overwritten.
+// Only entities with a FlightController and a GeoPose are touched. Call it once after
+// load(); the systems live in the module scope, so unload() removes them.
+template <GeoTransform T>
+void bind_geo_transform(flecs::world& world) {
+    const auto pose_of = [](const T& t) {
+        return GeoPose{t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw};
+    };
+    const flecs::entity previous_scope = world.set_scope(module_entity(world));
+    world.system<const T, GeoPose, TransformLink>("GeoTransformIn")
+        .kind(flecs::PreUpdate)
+        .template with<FlightController>()
+        .each([pose_of](const T& t, GeoPose& pose, TransformLink& link) {
+            const GeoPose game = pose_of(t);
+            if (!detail::geo_moved(game, link.written)) return;
+            pose.latitude = game.latitude;
+            pose.longitude = game.longitude;
+            pose.altitude = game.altitude;
+            pose.yaw = game.yaw;
+            link.written = game;  // taken over
+        });
+    world.system<const GeoPose, T, TransformLink*>("GeoTransformOut")
+        .kind(flecs::PostUpdate)
+        .template with<FlightController>()
+        .each([pose_of](flecs::entity e, const GeoPose& pose, T& t, TransformLink* link) {
+            // Moved by the game during this frame: left for GeoTransformIn.
+            if (link && detail::geo_moved(pose_of(t), link->written)) return;
+            t.lat = pose.latitude;
+            t.lon = pose.longitude;
+            t.alt = pose.altitude;
+            t.roll = pose.roll;
+            t.pitch = pose.pitch;
+            t.yaw = pose.yaw;
+            if (link) {
+                link->written = pose;
+            } else {
+                e.set<TransformLink>({pose});
+            }
+        });
+    world.set_scope(previous_scope);
+}
 
 }  // namespace fm::ecs

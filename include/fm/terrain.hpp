@@ -21,6 +21,7 @@ public:
 
     bool valid() const { return valid_; }
     double current() const { return current_; }
+    double spacing() const { return spacing_; }
     // Estimated terrain gradient along the flown path (dz / ds), clamped to +-1.
     double slope() const { return slope_; }
     // Terrain elevation extrapolated `distance` meters ahead (both signs of slope).

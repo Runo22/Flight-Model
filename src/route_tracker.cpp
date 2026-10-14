@@ -10,6 +10,10 @@ void RouteTracker::start(Route route, const Vec3& from, double from_altitude) {
     route_ = std::move(route);
     index_ = 0;
     active_ = !route_.waypoints.empty();
+    restart_leg(from, from_altitude);
+}
+
+void RouteTracker::restart_leg(const Vec3& from, double from_altitude) {
     leg_start_ = from;
     leg_start_wp_ = Waypoint{};
     leg_start_wp_.position = {from.x, from.y, from_altitude};

@@ -39,6 +39,7 @@ concept FlightModel = requires(T m, const T cm, double d, const Vec3& p, const E
     { m.land(runway) } -> std::same_as<bool>;
     m.join_formation(slot);
     m.set_leader_state(leader);
+    { m.relocate(p, d) } -> std::same_as<bool>;
     m.step(d, env);
     { cm.state() } -> std::same_as<const FlightState&>;
     { cm.mode() } -> std::same_as<FlightMode>;
@@ -108,6 +109,20 @@ public:
     bool land(const Runway& runway);
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
+
+    // The host moved the vehicle (teleport, respawn, editor move): continue from `position`
+    // and `heading` (rad, NaN = keep) instead of jumping back. Speed is kept.
+    //  - Corrections (up to 50 m, 20 m vertically, 10 deg) only move the vehicle.
+    //  - Larger jumps restart the current task here: the route leg starts at the new
+    //    position, straight-and-level flight continues on the new line (holding the new
+    //    altitude), positions held "here" move along, a landing approach starts over,
+    //    followers rejoin.
+    //  - On the ground: placed at a new altitude more than 5 m above the ground it starts
+    //    flying (fixed-wing at cruise speed at least), otherwise it stays on the ground.
+    //    In the air: placed below the ground it is lifted just above it.
+    // The ground at the new position is taken from the next step's terrain input.
+    // Returns false and changes nothing for non-finite or absurd input (|z| > 100 km).
+    bool relocate(const Vec3& position, double heading = kUnknown);
 
     // --- Simulation -----------------------------------------------------------------
     void step(double dt, const Environment& env);

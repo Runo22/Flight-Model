@@ -1,5 +1,6 @@
 #include "fm/flight_agent.hpp"
 
+#include <cmath>
 #include <utility>
 
 namespace fm {
@@ -70,6 +71,17 @@ void FlightAgent::join_formation(const FormationSlot& slot) {
 
 void FlightAgent::set_leader_state(const LeaderState& leader) {
     std::visit([&](auto& m) { m.set_leader_state(leader); }, impl_);
+}
+
+bool FlightAgent::relocate(const Vec3& position, double heading) {
+    constexpr double kMaxHorizontal = 2.0e7;  // m, half way around the Earth
+    constexpr double kMaxAltitude = 1.0e5;    // m, edge of space
+    const bool finite = std::isfinite(position.x) && std::isfinite(position.y) &&
+                        std::isfinite(position.z) && !std::isinf(heading);
+    if (!finite || std::abs(position.x) > kMaxHorizontal ||
+        std::abs(position.y) > kMaxHorizontal || std::abs(position.z) > kMaxAltitude)
+        return false;
+    return std::visit([&](auto& m) { return m.relocate(position, heading); }, impl_);
 }
 
 void FlightAgent::step(double dt, const Environment& env) {

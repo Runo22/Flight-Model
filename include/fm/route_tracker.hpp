@@ -14,6 +14,9 @@ class RouteTracker {
 public:
     // `from` is where the first leg starts; `from_altitude` the altitude target held then.
     void start(Route route, const Vec3& from, double from_altitude);
+    // The current leg starts again at `from` (the vehicle was moved): same target, the
+    // altitude profile begins at `from_altitude`.
+    void restart_leg(const Vec3& from, double from_altitude);
     void clear() { active_ = false; }
 
     bool active() const { return active_; }

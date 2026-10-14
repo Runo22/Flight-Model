@@ -44,7 +44,13 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   `fm::ecs::unload()` (sistemleri ve component'leri temizler, DLL güvenle boşaltılır),
   `FM_FLECS_TARGET` / `FM_FLECS_SHARED`, gerçek yükle–boşalt–tekrar yükle testi.
 - **İniş:** pist yaklaşması, süzülüş yolu, pas geçme, flare, teker koyma, frenleme.
-- **Testler:** 31 çekirdek + 10 Flecs + 2 plugin testi; AddressSanitizer/UBSan temiz.
+- **Duraklatma:** dünya çalışırken tüm ajanları (`set_paused`) veya tek ajanı (`pause`)
+  durdurma; uzun karelerde `max_step` sınırı.
+- **Konum değişimi (teleport):** oyun Transform'u değiştirince ajan yeni konumdan devam
+  eder (`FlightAgent::relocate`, Flecs'te otomatik algılama, `bind_geo_transform`).
+  Küçük düzeltmeler görevi bozmaz; büyük sıçramalarda rota bacağı, düz uçuş hattı,
+  yaklaşma yeni konumdan yeniden kurulur; yer/hava geçişleri ve saçma değerler ele alınır.
+- **Testler:** 46 çekirdek + 16 Flecs + 2 plugin testi; AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
 

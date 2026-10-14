@@ -53,6 +53,70 @@ void write_geo_pose(const GeoProjection& proj, const FlightAgent& agent, GeoPose
     pose.yaw = yaw >= 360.0 - 1e-9 ? 0.0 : yaw;  // keep [0, 360) free of rounding to 360
 }
 
+// Writes the agent's pose to the output components and remembers what was written.
+void publish(const WorldFrame& f, const GeoProjection* proj, FlightController& fc,
+             FlightPose& pose, GeoPose* geo_pose) {
+    write_pose(f, *fc.agent, pose);
+    fc.written.position = pose.position;
+    fc.written.rotation = pose.rotation;
+    fc.written.heading = pose.heading;
+    if (proj && geo_pose) {
+        write_geo_pose(*proj, *fc.agent, *geo_pose);
+        fc.written.geo = *geo_pose;
+        fc.written.geo_valid = true;
+    }
+}
+
+// Within a meter of each other on the Earth's surface.
+bool same_place(const GeoPoint& a, const GeoPoint& b) {
+    const auto unit = [](const GeoPoint& p) {
+        const double lat = deg2rad(p.latitude);
+        const double lon = deg2rad(p.longitude);
+        return Vec3{std::cos(lat) * std::cos(lon), std::cos(lat) * std::sin(lon), std::sin(lat)};
+    };
+    return (unit(a) - unit(b)).length() * 6.371e6 < 1.0;
+}
+
+bool relocate_geo(const GeoProjection& proj, FlightAgent& agent, const GeoPose& g) {
+    if (!(std::abs(g.latitude) <= 90.0) || !std::isfinite(g.longitude)) return false;
+    const GeoPoint at{g.latitude, g.longitude, g.altitude};
+    const Vec3 local = proj.to_local(at);
+    // Points the projection cannot represent (towards the far side of the Earth).
+    if (!same_place(proj.to_geo(local), at)) return false;
+    const double heading =
+        std::isfinite(g.yaw) ? proj.grid_heading(deg2rad(g.yaw), local) : kUnknown;
+    return agent.relocate(local, heading);
+}
+
+bool same_rotation(const Quat& a, const Quat& b) {
+    const double d = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    return std::abs(d) > 1.0 - 1e-9;  // within ~0.01 deg
+}
+
+// A FlightPose / GeoPose that differs from what was written last means the game moved the
+// entity: the agent continues from there. Absurd poses are refused by relocate() and get
+// overwritten with the agent's pose after the step.
+void take_over_moves(const WorldFrame& f, const GeoProjection* proj, FlightController& fc,
+                     const FlightPose& pose, const GeoPose* geo_pose) {
+    const FlightController::Written& w = fc.written;
+    if (proj && geo_pose && w.geo_valid && detail::geo_moved(*geo_pose, w.geo)) {
+        relocate_geo(*proj, *fc.agent, *geo_pose);
+        return;
+    }
+    const bool moved = (pose.position - w.position).length() > 0.01 * f.units_per_meter;
+    const bool turned = std::abs(std::remainder(pose.heading - w.heading, 360.0)) > 0.01;
+    const bool rotated = !same_rotation(pose.rotation, w.rotation);
+    if (!moved && !turned && !rotated) return;
+    double heading = kUnknown;
+    if (turned) {
+        heading = deg2rad(pose.heading);
+    } else if (rotated) {
+        const Vec3 forward = f.vector_to_enu(pose.rotation.rotate(f.model_forward));
+        if (forward.xy().length() > 1e-6 * forward.length()) heading = heading_of(forward.xy());
+    }
+    fc.agent->relocate(f.to_enu(pose.position), heading);
+}
+
 // Smoothed velocity of a leader that only reports positions.
 Vec3 estimate_velocity(FollowLeader& follow, const Vec3& position, double dt) {
     if (follow.has_last_position && dt > 0.0) {
@@ -101,12 +165,11 @@ GeoProjection ensure_geo(flecs::world& world, const GeoPoint& origin) {
 void attach_agent(flecs::entity e, FlightAgent agent, const std::optional<GeoProjection>& proj,
                   const AgentSetup& setup) {
     if (setup) setup(agent);
-    FlightPose pose;
-    write_pose(frame(e.world()), agent, pose);
-    GeoPose geo_pose;
-    if (proj) write_geo_pose(*proj, agent, geo_pose);
     FlightController fc;
     fc.agent.emplace(std::move(agent));
+    FlightPose pose;
+    GeoPose geo_pose;
+    publish(frame(e.world()), proj ? &*proj : nullptr, fc, pose, &geo_pose);
     e.set<FlightController>(std::move(fc));
     e.set<FlightPose>(pose);
     if (proj) e.set<GeoPose>(geo_pose);
@@ -132,6 +195,7 @@ FlightModule::FlightModule(flecs::world& world) {
     world.component<FlightPose>();
     world.component<GeoPose>();
     world.component<FollowLeader>();
+    world.component<TransformLink>();
     world.component<FlightSettings>();
     world.component<Paused>();
 
@@ -179,6 +243,7 @@ FlightModule::FlightModule(flecs::world& world) {
             const double dt = std::min<double>(it.delta_time(), settings.max_step);
             const FrameConfig& cfg = config_of(stage);
             const WorldFrame& f = cfg.frame;
+            const GeoProjection* proj = cfg.geo ? &*cfg.geo : nullptr;
             while (it.next()) {
                 auto controller = it.field<FlightController>(0);
                 auto pose = it.field<FlightPose>(1);
@@ -188,10 +253,12 @@ FlightModule::FlightModule(flecs::world& world) {
                 const HeightAboveGround* height =
                     it.is_set(3) ? &it.field<const HeightAboveGround>(3)[0] : nullptr;
                 const Wind* wind = it.is_set(4) ? &it.field<const Wind>(4)[0] : nullptr;
-                GeoPose* geo_pose = it.is_set(5) && cfg.geo ? &it.field<GeoPose>(5)[0] : nullptr;
+                GeoPose* geo_pose = it.is_set(5) && proj ? &it.field<GeoPose>(5)[0] : nullptr;
                 for (auto i : it) {
                     FlightController& fc = controller[i];
                     if (!fc.agent) continue;
+                    GeoPose* geo = geo_pose ? &geo_pose[i] : nullptr;
+                    take_over_moves(f, proj, fc, pose[i], geo);
                     Environment env;
                     if (terrain) {
                         env.terrain_elevation = f.height_to_enu(terrain[i].value);
@@ -201,8 +268,7 @@ FlightModule::FlightModule(flecs::world& world) {
                     }
                     if (wind) env.wind = f.vector_to_enu(wind[i].velocity);
                     fc.agent->step(dt, env);
-                    write_pose(f, *fc.agent, pose[i]);
-                    if (geo_pose) write_geo_pose(*cfg.geo, *fc.agent, geo_pose[i]);
+                    publish(f, proj, fc, pose[i], geo);
                 }
             }
         });
@@ -235,7 +301,7 @@ void unload(flecs::world& world) {
     // This binary may stay loaded and call load() again: forget the cached ids.
     reset_cached_ids<FlightModule, FrameConfig, FlightController, TerrainHeight,
                      HeightAboveGround, Wind, TrackedPose, TrackedGeoPose, FlightPose, GeoPose,
-                     FollowLeader, FlightSettings, Paused>();
+                     FollowLeader, TransformLink, FlightSettings, Paused>();
 }
 
 flecs::entity module_entity(const flecs::world& world) {

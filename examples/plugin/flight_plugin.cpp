@@ -66,16 +66,9 @@ void register_systems(flecs::world& world) {
         .kind(flecs::PreUpdate)
         .each([](const game::Hot& hot, fm::ecs::TerrainHeight& terrain) { terrain.value = hot.height; });
 
-    world.system<const fm::ecs::GeoPose, game::Transform>("TransformOut")
-        .kind(flecs::PostUpdate)
-        .each([](const fm::ecs::GeoPose& pose, game::Transform& t) {
-            t.lat = pose.latitude;
-            t.lon = pose.longitude;
-            t.alt = pose.altitude;
-            t.roll = pose.roll;
-            t.pitch = pose.pitch;
-            t.yaw = pose.yaw;
-        });
+    // GeoPose -> Transform every frame, and Transform -> agent whenever the game itself
+    // moves an entity (teleport, respawn): the agent continues from the new place.
+    fm::ecs::bind_geo_transform<game::Transform>(world);
 }
 
 }  // namespace

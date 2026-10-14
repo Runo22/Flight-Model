@@ -2,9 +2,12 @@
 // sets the top speed) with velocity-based guidance for hover, routes, landing and formation.
 #pragma once
 
+#include <optional>
+
 #include "fm/atmosphere.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/formation.hpp"
+#include "fm/relocation.hpp"
 #include "fm/route.hpp"
 #include "fm/route_tracker.hpp"
 #include "fm/terrain.hpp"
@@ -40,6 +43,9 @@ public:
     bool land(const Runway& runway);
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
+    // The host moved the vehicle: continue from `position` / `heading` (NaN = keep), see
+    // FlightAgent::relocate. The velocity turns with the vehicle; the task is kept.
+    bool relocate(const Vec3& position, double heading);
 
     // --- Simulation -----------------------------------------------------------------
     void step(double dt, const Environment& env);
@@ -61,6 +67,8 @@ private:
     Command guidance(const SlotReference& slot_ref);
     void guide_route(Command& cmd);
     void finish_route(EndBehavior behavior);
+    void finish_takeoff(double altitude);
+    void settle_relocation(const Relocation& r);  // once the ground at the new place is known
     void integrate(const Command& cmd, const AtmosphereSample& atm, const Vec3& wind, double dt);
     void update_output(const AtmosphereSample& atm, const Vec3& wind);
 
@@ -91,6 +99,7 @@ private:
     AltitudeRef altitude_ref_ = AltitudeRef::Absolute;
     double resolved_altitude_target_ = 0.0;
     Vec2 hold_point_{};
+    bool hold_here_ = true;   // Hover from hover(): the held point moves along when relocated
     double yaw_target_ = 0.0;
     double hold_timer_ = 0.0;            // s left at a waypoint with hold_time
     bool waiting_ = false;
@@ -110,6 +119,8 @@ private:
     double frame_time_ = 0.0;
 
     TerrainMonitor terrain_;
+    Vec3 wind_{};                          // last wind, for outputs between steps
+    std::optional<Relocation> relocation_; // settled at the start of the next step
 };
 
 }  // namespace fm
