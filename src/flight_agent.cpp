@@ -5,25 +5,22 @@
 namespace fm {
 
 namespace {
-std::variant<FixedWingAgent, RotorcraftAgent> make_impl(const VehicleParams& params,
-                                                        const InitialConditions& ic) {
-    if (const auto* fw = std::get_if<FixedWingParams>(&params)) return FixedWingAgent(*fw, ic);
-    return RotorcraftAgent(std::get<RotorcraftParams>(params), ic);
+AgentVariant make_impl(const VehicleParams& params, const InitialConditions& ic) {
+    return std::visit(
+        [&](const auto& p) -> AgentVariant {
+            using Agent =
+                typename detail::agent_for<std::decay_t<decltype(p)>, AgentVariant>::type;
+            return AgentVariant(std::in_place_type<Agent>, p, ic);
+        },
+        params);
 }
 }  // namespace
 
 FlightAgent::FlightAgent(const VehicleParams& params, const InitialConditions& ic)
     : impl_(make_impl(params, ic)) {}
 
-FlightAgent::FlightAgent(FixedWingParams params, const InitialConditions& ic)
-    : impl_(std::in_place_type<FixedWingAgent>, std::move(params), ic) {}
-
-FlightAgent::FlightAgent(RotorcraftParams params, const InitialConditions& ic)
-    : impl_(std::in_place_type<RotorcraftAgent>, std::move(params), ic) {}
-
 VehicleKind FlightAgent::kind() const {
-    return std::holds_alternative<FixedWingAgent>(impl_) ? VehicleKind::FixedWing
-                                                         : VehicleKind::Rotorcraft;
+    return std::visit([](const auto& m) { return std::decay_t<decltype(m)>::kind; }, impl_);
 }
 
 void FlightAgent::cruise() {
@@ -56,27 +53,15 @@ bool FlightAgent::takeoff(const TakeoffPlan& plan) {
 }
 
 void FlightAgent::hover() {
-    if (auto* rc = rotorcraft()) {
-        rc->hover();
-        return;
-    }
-    fixed_wing()->loiter(state().position, 0.0, true, AltitudeRef::Absolute);
+    std::visit([](auto& m) { m.hover(); }, impl_);
 }
 
 bool FlightAgent::land() {
-    if (auto* rc = rotorcraft()) return rc->land();
-    return false;
+    return std::visit([](auto& m) { return m.land(); }, impl_);
 }
 
 bool FlightAgent::land(const Runway& runway) {
-    if (auto* fw = fixed_wing()) return fw->land(runway);
-    RotorcraftAgent& rc = *rotorcraft();
-    if (rc.state().on_ground) return false;
-    GoToOptions options;
-    options.altitude_ref = AltitudeRef::Keep;
-    options.on_arrival = EndBehavior::Land;
-    rc.go_to(runway.start, options);
-    return true;
+    return std::visit([&](auto& m) { return m.land(runway); }, impl_);
 }
 
 void FlightAgent::join_formation(const FormationSlot& slot) {
@@ -112,9 +97,8 @@ InitialConditions FlightAgent::snapshot() const {
     ic.speed = s.airspeed;
     ic.on_ground = s.on_ground;
     if (s.on_ground) {
-        const double gear = fixed_wing() ? fixed_wing()->params().gear_height
-                                         : rotorcraft()->params().gear_height;
-        ic.position.z -= gear;  // on the ground the initial z is the ground elevation
+        // On the ground the initial z is the ground elevation.
+        ic.position.z -= std::visit([](const auto& m) { return double(m.ground_offset()); }, impl_);
     }
     return ic;
 }

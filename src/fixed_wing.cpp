@@ -154,6 +154,10 @@ bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
     return true;
 }
 
+void FixedWingAgent::hover() {
+    loiter(position_, 0.0, true, AltitudeRef::Absolute);
+}
+
 bool FixedWingAgent::land(const Runway& runway) {
     if (on_ground_) return false;
     mode_ = FlightMode::Land;

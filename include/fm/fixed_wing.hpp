@@ -16,6 +16,9 @@ namespace fm {
 
 class FixedWingAgent {
 public:
+    using params_type = FixedWingParams;
+    static constexpr VehicleKind kind = VehicleKind::FixedWing;
+
     FixedWingAgent(FixedWingParams params, const InitialConditions& ic);
 
     // --- Commands -------------------------------------------------------------------
@@ -37,6 +40,10 @@ public:
     // positioning to the extended centerline, 3 deg glide path, flare, touchdown and
     // braking. Unstable approaches go around and try again. Returns false on the ground.
     bool land(const Runway& runway);
+    // Without a runway a fixed-wing aircraft cannot land: returns false.
+    bool land() { return false; }
+    // Fixed-wing aircraft cannot hover: orbits the current position instead.
+    void hover();
     // Keep `slot` relative to a leader. Feed the leader with set_leader_state() every
     // step; without updates for a few seconds the aircraft falls back to cruise().
     void join_formation(const FormationSlot& slot);
@@ -48,6 +55,8 @@ public:
     const FlightState& state() const { return out_; }
     FlightMode mode() const { return mode_; }
     const FixedWingParams& params() const { return p_; }
+    // Height of the reference point above the ground when standing on it.
+    double ground_offset() const { return p_.gear_height; }
     const RouteTracker& route() const { return route_; }
 
     // --- Performance helpers --------------------------------------------------------

@@ -119,6 +119,11 @@ struct RotorcraftParams {
     double formation_min_separation = 3.0;  // m
 };
 
+// Every vehicle type: one params struct here, one agent class (see docs/EXTENDING.md).
+// Adding a type = add its params to VehicleParams, its agent to fm::AgentVariant
+// (flight_agent.hpp) and a value to VehicleKind.
 using VehicleParams = std::variant<FixedWingParams, RotorcraftParams>;
+
+enum class VehicleKind { FixedWing, Rotorcraft };
 
 }  // namespace fm

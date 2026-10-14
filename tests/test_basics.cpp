@@ -3,6 +3,7 @@
 #include "fm/frames.hpp"
 #include "fm/guidance.hpp"
 #include "fm/math.hpp"
+#include "fm/presets.hpp"
 #include "harness.hpp"
 
 using namespace fm;
@@ -96,4 +97,63 @@ TEST_CASE("frames: engine axis conventions") {
     WorldFrame bad = WorldFrame::unity();
     bad.model_right = {-1.0, 0.0, 0.0};
     CHECK(!bad.valid());
+}
+
+// --- Vehicle type registry ---------------------------------------------------------------
+
+#include "fm/flight_agent.hpp"
+
+namespace {
+// Smallest possible extra vehicle type: proves a third type fits the interface and the
+// params -> agent mapping without touching existing models.
+struct ToyParams {
+    double speed = 5.0;
+};
+class ToyAgent {
+public:
+    using params_type = ToyParams;
+    static constexpr VehicleKind kind = VehicleKind::Rotorcraft;  // a new value in real use
+    ToyAgent(ToyParams p, const InitialConditions& ic) : p_(p) { s_.position = ic.position; }
+    void cruise() {}
+    void hold(double, double, double, AltitudeRef) {}
+    void set_speed(double v) { p_.speed = v; }
+    void go_to(const Vec3&, const GoToOptions&) {}
+    void follow_route(Route) {}
+    void loiter(const Vec3&, double, bool, AltitudeRef) {}
+    bool takeoff(const TakeoffPlan&) { return false; }
+    void hover() {}
+    bool land() { return false; }
+    bool land(const Runway&) { return false; }
+    void join_formation(const FormationSlot&) {}
+    void set_leader_state(const LeaderState&) {}
+    void step(double dt, const Environment&) { s_.position.y += p_.speed * dt; }
+    const FlightState& state() const { return s_; }
+    FlightMode mode() const { return FlightMode::Cruise; }
+    double ground_offset() const { return 0.0; }
+
+private:
+    ToyParams p_;
+    FlightState s_{};
+};
+using ToyVariant = std::variant<FixedWingAgent, RotorcraftAgent, ToyAgent>;
+static_assert(FlightModel<ToyAgent>);
+static_assert(std::is_same_v<detail::agent_for<ToyParams, ToyVariant>::type, ToyAgent>);
+static_assert(std::is_same_v<detail::agent_for<FixedWingParams, ToyVariant>::type, FixedWingAgent>);
+static_assert(std::is_void_v<detail::agent_for<int, ToyVariant>::type>);
+}  // namespace
+
+TEST_CASE("agent: kind and generic access for registered types") {
+    FlightAgent plane(presets::light_propeller(), InitialConditions{{0, 0, 500}, 0.0, 50.0, false});
+    FlightAgent drone(presets::multirotor(), InitialConditions{{0, 0, 50}, 0.0, 0.0, false});
+    CHECK(plane.kind() == VehicleKind::FixedWing);
+    CHECK(drone.kind() == VehicleKind::Rotorcraft);
+    CHECK(plane.as<FixedWingAgent>() != nullptr);
+    CHECK(plane.as<RotorcraftAgent>() == nullptr);
+    CHECK(drone.visit([](const auto& m) { return m.ground_offset(); }) ==
+          presets::multirotor().gear_height);
+    // Commands every type accepts, even when they mean something else per type.
+    plane.hover();
+    CHECK(plane.mode() == FlightMode::Loiter);
+    CHECK(!plane.land());
+    CHECK(drone.land());
 }

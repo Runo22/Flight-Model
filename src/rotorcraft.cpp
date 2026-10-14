@@ -174,6 +174,15 @@ bool RotorcraftAgent::land() {
     return true;
 }
 
+bool RotorcraftAgent::land(const Runway& runway) {
+    if (on_ground_) return false;
+    GoToOptions options;
+    options.altitude_ref = AltitudeRef::Keep;
+    options.on_arrival = EndBehavior::Land;
+    go_to(runway.start, options);
+    return true;
+}
+
 void RotorcraftAgent::join_formation(const FormationSlot& slot) {
     if (on_ground_) return;
     mode_ = FlightMode::Formation;

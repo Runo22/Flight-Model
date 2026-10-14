@@ -14,6 +14,9 @@ namespace fm {
 
 class RotorcraftAgent {
 public:
+    using params_type = RotorcraftParams;
+    static constexpr VehicleKind kind = VehicleKind::Rotorcraft;
+
     RotorcraftAgent(RotorcraftParams params, const InitialConditions& ic);
 
     // --- Commands -------------------------------------------------------------------
@@ -33,6 +36,8 @@ public:
     bool takeoff(const TakeoffPlan& plan);
     // Vertical landing at the current position.
     bool land();
+    // Fly to the runway start at the current altitude and land vertically there.
+    bool land(const Runway& runway);
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
 
@@ -42,6 +47,8 @@ public:
     const FlightState& state() const { return out_; }
     FlightMode mode() const { return mode_; }
     const RotorcraftParams& params() const { return p_; }
+    // Height of the reference point above the ground when standing on it.
+    double ground_offset() const { return p_.gear_height; }
     const RouteTracker& route() const { return route_; }
 
 private:
