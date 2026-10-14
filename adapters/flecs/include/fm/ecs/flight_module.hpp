@@ -36,7 +36,16 @@ struct FrameConfig {
     std::optional<GeoProjection> geo;
 };
 
+// World singleton: runtime settings of the module.
+struct FlightSettings {
+    bool paused = false;    // true: no agent is stepped; the rest of the world keeps running
+    double max_step = 0.25; // s, longest simulated time per frame (hitches, debugger stops)
+};
+
 // --- Components ------------------------------------------------------------------------
+
+// Tag: this entity's agent is paused (not stepped, pose not written).
+struct Paused {};
 
 // The flight AI of an entity. Create it with attach() / attach_at().
 struct FlightController {
@@ -141,6 +150,16 @@ flecs::entity module_entity(const flecs::world& world);
 // the component is not visible yet. agent() and follow() need the FlightController to exist.
 
 using AgentSetup = std::function<void(FlightAgent&)>;
+
+// Pausing. A paused agent keeps its full state and continues where it stopped; the time
+// spent paused is not simulated. Paused leaders report zero velocity to their followers.
+void set_paused(flecs::world& world, bool paused);  // all agents
+bool is_paused(const flecs::world& world);
+void pause(flecs::entity e);   // one agent
+void resume(flecs::entity e);
+bool is_paused(flecs::entity e);
+// Longest time advanced per frame; longer frames (hitches) run slower instead of jumping.
+void set_max_step(flecs::world& world, double seconds);
 
 void set_frame(flecs::world& world, const WorldFrame& frame);
 const WorldFrame& frame(const flecs::world& world);

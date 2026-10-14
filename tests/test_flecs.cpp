@@ -284,3 +284,55 @@ TEST_CASE("flecs: attach from a system with commands in the setup callback") {
     CHECK_NEAR(geo_pose_of(drone).longitude, 29.0005, 2e-5);
     CHECK(pose_of(drone).mode == FlightMode::Hover);
 }
+
+// --- Pause / resume -----------------------------------------------------------------------
+
+TEST_CASE("flecs: pause the module while the world keeps running") {
+    flecs::world world = make_world(WorldFrame::enu());
+    int frames = 0;
+    world.system<>("GameTick").kind(flecs::OnUpdate).run([&](flecs::iter& it) {
+        while (it.next()) {}
+        ++frames;
+    });
+    flecs::entity plane = world.entity();
+    ecs::attach(plane, presets::light_propeller(), {{0, 0, 800}, 0.0, 50.0, false});
+    run(world, 2.0);
+    const Vec3 before = pose_of(plane).position;
+
+    ecs::set_paused(world, true);
+    CHECK(ecs::is_paused(world));
+    const int frames_before = frames;
+    run(world, 5.0);
+    CHECK(frames > frames_before);  // the rest of the world kept running
+    CHECK((pose_of(plane).position - before).length() < 1e-9);
+
+    ecs::set_paused(world, false);
+    run(world, 2.0);
+    const double moved = (pose_of(plane).position - before).length();
+    CHECK(moved > 80.0 && moved < 120.0);  // ~2 s at 50 m/s: continues, no catch-up jump
+}
+
+TEST_CASE("flecs: pause and resume a single agent") {
+    flecs::world world = make_world(WorldFrame::enu());
+    flecs::entity a = world.entity();
+    flecs::entity b = world.entity();
+    ecs::attach(a, presets::light_propeller(), {{0, 0, 800}, 0.0, 50.0, false});
+    ecs::attach(b, presets::light_propeller(), {{500, 0, 800}, 0.0, 50.0, false});
+    ecs::pause(a);
+    CHECK(ecs::is_paused(a));
+    run(world, 3.0);
+    CHECK_NEAR(pose_of(a).position.y, 0.0, 1e-9);
+    CHECK(pose_of(b).position.y > 100.0);
+    ecs::resume(a);
+    run(world, 3.0);
+    CHECK(pose_of(a).position.y > 100.0);
+}
+
+TEST_CASE("flecs: long frames are clamped to max_step") {
+    flecs::world world = make_world(WorldFrame::enu());
+    ecs::set_max_step(world, 0.1);
+    flecs::entity plane = world.entity();
+    ecs::attach(plane, presets::light_propeller(), {{0, 0, 800}, 0.0, 50.0, false});
+    world.progress(5.0f);  // e.g. a loading hitch
+    CHECK(pose_of(plane).position.y < 50.0 * 0.1 * 1.2);
+}

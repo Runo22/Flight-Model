@@ -1,5 +1,6 @@
 #include "fm/ecs/flight_module.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <utility>
 
@@ -16,6 +17,11 @@ const FrameConfig& config_or_default(const FrameConfig* config) {
 
 const FrameConfig& config_of(const flecs::world& world) {
     return config_or_default(compat::try_get_singleton<FrameConfig>(world));
+}
+
+FlightSettings settings_of(const flecs::world& world) {
+    const FlightSettings* s = compat::try_get_singleton<FlightSettings>(world);
+    return s ? *s : FlightSettings{};
 }
 
 void write_pose(const WorldFrame& f, const FlightAgent& agent, FlightPose& pose) {
@@ -64,7 +70,10 @@ std::optional<LeaderState> leader_state(const FrameConfig& cfg, FollowLeader& fo
     const flecs::entity leader = follow.leader;
     if (!leader.is_alive()) return std::nullopt;
     if (const auto* fc = compat::try_get<FlightController>(leader); fc && fc->agent) {
-        return fc->agent->as_leader();
+        LeaderState state = fc->agent->as_leader();
+        // A paused leader stands still; followers must not chase its last velocity.
+        if (leader.has<Paused>() || settings_of(leader.world()).paused) state.velocity = {};
+        return state;
     }
     if (const auto* geo_pose = compat::try_get<TrackedGeoPose>(leader); geo_pose && cfg.geo) {
         const Vec3 position = cfg.geo->to_local(geo_pose->position);
@@ -123,22 +132,32 @@ FlightModule::FlightModule(flecs::world& world) {
     world.component<FlightPose>();
     world.component<GeoPose>();
     world.component<FollowLeader>();
+    world.component<FlightSettings>();
+    world.component<Paused>();
 
     if (!compat::try_get_singleton<FrameConfig>(world)) world.set<FrameConfig>({});
+    if (!compat::try_get_singleton<FlightSettings>(world)) world.set<FlightSettings>({});
 
     // Reads other entities (the leaders), so it must stay single threaded.
     world.system<FollowLeader, FlightController>("FollowSystem")
         .kind(flecs::OnUpdate)
+        .without<Paused>()
         .run([](flecs::iter& it) {
             const flecs::world stage = it.world();
+            const FlightSettings settings = settings_of(stage);
+            if (settings.paused) {
+                it.fini();
+                return;
+            }
             const FrameConfig& cfg = config_of(stage);
+            const double dt = std::min<double>(it.delta_time(), settings.max_step);
             while (it.next()) {
                 auto follow = it.field<FollowLeader>(0);
                 auto controller = it.field<FlightController>(1);
                 for (auto i : it) {
                     FlightController& fc = controller[i];
                     if (!fc.agent || fc.agent->mode() != FlightMode::Formation) continue;
-                    if (auto leader = leader_state(cfg, follow[i], it.delta_time()))
+                    if (auto leader = leader_state(cfg, follow[i], dt))
                         fc.agent->set_leader_state(*leader);
                 }
             }
@@ -148,9 +167,16 @@ FlightModule::FlightModule(flecs::world& world) {
     world.system<FlightController, FlightPose, const TerrainHeight*, const HeightAboveGround*,
                  const Wind*, GeoPose*>("FlightSystem")
         .kind(flecs::OnUpdate)
+        .without<Paused>()
         .multi_threaded()
         .run([](flecs::iter& it) {
             const flecs::world stage = it.world();
+            const FlightSettings settings = settings_of(stage);
+            if (settings.paused) {
+                it.fini();
+                return;
+            }
+            const double dt = std::min<double>(it.delta_time(), settings.max_step);
             const FrameConfig& cfg = config_of(stage);
             const WorldFrame& f = cfg.frame;
             while (it.next()) {
@@ -174,7 +200,7 @@ FlightModule::FlightModule(flecs::world& world) {
                                                 height[i].value / f.units_per_meter;
                     }
                     if (wind) env.wind = f.vector_to_enu(wind[i].velocity);
-                    fc.agent->step(it.delta_time(), env);
+                    fc.agent->step(dt, env);
                     write_pose(f, *fc.agent, pose[i]);
                     if (geo_pose) write_geo_pose(*cfg.geo, *fc.agent, geo_pose[i]);
                 }
@@ -209,11 +235,31 @@ void unload(flecs::world& world) {
     // This binary may stay loaded and call load() again: forget the cached ids.
     reset_cached_ids<FlightModule, FrameConfig, FlightController, TerrainHeight,
                      HeightAboveGround, Wind, TrackedPose, TrackedGeoPose, FlightPose, GeoPose,
-                     FollowLeader>();
+                     FollowLeader, FlightSettings, Paused>();
 }
 
 flecs::entity module_entity(const flecs::world& world) {
     return world.lookup("fm::ecs::FlightModule");
+}
+
+void set_paused(flecs::world& world, bool paused) {
+    FlightSettings s = settings_of(world);
+    s.paused = paused;
+    world.set<FlightSettings>(s);
+}
+
+bool is_paused(const flecs::world& world) { return settings_of(world).paused; }
+
+void pause(flecs::entity e) { e.add<Paused>(); }
+
+void resume(flecs::entity e) { e.remove<Paused>(); }
+
+bool is_paused(flecs::entity e) { return e.has<Paused>(); }
+
+void set_max_step(flecs::world& world, double seconds) {
+    FlightSettings s = settings_of(world);
+    if (seconds > 0.0) s.max_step = seconds;
+    world.set<FlightSettings>(s);
 }
 
 void set_frame(flecs::world& world, const WorldFrame& frame) {
