@@ -1,6 +1,7 @@
 // Navigation commands in a geodetic Flecs world: go to a point, loiter, hover, routes
 // (fly-over, speeds, terrain-following, patrol loops, waypoint holds, landing on a runway),
-// heading/altitude holds, a ship and commands given as game components.
+// heading/altitude holds, a ship, a helicopter landing on its deck and commands given as
+// game components.
 //
 // Every snippet of docs/NAVIGATION.md comes from here. The program checks its own results
 // and is run as a test (fm_navigation_example).
@@ -240,6 +241,13 @@ int main() {
         fm::ecs::agent(carrier)->follow_route(r);
     }
 
+    // 11) A helicopter lands on the carrier's flight deck and rides on it. takeoff() lifts it
+    //     off the moving deck again.
+    flecs::entity seahawk = spawn(world, "DeckHeli", fm::presets::attack_helicopter(),
+                                  {40.78, 28.98, 300.0, 0, 0, 0}, 0.0, false);
+    const fm::DeckSpot spot = fm::ecs::agent(carrier)->ship()->params().deck_spots[1];
+    fm::ecs::land_on(seahawk, carrier, spot);
+
     // Progress can be followed through the mode, the phase and the route index.
     int patrol_laps = 0;
     std::size_t last_index = 0;
@@ -295,6 +303,11 @@ int main() {
               pose(carrier).phase == fm::FlightPhase::Parked &&
               distance(world, carrier, 40.785, 29.03) < 30.0 && transform(carrier).alt == 0.0,
           "10 ship sailed the route and stopped at the last waypoint");
+    check(pose(seahawk).phase == fm::FlightPhase::Landed &&
+              fm::ecs::agent(seahawk)->rotorcraft()->on_deck() &&
+              std::abs(transform(seahawk).alt - spot.offset.z -
+                       fm::presets::attack_helicopter().gear_height) < 0.1,
+          "11 helicopter landed on the carrier's deck");
     std::printf("\n%s\n", failures == 0 ? "all examples OK" : "SOME EXAMPLES FAILED");
     return failures == 0 ? 0 : 1;
 }

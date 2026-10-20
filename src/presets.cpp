@@ -737,6 +737,10 @@ ShipParams carrier_ship() {
     p.water_level = 0.0;
     p.brake_deceleration = 0.04;
     p.formation_min_separation = 400.0;
+    // 202 m flight deck, island to starboard. Six spots along the port side of the deck,
+    // 20 m above the waterline (layout and deck height estimated).
+    for (const double y : {75.0, 45.0, 15.0, -15.0, -45.0, -75.0})
+        p.deck_spots.push_back(DeckSpot{{-8.0, y, 20.0}, 0.0});
     return p;
 }
 

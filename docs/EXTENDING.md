@@ -435,6 +435,14 @@ denetlenir). **Hiçbir komut hata vermez**: araç yapamıyorsa yok sayar ya da `
 | `FlightMode mode() const` | Şu anki mod | — |
 | `ground_offset() const` | Yerdeyken referans noktasının zeminden yüksekliği (m) | — |
 
+İsteğe bağlı üyeler concept'te yoktur. Agent'ta varsa `FlightAgent` onları kullanır (`requires`
+ile algılar), yoksa varsayılan davranış uygulanır:
+
+| Üye | Anlamı | Yoksa |
+|---|---|---|
+| `bool land_on(const DeckSpot&)` | Hareketli bir güverte spotuna iniş (`RotorcraftAgent`'ta var) | `FlightAgent::land_on` `false` döner |
+| `bool deck_operation() const` | Güverte işi sürüyor: lider (gemi) durumu her adım gerekli | `tracks_leader()` yalnızca `Formation` modunda `true` |
+
 ### `step(dt, env)` kuralları
 
 * İlk satırlar: `if (!(dt > 0.0) || !std::isfinite(dt)) return;` ve

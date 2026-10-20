@@ -63,7 +63,11 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
   otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra
   değerleri IMO standartlarıyla karşılaştırılarak ölçülür.
-- **Testler:** 72 çekirdek + 20 Flecs + navigasyon örneği + 2 plugin testi;
+- **Gemiye iniş / gemiden kalkış (helikopter, drone):** seyirdeki geminin güverte spotuna
+  arkadan yaklaşma, gemiyle aynı hıza gelip spotun üstünde alçalma, güvertede gemiyle
+  birlikte hareket, hareketli güverteden kalkış. Taşıyıcı simüle edilen bir gemi ya da
+  oyunun hareket ettirdiği herhangi bir entity olabilir (`fm::ecs::land_on`).
+- **Testler:** 76 çekirdek + 22 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -105,8 +109,6 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 
 ### Faz 6 — Ek model tipleri
 - Helikopterde motor arızası ve otorotasyon.
-- Hareketli güverteye iniş: helikopter / İHA'nın seyirdeki gemiye yaklaşıp inmesi ve
-  gemiyle birlikte hareket etmesi.
 - VTOL / tiltrotor (multirotor ↔ sabit kanat geçişi).
 - İsteğe bağlı 6-DOF sabit kanat modeli: otopilot çıkışını (yatış, uçuş yolu açısı, gaz)
   kumanda yüzeylerine çeviren bir iç döngü ile aynı arayüzü (`FlightModel` concept) uygular.
@@ -115,6 +117,26 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - Debug çizimi: rota, L1 hedef noktası, formasyon slotları, arazi tabanı.
 - ImGui/ImPlot paneli: canlı grafikler (irtifa, hız, yatış, gaz).
 - CSV kayıt + Python ile çizim betikleri.
+
+### Faz 8 — Gemi operasyonları
+Helikopter ve drone için iniş / kalkış hazır (Faz 0). Sıradakiler:
+- **Sabit kanatlı İHA'nın gemiden kalkışı:** TB3 sınıfı bir preset; güverte boyunca kısa
+  kalkış koşusu ve ski-jump. Güverte, gemiyle birlikte hareket eden bir pist olarak ele
+  alınır.
+- **Sabit kanatlı İHA'nın gemiye inişi:**
+  - Hareketli piste yaklaşma: süzülüş yolu geminin rotasına ve hızına göre kayar.
+  - Kısa iniş ve frenle duruş (kanca yok).
+  - Uygun değilse pas geçip yeniden deneme (wave-off).
+- **Güverte üstü rüzgâr:** gemi hızı ile rüzgârın bileşkesi. Helikopter iniş sınırları
+  (yan / arka rüzgâr) ve gemiye "rüzgâra dön" komutu.
+- **Gemi hareketi:** dalgada güvertenin yalpa, baş-kıç vurma ve dalıp çıkması. Güvertedeki
+  araç bu tutumu izler; iniş için sakin an beklenir.
+- **Birden çok araç:**
+  - Geminin yanında tur atarak iniş sırası bekleme.
+  - Boş spot bulan bir Flecs yardımcı fonksiyonu.
+  - Kalkış sıralaması.
+- **Güverte işleri:** güvertedeki aracı başka bir spota taşıma (`move_on_deck`). Hangar ve
+  asansör oyun tarafında kalır.
 
 ## 4. Model değişimi
 
@@ -140,5 +162,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - Atmosfer modeli 32 km'ye kadar (ISA).
 - Gemide rüzgâr, akıntı ve sığ su etkisi yok; dalga yalnızca görsel yalpa/baş-kıç
   vurmasıdır. Liman manevrası (yanaşma, römorkör) yok.
+- Araçlar gemiyle çarpışmaz (helikopter adanın içinden geçebilir). Bu yüzden iniş yaklaşması
+  geminin arkasından yapılır. Güvertedeki araç gemiyle yatıp kalkmaz.
 - Arazi öngörüsü geçmiş örneklere dayanır; ani dik yamaçlarda (ör. uçurum) koruma sınırlıdır.
   Oyun ileride ileriye dönük arazi sorgusu sağlarsa `TerrainMonitor` buna genişletilebilir.

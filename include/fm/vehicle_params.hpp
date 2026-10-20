@@ -5,6 +5,9 @@
 
 #include <string>
 #include <variant>
+#include <vector>
+
+#include "fm/deck.hpp"
 
 namespace fm {
 
@@ -176,6 +179,8 @@ struct ShipParams {
     double roll_period = 12.0;            // s
     double pitch_amplitude = 0.0;         // rad
     double pitch_period = 8.0;            // s
+    // Flight deck landing spots for helicopters and drones (empty = no flight deck).
+    std::vector<DeckSpot> deck_spots;
 };
 
 // Every vehicle type: one params struct here, one agent class (see docs/EXTENDING.md).

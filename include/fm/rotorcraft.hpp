@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "fm/atmosphere.hpp"
+#include "fm/deck.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/formation.hpp"
 #include "fm/relocation.hpp"
@@ -42,6 +43,14 @@ public:
     bool land();
     // Fly to the runway start at the current altitude and land vertically there.
     bool land(const Runway& runway);
+    // Land on a spot of a moving deck (ship flight deck). The carrier's state comes from
+    // set_leader_state() every step (fm::ecs::land_on does it). Approaches from astern,
+    // hovers over the spot matching the deck's motion, descends and then rides on the deck;
+    // takeoff() lifts off with the deck's velocity. False on the ground.
+    bool land_on(const DeckSpot& spot);
+    // A deck landing or deck takeoff is in progress, or the vehicle stands on a deck.
+    bool deck_operation() const { return deck_stage_ != DeckStage::None; }
+    bool on_deck() const { return deck_stage_ == DeckStage::OnDeck; }
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
     // The host moved the vehicle: continue from `position` / `heading` (NaN = keep), see
@@ -65,7 +74,28 @@ private:
         bool motors_off = false;
     };
 
+    enum class DeckStage {
+        None,
+        Approach,  // to a gate astern of the spot
+        Hover,     // moving over the spot at hover height
+        Descent,   // down to the deck
+        OnDeck,    // standing on the deck, moving with it
+        Takeoff,   // lifting off the deck
+    };
+    struct Target {  // what guidance() asks of the vehicle
+        Vec2 velocity{};
+        double altitude = 0.0;
+        double vertical_speed = kUnknown;  // NaN = from `altitude`
+        bool face_motion = true;
+        bool terrain_floor = true;
+    };
+
     Command guidance(const SlotReference& slot_ref);
+    Target guide_deck(const SlotReference& ref);
+    void ride_deck(const SlotReference& ref, double dt);
+    void end_deck_operation();  // another command replaces a deck approach or takeoff
+    void lose_deck();           // the carrier's state stopped arriving
+    double deck_hover_height() const;
     void guide_route(Command& cmd);
     void finish_route(EndBehavior behavior);
     void finish_takeoff(double altitude);
@@ -129,7 +159,13 @@ private:
     LeaderState leader_{};
     LeaderTracker leader_tracker_;
     double leader_age_ = 0.0;
+    bool leader_fresh_ = false;  // a leader state arrived within the timeout
     double frame_time_ = 0.0;
+
+    DeckStage deck_stage_ = DeckStage::None;
+    DeckSpot deck_spot_{};
+    double deck_altitude_ = 0.0;  // m, altitude of the deck spot
+    Vec3 deck_velocity_{};        // m/s, velocity of the deck spot
 
     // Climb rate over airspeed at the current altitude, refreshed every step.
     struct PowerCurve {

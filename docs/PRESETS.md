@@ -306,6 +306,10 @@ Manevra verisi (dönüş çemberi, durma mesafesi) yayımlanmamış. IMO manevra
 ve podlu, dolgun formlu gemilerin tipik değerlerine göre tahmin edildi. Bollard pull
 ~9 t/MW, durma için pod'lar tam tornistan döner (`astern_thrust_factor = 0.8`).
 
+Uçuş güvertesi 202 m'dir, ada sancak taraftadır. Helikopter ve drone inişi için
+`deck_spots`'ta iskele tarafında 6 spot vardır, güverte su hattından 20 m yukarıdadır.
+Spotların yerleşimi ve güverte yüksekliği tahmindir.
+
 | | Measured | Reference |
 |---|---|---|
 | Top speed | 21.0 kt | 21 kt |

@@ -32,11 +32,12 @@ guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 | `land(runway)` | approach to the runway: positioning on the extended centerline, 3 deg glide path, flaps/gear, flare, touchdown, braking; go-around and a new attempt when unstable | fly to the runway point and land vertically (`land()` lands where it is) |
 | route `on_end = Land` | lands on `route.runway` | lands at the last waypoint |
 | `join_formation(slot)` + `set_leader_state()` | formation flight / follow another entity | same |
+| `land_on(spot)` + `set_leader_state()` | — (not yet) | land on a moving ship deck, ride on it, `takeoff()` from it (`fm::ecs::land_on`) |
 
 Ships take the same commands on the sea surface (altitudes are ignored): `go_to` / routes
 ending in `Land` or `Loiter`, and `hover()`, stop and keep station; `loiter` circles;
 `agent.ship()->steer(rate)` turns at a fixed rate or full rudder; `takeoff`/`land` return
-false. See [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
+false. Ships with a flight deck list their landing spots in `ShipParams::deck_spots`. See [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
 
 Altitudes can be absolute or **above terrain** (terrain following). Terrain is only
 needed directly below the vehicle (a height-of-terrain query at the entity position); the

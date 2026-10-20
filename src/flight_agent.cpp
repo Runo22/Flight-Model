@@ -91,6 +91,28 @@ bool FlightAgent::land(const Runway& runway) {
     return std::visit([&](auto& m) { return m.land(runway); }, impl_);
 }
 
+bool FlightAgent::land_on(const DeckSpot& spot) {
+    if (!is_finite(spot.offset) || !std::isfinite(spot.heading)) return false;
+    return std::visit(
+        [&](auto& m) {
+            if constexpr (requires { { m.land_on(spot) } -> std::same_as<bool>; })
+                return m.land_on(spot);
+            else
+                return false;  // the model cannot land on a deck
+        },
+        impl_);
+}
+
+bool FlightAgent::tracks_leader() const {
+    return std::visit(
+        [](const auto& m) {
+            if constexpr (requires { { m.deck_operation() } -> std::same_as<bool>; })
+                if (m.deck_operation()) return true;
+            return m.mode() == FlightMode::Formation;
+        },
+        impl_);
+}
+
 void FlightAgent::join_formation(const FormationSlot& slot) {
     if (!is_finite(slot.offset) || std::isinf(slot.min_separation)) return;
     std::visit([&](auto& m) { m.join_formation(slot); }, impl_);

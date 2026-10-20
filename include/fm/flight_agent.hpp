@@ -113,8 +113,15 @@ public:
     // Fixed-wing: approach and landing on the runway. Rotorcraft: fly to the runway start
     // at the current altitude and land vertically there. Ships: false.
     bool land(const Runway& runway);
+    // Rotorcraft: land on a spot of a moving deck (ship flight deck) and ride on it until
+    // takeoff(), which lifts off with the deck's velocity. The carrier's state must arrive
+    // with set_leader_state() every step (fm::ecs::land_on does it). Other vehicles (and
+    // rotorcraft on the ground): false.
+    bool land_on(const DeckSpot& spot);
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
+    // Whether the model uses set_leader_state() now (formation, deck operations).
+    bool tracks_leader() const;
 
     // The host moved the vehicle (teleport, respawn, editor move): continue from `position`
     // and `heading` (rad, NaN = keep) instead of jumping back. Speed is kept.

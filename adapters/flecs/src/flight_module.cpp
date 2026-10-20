@@ -236,7 +236,7 @@ FlightModule::FlightModule(flecs::world& world) {
                             fc.agent->cruise();
                         continue;
                     }
-                    if (!fc.agent || fc.agent->mode() != FlightMode::Formation) continue;
+                    if (!fc.agent || !fc.agent->tracks_leader()) continue;
                     if (auto leader = leader_state(cfg, follow[i], dt))
                         fc.agent->set_leader_state(*leader);
                 }
@@ -434,6 +434,18 @@ bool follow(flecs::entity follower, flecs::entity leader, const FormationSlot& s
 void stop_following(flecs::entity follower) {
     follower.remove<FollowLeader>();
     if (FlightAgent* a = agent(follower); a && a->mode() == FlightMode::Formation) a->cruise();
+}
+
+bool land_on(flecs::entity e, flecs::entity carrier, const DeckSpot& spot) {
+    FlightAgent* a = agent(e);
+    if (!a || !carrier.is_alive() || carrier == e || !a->land_on(spot)) return false;
+    FollowLeader relation;
+    relation.leader = carrier;
+    relation.slot = FormationSlot{spot.offset};
+    if (const auto* fc = compat::try_get<FlightController>(carrier); fc && fc->agent)
+        a->set_leader_state(fc->agent->as_leader());
+    e.set<FollowLeader>(relation);
+    return true;
 }
 
 }  // namespace fm::ecs

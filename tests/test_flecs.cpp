@@ -475,6 +475,68 @@ TEST_CASE("flecs geo: a ship sails a route, stops and is moved by the game") {
     CHECK((local() - proj.to_local(stop_at)).xy().length() < 30.0);
 }
 
+TEST_CASE("flecs geo: a helicopter lands on a sailing carrier and takes off again") {
+    flecs::world world;
+    ecs::load(world);
+    ecs::set_geo_origin(world, 40.9, 29.0);
+    const ShipParams carrier = presets::carrier_ship();
+    flecs::entity ship = world.entity();
+    ecs::attach_geo(ship, carrier, {40.9, 29.0, 0.0}, 0.0, 8.0, false);
+    ecs::agent(ship)->hold(0.0, 0.0, 8.0);
+    flecs::entity heli = world.entity();
+    const RotorcraftParams p = presets::attack_helicopter();
+    ecs::attach_geo(heli, p, {40.88, 28.98, 300.0}, 45.0, 40.0, false);
+    const DeckSpot spot = carrier.deck_spots[3];
+    CHECK(!ecs::land_on(heli, heli, spot));
+    CHECK(ecs::land_on(heli, ship, spot));
+
+    const auto spot_now = [&] {
+        const FlightState& s = ecs::agent(ship)->state();
+        const Vec2 fwd = heading_vector(s.attitude.heading);
+        return s.position + Vec3{0.0, 0.0, spot.offset.z} +
+               Vec3{right_of(fwd).x * spot.offset.x + fwd.x * spot.offset.y,
+                    right_of(fwd).y * spot.offset.x + fwd.y * spot.offset.y, 0.0};
+    };
+    const auto step_world = [&] {
+        heli.set<ecs::TerrainHeight>({0.0});  // the game's HOT at sea: the sea surface
+        world.progress(kDt);
+    };
+    for (int i = 0; i < static_cast<int>(400.0 / kDt); ++i) step_world();
+    CHECK(pose_of(heli).phase == FlightPhase::Landed);
+    CHECK(pose_of(heli).on_ground);
+    const GeoProjection& proj = *ecs::geo(world);
+    const ecs::GeoPose& g = geo_pose_of(heli);
+    const Vec3 here = proj.to_local({g.latitude, g.longitude, g.altitude});
+    CHECK((here.xy() - spot_now().xy()).length() < 0.5);
+    CHECK_NEAR(g.altitude, spot.offset.z + p.gear_height, 0.05);  // on the flight deck
+
+    CHECK(ecs::agent(heli)->takeoff({}));
+    for (int i = 0; i < static_cast<int>(20.0 / kDt); ++i) step_world();
+    CHECK(!pose_of(heli).on_ground);
+    CHECK(pose_of(heli).mode == FlightMode::Hover);
+    CHECK(geo_pose_of(heli).altitude > spot.offset.z + p.takeoff_height);
+}
+
+TEST_CASE("flecs: a drone lands on a ship moved by the game (TrackedPose)") {
+    flecs::world world = make_world(WorldFrame::enu());
+    Vec3 ship_position{0.0, 0.0, 0.0};
+    flecs::entity ship = world.entity().set<ecs::TrackedPose>({ship_position, 0.0});
+    flecs::entity drone = world.entity();
+    ecs::attach(drone, presets::multirotor(), {{-50.0, -80.0, 40.0}, 0.0, 0.0, false});
+    const DeckSpot pad{{0.0, -20.0, 6.0}, 0.0};  // helipad 20 m aft, 6 m above the water
+    CHECK(ecs::land_on(drone, ship, pad));
+    for (int i = 0; i < static_cast<int>(240.0 / kDt); ++i) {
+        ship_position.y += 5.0 * kDt;  // north at 5 m/s
+        ship.set<ecs::TrackedPose>({ship_position, 0.0});
+        drone.set<ecs::TerrainHeight>({0.0});
+        world.progress(kDt);
+    }
+    CHECK(pose_of(drone).phase == FlightPhase::Landed);
+    const Vec3 pad_now = ship_position + pad.offset;
+    CHECK((pose_of(drone).position.xy() - pad_now.xy()).length() < 0.5);
+    CHECK_NEAR(pose_of(drone).position.z, pad_now.z + presets::multirotor().gear_height, 0.05);
+}
+
 TEST_CASE("flecs: a teleported leader does not fling its followers") {
     flecs::world world = make_world(WorldFrame::enu());
     flecs::entity car = world.entity("car").set<ecs::TrackedPose>({{0, 0, 0}});

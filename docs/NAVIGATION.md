@@ -220,6 +220,39 @@ fm::ecs::agent(carrier)->follow_route(r);
 * Kol (eskort / konvoy) `join_formation` ile aynı şekilde kurulur; lider durursa gemi slotunda
   istasyon tutar.
 
+### Gemiye iniş ve gemiden kalkış (helikopter, drone)
+
+```cpp
+flecs::entity seahawk = spawn(world, "DeckHeli", fm::presets::attack_helicopter(),
+                              {40.78, 28.98, 300.0, 0, 0, 0}, 0.0, false);
+const fm::DeckSpot spot = fm::ecs::agent(carrier)->ship()->params().deck_spots[1];
+fm::ecs::land_on(seahawk, carrier, spot);
+```
+
+* İniş sırası:
+  1. Spotun 60 m arkasındaki, güvertenin ~15 m üstündeki bir kapıya gelir. Kapı gemiyle
+     birlikte hareket eder; helikopter oraya seyir hızıyla gider.
+  2. Gemiyle aynı hıza gelir, güverteye göre 3 m/s ile spotun üstüne geçer.
+  3. Spotun üstünde (1 m içinde) alçalır ve ~1 m/s ile teker koyar. Gemi döner ya da hızlanır
+     da spottan kayarsa, tekrar üstüne gelene kadar alçalmayı durdurur.
+  4. Güvertede gemiyle birlikte hareket eder ve döner (`phase = Landed`,
+     `rotorcraft()->on_deck()`).
+* `takeoff()` güverteden geminin hızıyla dikey kalkar ve `takeoff_height` kadar yükselince
+  gemiden ayrılır (sonra `hover` ya da `plan.then`). Güvertedeyken verilen `go_to` /
+  `follow_route` / `loiter` / `hover` önce güverteden kalkar.
+* `deck_spots` gemi frame'indedir: x sancak (sağ), y pruva (ileri), z su hattından güverte
+  yüksekliği. Preset'te 6 spot vardır. Kendi `DeckSpot`'unu da verebilirsin (ör. bir
+  fırkateynin helikopter pisti).
+* Taşıyıcı yalnızca simüle edilen bir gemi olmak zorunda değil: `TrackedPose` ya da
+  `TrackedGeoPose` ile oyunun kendisinin hareket ettirdiği bir gemi de olur. Modül gemi
+  durumunu her frame helikoptere verir; Flecs dışında `set_leader_state(ship.as_leader())`
+  her adımda çağrılır.
+* Gemi silinirse ya da durumu gelmezse (2 s): yaklaşan helikopter olduğu yerde bekler,
+  güvertedeki olduğu yerde kalır. Oyun güvertedeki helikopteri başka yere taşırsa gemiden
+  ayrılır.
+* Sabit kanatlı İHA'lar (TB3 sınıfı, ski-jump) henüz gemiye inip kalkamaz; bkz.
+  [`ROADMAP.md`](ROADMAP.md). `land_on` onlar için `false` döner.
+
 ## 8. İlerlemeyi takip etmek
 
 | Ne | Nereden |
@@ -241,3 +274,4 @@ fm::ecs::agent(carrier)->follow_route(r);
 | `takeoff` | Pistten: koşu, rotasyon, tırmanış | Dikey kalkış | Yok (`false`) |
 | `land(runway)` | Pist yaklaşması, flare, frenleme | Pist başına uçup dikey iniş | Yok (`false`) |
 | `land()` | Pist olmadan inemez (`false`) | Bulunduğu yere dikey iniş | Yok (`false`); durmak için `hover()` |
+| `land_on(spot)` | Henüz yok (`false`) | Hareketli güverteye iniş, güvertede gemiyle hareket; `takeoff()` güverteden kalkar | Yok (`false`); iniş noktalarını sağlar (`deck_spots`) |

@@ -20,6 +20,14 @@ constexpr double kYawTau = 0.5;           // s
 constexpr double kLeaderTimeout = 2.0;    // s
 constexpr double kHardImpactSpeed = 3.0;  // m/s, faster ground contact counts as a crash
 constexpr double kTurnSpeed = 15.0;       // m/s, banked turns above this speed (helicopters)
+// Deck landing: approach to a gate astern of the spot, then over the spot and down.
+constexpr double kDeckGateDistance = 60.0;   // m astern of the spot
+constexpr double kDeckGateHeight = 10.0;     // m above the hover height
+constexpr double kDeckGateRadius = 15.0;     // m, gate reached
+constexpr double kDeckNearDistance = 100.0;  // m from the gate: nose to the deck heading
+constexpr double kDeckFloorDistance = 400.0; // m from the gate: terrain floor off (over the sea)
+constexpr double kDeckTranslateSpeed = 3.0;  // m/s relative to the deck, moving over the spot
+constexpr double kDeckAlignRadius = 1.0;     // m, over the spot
 }  // namespace
 
 RotorcraftAgent::RotorcraftAgent(RotorcraftParams params, const InitialConditions& ic)
@@ -68,6 +76,7 @@ void RotorcraftAgent::cruise() {
 }
 
 void RotorcraftAgent::hold(double course, double altitude, double speed, AltitudeRef altitude_ref) {
+    end_deck_operation();
     mode_ = FlightMode::Cruise;
     route_.clear();
     course_target_ = wrap_2pi(course);
@@ -88,6 +97,7 @@ void RotorcraftAgent::hover() {
         takeoff({});
         return;
     }
+    end_deck_operation();
     mode_ = FlightMode::Hover;
     route_.clear();
     hold_point_ = position_.xy();
@@ -121,6 +131,7 @@ void RotorcraftAgent::follow_route(Route route) {
         takeoff(plan);
         return;
     }
+    end_deck_operation();
     route_.start(std::move(route), position_, resolved_altitude_target_);
     hold_timer_ = 0.0;
     waiting_ = false;
@@ -140,6 +151,7 @@ void RotorcraftAgent::loiter(const Vec3& center, double radius, bool clockwise,
         follow_route(std::move(r));
         return;
     }
+    end_deck_operation();
     route_.clear();
     if (altitude_ref != AltitudeRef::Keep) {
         altitude_target_ = center.z;
@@ -165,11 +177,13 @@ bool RotorcraftAgent::takeoff(const TakeoffPlan& plan) {
     mode_ = FlightMode::Takeoff;
     phase_ = FlightPhase::InitialClimb;
     route_.clear();
+    if (deck_stage_ == DeckStage::OnDeck) deck_stage_ = DeckStage::Takeoff;
     return true;
 }
 
 bool RotorcraftAgent::land() {
     if (on_ground_) return false;
+    end_deck_operation();
     mode_ = FlightMode::Land;
     phase_ = FlightPhase::Landing;
     route_.clear();
@@ -186,8 +200,22 @@ bool RotorcraftAgent::land(const Runway& runway) {
     return true;
 }
 
+bool RotorcraftAgent::land_on(const DeckSpot& spot) {
+    if (on_ground_) return false;
+    deck_spot_ = spot;
+    deck_stage_ = DeckStage::Approach;
+    mode_ = FlightMode::Land;
+    phase_ = FlightPhase::Approach;
+    route_.clear();
+    hold_point_ = position_.xy();  // waits here until the carrier's state arrives
+    leader_tracker_.reset();
+    leader_age_ = 0.0;
+    return true;
+}
+
 void RotorcraftAgent::join_formation(const FormationSlot& slot) {
     if (on_ground_) return;
+    end_deck_operation();
     mode_ = FlightMode::Formation;
     route_.clear();
     slot_ = slot;
@@ -219,6 +247,20 @@ bool RotorcraftAgent::relocate(const Vec3& position, double heading) {
         // Restart the current task from here.
         const Vec2 here = position_.xy();
         const bool new_altitude = r.vertical_jump && altitude_ref_ == AltitudeRef::Absolute;
+        // Moved away from the deck: off the carrier. A deck approach becomes a hover here.
+        if (deck_stage_ != DeckStage::None) {
+            const bool approaching = deck_stage_ != DeckStage::OnDeck &&
+                                     deck_stage_ != DeckStage::Takeoff;
+            deck_stage_ = DeckStage::None;
+            if (approaching) {
+                mode_ = FlightMode::Hover;
+                phase_ = FlightPhase::Airborne;
+                hold_here_ = true;
+                altitude_target_ = position_.z;
+                altitude_ref_ = AltitudeRef::Absolute;
+                resolved_altitude_target_ = position_.z;
+            }
+        }
         switch (mode_) {
             case FlightMode::Cruise:
                 course_target_ = wrap_2pi(course_target_ + r.turn);
@@ -268,13 +310,26 @@ void RotorcraftAgent::step(double dt, const Environment& input) {
     if (helicopter()) update_power_curve(isa(position_.z, env.temperature_offset).density);
 
     SlotReference slot_ref{};
-    if (mode_ == FlightMode::Formation) {
+    leader_fresh_ = false;
+    const bool deck = deck_stage_ != DeckStage::None;
+    if (mode_ == FlightMode::Formation || deck) {
         leader_age_ += dt;
         if (leader_age_ > kLeaderTimeout) {
-            hover();
+            if (deck) {
+                lose_deck();
+            } else {
+                hover();
+            }
         } else if (leader_.valid) {
-            slot_ref = leader_tracker_.update(leader_, slot_, dt);
+            const FormationSlot spot{deck_spot_.offset};
+            slot_ref = leader_tracker_.update(leader_, deck ? spot : slot_, dt);
+            leader_fresh_ = true;
         }
+    }
+    if (deck_stage_ == DeckStage::OnDeck) {
+        ride_deck(slot_ref, dt);
+        update_output(isa(position_.z, env.temperature_offset), env.wind);
+        return;
     }
 
     const int substeps = std::max(1, static_cast<int>(std::ceil(dt / kMaxSubstep)));
@@ -287,6 +342,7 @@ void RotorcraftAgent::step(double dt, const Environment& input) {
         ref.position += ref.velocity * frame_time_;
         const Command cmd = guidance(ref);
         integrate(cmd, atm, env.wind, h);
+        if (deck_stage_ == DeckStage::Descent && on_ground_) deck_stage_ = DeckStage::OnDeck;
         hold_timer_ = std::max(0.0, hold_timer_ - h);
     }
     update_output(atm, env.wind);
@@ -313,7 +369,14 @@ RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
     bool face_motion = true;
     bool terrain_floor = true;
 
-    switch (mode_) {
+    if (deck_stage_ != DeckStage::None) {
+        const Target t = guide_deck(ref);
+        v_h = t.velocity;
+        altitude = t.altitude;
+        vz = t.vertical_speed;
+        face_motion = t.face_motion;
+        terrain_floor = t.terrain_floor;
+    } else switch (mode_) {
         case FlightMode::Cruise: {
             const Vec2 dir = heading_vector(course_target_);
             const double crosstrack = dot(position_.xy() - course_anchor_, right_of(dir));
@@ -507,6 +570,121 @@ void RotorcraftAgent::guide_route(Command& cmd) {
         route_.altitude_target(lp, terrain_, lookahead, resolved_altitude_target_);
 }
 
+RotorcraftAgent::Target RotorcraftAgent::guide_deck(const SlotReference& ref) {
+    Target t;
+    t.face_motion = false;
+    t.terrain_floor = false;
+    if (!leader_fresh_) {  // no carrier state yet: wait
+        t.velocity = position_hold_velocity(hold_point_, speed_target_);
+        t.altitude = resolved_altitude_target_;
+        t.terrain_floor = true;
+        return t;
+    }
+    // `ref` is the spot on the deck, moving with the carrier.
+    deck_altitude_ = ref.position.z;
+    deck_velocity_ = ref.velocity;
+    const Vec2 spot = ref.position.xy();
+    const Vec2 relative = velocity_.xy() - ref.velocity.xy();
+    const double hover = deck_altitude_ + p_.gear_height + deck_hover_height();
+    yaw_target_ = wrap_2pi(ref.heading + deck_spot_.heading);
+
+    switch (deck_stage_) {
+        case DeckStage::Approach: {
+            const Vec2 gate = spot - heading_vector(ref.heading) * kDeckGateDistance;
+            const double distance = (gate - position_.xy()).length();
+            t.velocity = ref.velocity.xy() + position_hold_velocity(gate, speed_target_);
+            t.altitude = hover + kDeckGateHeight;
+            t.face_motion = distance > kDeckNearDistance;
+            t.terrain_floor = distance > kDeckFloorDistance;
+            if (distance < kDeckGateRadius && std::abs(position_.z - t.altitude) < 3.0 &&
+                relative.length() < 2.0)
+                deck_stage_ = DeckStage::Hover;
+            break;
+        }
+        case DeckStage::Hover:
+            t.velocity = ref.velocity.xy() + position_hold_velocity(spot, kDeckTranslateSpeed);
+            t.altitude = hover;
+            if ((spot - position_.xy()).length() < kDeckAlignRadius && relative.length() < 0.7 &&
+                std::abs(position_.z - hover) < 1.5) {
+                deck_stage_ = DeckStage::Descent;
+                phase_ = FlightPhase::Landing;
+            }
+            break;
+        case DeckStage::Descent: {
+            t.velocity = ref.velocity.xy() + position_hold_velocity(spot, kDeckTranslateSpeed);
+            t.altitude = deck_altitude_ + p_.gear_height;
+            // Off the spot (the deck turned or surged): hold the height until back over it.
+            const bool over_spot = (spot - position_.xy()).length() < 2.0 * kDeckAlignRadius;
+            const double height = position_.z - p_.gear_height - deck_altitude_;
+            const double sink =
+                over_spot ? std::min(p_.descent_rate_max, std::max(p_.landing_speed, 0.4 * height))
+                          : 0.0;
+            t.vertical_speed = ref.velocity.z - sink;
+            break;
+        }
+        case DeckStage::Takeoff: {
+            t.velocity = ref.velocity.xy() + position_hold_velocity(spot, 2.0);
+            const double climb =
+                takeoff_.climb_height > 0.0 ? takeoff_.climb_height : p_.takeoff_height;
+            t.altitude = deck_altitude_ + p_.gear_height + climb;
+            t.vertical_speed =
+                ref.velocity.z +
+                std::min(p_.climb_rate_max, std::max(1.0, kAltitudeGain * (t.altitude - position_.z)));
+            if (position_.z >= t.altitude - 0.5) {
+                deck_stage_ = DeckStage::None;  // clear of the deck
+                finish_takeoff(position_.z);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return t;
+}
+
+void RotorcraftAgent::ride_deck(const SlotReference& ref, double dt) {
+    thrust_ = 0.0;
+    on_ground_ = true;
+    if (!leader_fresh_) {  // the carrier is gone: stays where it is
+        velocity_ = {};
+        return;
+    }
+    // The carrier's state is from the start of the step.
+    deck_altitude_ = ref.position.z + ref.velocity.z * dt;
+    deck_velocity_ = ref.velocity;
+    position_ = ref.position + ref.velocity * dt + Vec3{0.0, 0.0, p_.gear_height};
+    velocity_ = ref.velocity;
+    attitude_.heading = wrap_2pi(ref.heading + ref.turn_rate * dt + deck_spot_.heading);
+    attitude_.roll = 0.0;
+    attitude_.pitch = 0.0;
+    yaw_target_ = attitude_.heading;
+}
+
+void RotorcraftAgent::end_deck_operation() {
+    if (deck_stage_ != DeckStage::OnDeck) deck_stage_ = DeckStage::None;
+}
+
+void RotorcraftAgent::lose_deck() {
+    switch (deck_stage_) {
+        case DeckStage::Approach:
+        case DeckStage::Hover:
+        case DeckStage::Descent:
+            deck_stage_ = DeckStage::None;
+            resolved_altitude_target_ = position_.z;
+            hover();
+            break;
+        case DeckStage::Takeoff:  // goes on as a vertical takeoff from the deck height
+            deck_stage_ = DeckStage::None;
+            hold_point_ = position_.xy();
+            ground_reference_ = deck_altitude_;
+            break;
+        default:  // on the deck: stays there
+            break;
+    }
+}
+
+double RotorcraftAgent::deck_hover_height() const { return std::max(4.0, 3.0 * p_.gear_height); }
+
 void RotorcraftAgent::finish_route(EndBehavior behavior) {
     const Waypoint last = route_.target();
     const double last_altitude =
@@ -605,7 +783,9 @@ void RotorcraftAgent::integrate(const Command& cmd, const AtmosphereSample& atm,
 
     if (cmd.motors_off) {
         thrust_ = 0.0;
-        velocity_ = {};
+        // Standing on a deck moves with the deck.
+        velocity_ = deck_stage_ != DeckStage::None ? deck_velocity_ : Vec3{};
+        position_ += velocity_ * dt;
         attitude_.pitch = 0.0;
         attitude_.roll = 0.0;
         if (ground > kNoGround) position_.z = ground + p_.gear_height;
@@ -670,12 +850,14 @@ void RotorcraftAgent::integrate(const Command& cmd, const AtmosphereSample& atm,
     position_ += velocity_ * dt;
 
     if (ground > kNoGround && position_.z - p_.gear_height <= ground) {
-        const double impact = -velocity_.z;
+        // On a deck the ground moves: impact and friction are relative to it.
+        const Vec3 surface = deck_stage_ != DeckStage::None ? deck_velocity_ : Vec3{};
+        const double impact = surface.z - velocity_.z;
         position_.z = ground + p_.gear_height;
-        velocity_.z = std::max(velocity_.z, 0.0);
+        velocity_.z = std::max(velocity_.z, surface.z);
         const double friction = std::exp(-8.0 * dt);
-        velocity_.x *= friction;
-        velocity_.y *= friction;
+        velocity_.x = surface.x + (velocity_.x - surface.x) * friction;
+        velocity_.y = surface.y + (velocity_.y - surface.y) * friction;
         if (!on_ground_ && mode_ != FlightMode::Takeoff) {
             phase_ = impact > kHardImpactSpeed ? FlightPhase::TerrainContact : FlightPhase::Landed;
             mode_ = FlightMode::Land;
@@ -731,6 +913,10 @@ double RotorcraftAgent::vertical_speed_to(double altitude) const {
 }
 
 double RotorcraftAgent::ground_elevation() const {
+    // Over the deck it is the ground (the terrain input is the sea surface below).
+    if (deck_stage_ == DeckStage::Descent || deck_stage_ == DeckStage::OnDeck ||
+        deck_stage_ == DeckStage::Takeoff)
+        return deck_altitude_;
     return terrain_.valid() ? terrain_.current() : ground_reference_;
 }
 

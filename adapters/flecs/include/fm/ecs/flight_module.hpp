@@ -221,6 +221,12 @@ bool follow(flecs::entity follower, flecs::entity leader, const FormationSlot& s
 // Ends formation flight; the follower continues straight ahead.
 void stop_following(flecs::entity follower);
 
+// Lands helicopter / drone `e` on `spot` of `carrier`'s deck (a ship with a FlightController,
+// e.g. fm::presets::carrier_ship() and its params().deck_spots, or any entity with a
+// TrackedPose / TrackedGeoPose) and keeps it on the deck until takeoff(). Returns false when
+// `e` has no agent, cannot land on a deck or is on the ground.
+bool land_on(flecs::entity e, flecs::entity carrier, const DeckSpot& spot);
+
 // --- Game transform binding -------------------------------------------------------------
 
 namespace detail {
