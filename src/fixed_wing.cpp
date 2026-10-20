@@ -22,10 +22,22 @@ constexpr double kLeaderTimeout = 2.0;     // s without leader updates before gi
 constexpr double kFormationSpeedTau = 3.0; // s, speed response while station keeping
 constexpr double kFormationAlongGain = 0.1;  // 1/s, along-track error to speed
 constexpr double kTropopauseSigma = 0.2971;  // ISA density ratio at 11 km
+
+// Thrust / power lapse at the density ratio sigma: sigma^n in the troposphere; above the
+// tropopause (constant temperature) in proportion to the density.
+double density_lapse(double sigma, double exponent) {
+    return sigma >= kTropopauseSigma
+               ? std::pow(sigma, exponent)
+               : std::pow(kTropopauseSigma, exponent) * sigma / kTropopauseSigma;
+}
 }  // namespace
 
 FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& ic)
     : p_(std::move(params)), terrain_(std::max(1.0, p_.cruise_speed * 0.25)) {
+    if (p_.engine.critical_altitude > 0.0) {
+        rated_lapse_ = density_lapse(isa(p_.engine.critical_altitude).sigma,
+                                     p_.engine.density_exponent);
+    }
     position_ = ic.position;
     heading_ = wrap_2pi(ic.heading);
     course_target_ = heading_;
@@ -950,12 +962,9 @@ double FixedWingAgent::altitude_target_now(double lookahead) const {
 
 double FixedWingAgent::thrust_available(double tas, const AtmosphereSample& atm) const {
     const EngineParams& e = p_.engine;
-    // sigma^n in the troposphere; above the tropopause (constant temperature) thrust and
-    // power fall in proportion to the density.
-    const double lapse = atm.sigma >= kTropopauseSigma
-                             ? std::pow(atm.sigma, e.density_exponent)
-                             : std::pow(kTropopauseSigma, e.density_exponent) * atm.sigma /
-                                   kTropopauseSigma;
+    double lapse = density_lapse(atm.sigma, e.density_exponent);
+    // Turbocharged / flat-rated: the rating holds up to the critical altitude.
+    if (e.critical_altitude > 0.0) lapse = std::min(1.0, lapse / rated_lapse_);
     if (e.type == EngineType::Jet) {
         const double mach = tas / atm.speed_of_sound;
         return e.max_thrust * lapse * std::clamp(1.0 - e.mach_lapse * mach, 0.2, 2.0);

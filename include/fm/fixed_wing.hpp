@@ -128,6 +128,7 @@ private:
     Vec3 aim_point() const;  // glide path touchdown aim point on the runway
 
     FixedWingParams p_;
+    double rated_lapse_ = 1.0;  // engine density lapse at the critical altitude
     FlightState out_{};
 
     // Dynamic state

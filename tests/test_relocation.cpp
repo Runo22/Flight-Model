@@ -134,7 +134,7 @@ TEST_CASE("relocate: parked aircraft moved sideways stays on the new ground") {
 }
 
 TEST_CASE("relocate: airborne aircraft placed below the ground is lifted above it") {
-    const FixedWingParams p = presets::fixed_wing_uav();
+    const FixedWingParams p = presets::propeller_uav();
     FlightAgent a(p, airborne({0, 0, 500}, 0.0, p.cruise_speed));
     simulate(a, 5.0, flat(0.0));
     CHECK(a.relocate({3000, 3000, -50}));

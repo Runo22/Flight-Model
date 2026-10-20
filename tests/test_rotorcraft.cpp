@@ -131,7 +131,7 @@ TEST_CASE("agent: snapshot allows switching models without a jump") {
     simulate(a, 20.0);
     const InitialConditions ic = a.snapshot();
     // e.g. level-of-detail switch or a different parameter set for the same entity
-    FlightAgent b(presets::fixed_wing_uav(), ic);
+    FlightAgent b(presets::propeller_uav(), ic);
     CHECK((b.state().position - a.state().position).length() < 1e-9);
     CHECK_NEAR(b.state().attitude.heading, a.state().attitude.heading, 1e-9);
 }

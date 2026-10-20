@@ -5,8 +5,8 @@
 * **Referans sınıfı presetler**: belirli bir uçağın yayımlanmış performansına göre ayarlandı
   ve ölçülerek doğrulandı. Oyunda "gerçekçiye yakın" davranması gereken araçlar için.
 * **Genel sınıf presetler** (`fast_jet`, `airliner_jet`, `regional_turboprop`,
-  `light_propeller`, `fixed_wing_uav`, `multirotor`): sınıfı temsil eden makul değerler,
-  belirli bir uçağa göre ayarlanmadı.
+  `light_propeller`, `multirotor`): sınıfı temsil eden makul değerler, belirli bir uçağa göre
+  ayarlanmadı.
 
 | Preset | Referans | Sınıf |
 |---|---|---|
@@ -14,6 +14,8 @@
 | `twin_engine_fighter()` | F-15C | Çift motorlu, afterburner'lı savaş uçağı |
 | `turboprop_trainer()` | TUSAŞ Hürkuş | Yüksek performanslı turboprop eğitim / hafif taarruz |
 | `jet_uav()` | Bayraktar Kızılelma | Jet motorlu insansız savaş uçağı (ses altı) |
+| `propeller_uav()` | TUSAŞ Anka-S | Tek motorlu, pervaneli MALE İHA |
+| `twin_propeller_uav()` | TUSAŞ Aksungur | Çift motorlu, pervaneli, yüksek faydalı yüklü MALE İHA |
 | `attack_helicopter()` | TUSAŞ T129 ATAK | Hafif / orta taarruz helikopteri |
 | `heavy_attack_helicopter()` | AH-64D Apache | Ağır taarruz helikopteri |
 | `transport_helicopter()` | CH-47F Chinook | Ağır nakliye helikopteri (tandem rotor), azami ağırlıkta |
@@ -131,6 +133,67 @@ belirsizdir.
 | Takeoff: ground roll, lift-off, over 50 ft | 560 m, 128 kt, 685 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt, 642 m, 1047 m |  |
 | AI turn at cruise speed, 10,000 ft | 3.7 deg/s at 50 deg bank |  |
+
+### `propeller_uav()` — TUSAŞ Anka-S sınıfı, 1.700 kg
+
+Veri: azami kalkış ağırlığı 1.700 kg, kanat açıklığı 17,5 m, 1× TEI PD170 turbo dizel
+(170 hp), azami hız 217 km/sa (117 kt), servis tavanı 30.000 ft, görev irtifası
+18.000-23.000 ft, seyir hızı kaynaklara göre 75-110 kt. **Varsayım:** kanat alanı 16 m²
+(açıklık oranı ~19, Predator sınıfı gibi).
+
+**Motor:** PD170 iki kademeli turbo-şarjlıdır. 170 hp'yi 20.000 ft'e kadar korur, 30.000 ft'te
+130 hp, 40.000 ft'te 90 hp verir. Bunun için motora `critical_altitude` eklendi: güç bu
+irtifaya kadar sabit kalır, üstünde `density_exponent` ile düşer. 6.096 m ve 0,75 ile TEI
+tablosu birebir çıkar (170 / 130 / 90 hp).
+
+Yayımlanan 117 kt deniz seviyesinde tutturuldu ve AI'nin hız sınırı (EAS) olarak kullanıldı.
+Turbo motor gücünü koruduğu için gerçek hava hızı irtifayla artar: 20.000 ft'te ~144 kt
+(turbo-şarjlı pistonlu uçaklarda olduğu gibi). Varsayılan seyir 90 kt; daha hızlı uçması
+için komutta hız verilebilir ya da `cruise_speed` artırılabilir (deniz seviyesinde 110 kt
+gücün çoğunu kullanır, tırmanmaya az güç kalır).
+
+| | Measured | Reference |
+|---|---|---|
+| Top speed at 20,000 ft | 144 kt TAS (M0.23) |  |
+| Top speed at sea level (with limits) | 117 kt | 117 kt (217 km/h) |
+| Best climb at sea level | 683 ft/min at 79 kt |  |
+| Service ceiling (100 ft/min) | 30,085 ft | 30,000 ft |
+| Stall speed, clean / landing flaps | 63 / 57 kt |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 449 m, 66 kt, 714 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 75 kt, 70 kt, 286 m, 647 m |  |
+| AI turn at cruise speed, 10,000 ft | 6.8 deg/s at 30 deg bank |  |
+
+### `twin_propeller_uav()` — TUSAŞ Aksungur sınıfı, 3.300 kg
+
+Veri:
+
+* Azami kalkış ağırlığı 3.300 kg, faydalı yük 750 kg.
+* Kanat açıklığı 24,2 m, 2× TEI PD170.
+* Seyir 180 km/sa (97 kt, üretici), azami hız 250 km/sa (135 kt; bazı kaynaklarda seyir
+  olarak geçiyor).
+* 750 kg faydalı yükle 25.000 ft'e kadar, 150 kg ile 35.000 ft'e kadar görev; azami
+  irtifa 40.000 ft.
+
+**Varsayım:** kanat alanı 29 m² (açıklık oranı ~20). Preset azami kalkış ağırlığındadır.
+Tavan ağırlıkla değişir: rapor 2.700 kg'daki (150 kg faydalı yük) tavanı da ölçer. 25.000 ft
+bir görev irtifasıdır, servis tavanı değil. Model 3.300 kg'da 33.700 ft'e tırmanabilir.
+
+| | Measured | Reference |
+|---|---|---|
+| Top speed at 20,000 ft | 164 kt TAS (M0.27) |  |
+| Top speed at sea level (with limits) | 135 kt | 135 kt (250 km/h) |
+| Best climb at sea level | 792 ft/min at 82 kt |  |
+| Service ceiling (100 ft/min) | 33,738 ft | 25,000 ft operating altitude with 750 kg payload |
+| Service ceiling at 2700 kg | 38,736 ft | 35,000 ft with 150 kg payload; 40,000 ft maximum |
+| Stall speed, clean / landing flaps | 66 / 59 kt |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 454 m, 69 kt, 703 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 78 kt, 73 kt, 317 m, 681 m |  |
+| AI turn at cruise speed, 10,000 ft | 6.4 deg/s at 30 deg bank |  |
+
+İki İHA da kalkış, rota ve piste iniş testinden geçer. Tırmanmaları zayıftır (~700-800 ft/dk).
+Arazi tabanının altına düşen bir uçak artık hızını en iyi tırmanma açısı hızına düşürüp
+enerjiyi tırmanmaya verir. Bu düzeltme bütün sabit kanatlılar için geçerli; böylece %6'lık
+yamaçlar da aşılır.
 
 ## Helikopterler
 
@@ -285,9 +348,9 @@ Ayarlarken:
 | Ölçülen | Sabit kanatta asıl etkileyen | Helikopterde asıl etkileyen |
 |---|---|---|
 | Azami hız (alçak) | `cd0`, itki / güç; operasyonel sınır `max_speed` (EAS) | `flat_plate_area`, `transmission_limit` |
-| Azami hız (yüksek) | `engine.density_exponent`, `engine.mach_lapse`, `wave_drag`, `mach_critical`; sınır `mach_max` | `power_lapse_exponent` |
+| Azami hız (yüksek) | `engine.density_exponent`, `engine.critical_altitude` (turbo / flat-rated), `engine.mach_lapse`, `wave_drag`, `mach_critical`; sınır `mach_max` | `power_lapse_exponent` |
 | Tırmanma | itki / güç fazlası; AI sınırı `climb_rate_max`, `climb_angle_max` | `profile_power`, `induced_power_factor`, güç |
-| Tavan | `engine.density_exponent`, `induced_drag_k` | `power_lapse_exponent`, `profile_power` |
+| Tavan | `engine.density_exponent`, `engine.critical_altitude`, `induced_drag_k`, `mass` | `power_lapse_exponent`, `profile_power` |
 | Stall / yaklaşma hızı | `cl_max`, `flaps_dcl_max`, `approach_speed_factor` | — |
 | Kalkış | `rotate_speed`, `rotation_pitch`, `cl_alpha`, `cl0` + `flaps_dcl0` | yer etkisi, güç fazlası |
 | İniş mesafesi | `touchdown_distance`, `brake_deceleration`, `approach_speed_factor` | — |
@@ -308,6 +371,19 @@ Ayarlarken:
 * Kızılelma: [Wikipedia](https://wikipedia.com/wiki/Bayraktar_MIUS),
   [GlobalMilitary](https://www.globalmilitary.net/compare/aircraft/bayraktar-kizilelma-vs-flyeye/),
   [Airforce Technology](https://www.airforce-technology.com/?p=250868)
+* Anka-S: [Army Recognition](https://www.armyrecognition.com/archives/archives-aerospace-defense/aerospace-defense-2023/indonesia-reportedly-purchased-12-turkish-tai-anka-uavs),
+  [MiGFlug](https://migflug.com/?p=33576),
+  [GlobalMilitary](https://www.globalmilitary.net/aircraft/tai-anka/),
+  [Military Factory](https://www.militaryfactory.com/aircraft/detail.php?aircraft_id=1007),
+  [haber.aero](https://ns1.haber.aero/?p=75148)
+* Aksungur: [TUSAŞ broşürü](https://tusas.com/content/files/uploads/2269/TUSAS_2020_Genel_Flyer_Aksungur_EN.pdf),
+  [TUSAŞ](https://www.tusas.com/en/products/uav/high-payload-capacity-uas/aksungur),
+  [Wikipedia](https://en.wikipedia.org/wiki/TAI_Aksungur),
+  [GlobalSecurity](https://www.globalsecurity.org/military/world/europe/aksungur-specs.htm),
+  [Naval Technology](https://www.naval-technology.com/projects/aksungur-medium-altitude-long-endurance-male-uav-turkey/)
+* TEI PD170: [TEI](https://www.tei.com.tr/en/products/tei-pd170),
+  [TEI veri sayfası](https://www.tei.com.tr/uploads/docs/1599124264_teipd170turbodieselaviationengine.pdf),
+  [Unmanned Systems Technology](https://www.unmannedsystemstechnology.com/company/tei-tusas-engine-industries/tei-pd170/)
 * T129 ATAK: [Army Technology](https://www.army-technology.com/projects/t129-attack-helicopter/),
   [GlobalMilitary](https://www.globalmilitary.net/aircraft/t129/)
 * AH-64D: [helis.com](https://www.helis.com/database/model/AH-64D-Apache/),

@@ -166,12 +166,12 @@ int main() {
     }
 
     // 4) Patrol loop.
-    flecs::entity uav = spawn(world, "PatrolUAV", fm::presets::fixed_wing_uav(),
+    flecs::entity uav = spawn(world, "PatrolUAV", fm::presets::propeller_uav(),
                               {41.00, 29.20, 600.0, 0, 0, 0}, 0.0, false);
     {
         fm::Route r;
-        r.waypoints = {wp(world, 41.01, 29.20, 600.0), wp(world, 41.01, 29.22, 600.0),
-                       wp(world, 41.00, 29.22, 600.0)};
+        r.waypoints = {wp(world, 41.02, 29.20, 600.0), wp(world, 41.02, 29.24, 600.0),
+                       wp(world, 41.00, 29.24, 600.0)};
         r.loop = true;  // after the last waypoint, back to the first
         fm::ecs::agent(uav)->follow_route(r);
     }

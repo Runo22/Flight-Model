@@ -112,8 +112,8 @@ Devriye ve drone ile tarama:
 
 ```cpp
 fm::Route patrol;
-patrol.waypoints = {wp(world, 41.01, 29.20, 600.0), wp(world, 41.01, 29.22, 600.0),
-                    wp(world, 41.00, 29.22, 600.0)};
+patrol.waypoints = {wp(world, 41.02, 29.20, 600.0), wp(world, 41.02, 29.24, 600.0),
+                    wp(world, 41.00, 29.24, 600.0)};
 patrol.loop = true;  // after the last waypoint, back to the first
 
 fm::Route survey;

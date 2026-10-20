@@ -25,7 +25,7 @@ double angle_diff_deg(double a, double b) { return std::abs(rad2deg(wrap_pi(a - 
 TEST_CASE("fixed-wing: no target means straight and level, even in crosswind") {
     for (const FixedWingParams& p : {presets::fast_jet(), presets::airliner_jet(),
                                      presets::regional_turboprop(), presets::light_propeller(),
-                                     presets::fixed_wing_uav()}) {
+                                     presets::propeller_uav(), presets::twin_propeller_uav()}) {
         FixedWingAgent a(p, airborne({0, 0, 2000}, 0.0, p.cruise_speed));
         double max_roll = 0.0;
         simulate(a, 180.0, {}, {8.0, 0.0, 0.0}, [&](const FlightState& s, double t) {
@@ -92,16 +92,16 @@ TEST_CASE("fixed-wing: parked aircraft given a route takes off first") {
     ic.position = {0, 0, 0};
     ic.heading = 0.0;
     ic.on_ground = true;
-    FixedWingAgent a(presets::fixed_wing_uav(), ic);
+    FixedWingAgent a(presets::propeller_uav(), ic);
     Route r;
     Waypoint wp;
-    wp.position = {1500, 1500, 150};
+    wp.position = {3000, 8000, 400};
     r.waypoints.push_back(wp);
     a.follow_route(r);
     CHECK(a.mode() == FlightMode::Takeoff);
-    simulate(a, 200.0, [](double, double) { return 0.0; });
+    simulate(a, 400.0, [](double, double) { return 0.0; });
     CHECK(a.mode() == FlightMode::Cruise);  // route flown, continuing straight
-    CHECK_NEAR(a.state().position.z, 150.0, 10.0);
+    CHECK_NEAR(a.state().position.z, 400.0, 10.0);
 }
 
 TEST_CASE("fixed-wing: route following and continue straight at the end") {
@@ -152,7 +152,7 @@ TEST_CASE("fixed-wing: go_to then loiter at the point") {
 
 TEST_CASE("fixed-wing: keeps terrain clearance over rising ground") {
     // Only the height under the aircraft is known; a 6% slope starts 3 km ahead.
-    const FixedWingParams p = presets::fixed_wing_uav();
+    const FixedWingParams p = presets::propeller_uav();
     FixedWingAgent a(p, airborne({0, 0, 100}, 90.0, p.cruise_speed));
     auto terrain = [](double x, double) { return std::max(0.0, (x - 3000.0) * 0.06); };
     double min_agl = 1e9;
@@ -166,14 +166,14 @@ TEST_CASE("fixed-wing: keeps terrain clearance over rising ground") {
 }
 
 TEST_CASE("fixed-wing: terrain following with an above-terrain altitude") {
-    const FixedWingParams p = presets::fixed_wing_uav();
-    FixedWingAgent a(p, airborne({0, 0, 150}, 90.0, p.cruise_speed));
+    const FixedWingParams p = presets::propeller_uav();
+    FixedWingAgent a(p, airborne({0, 0, 260}, 90.0, p.cruise_speed));
     auto terrain = [](double x, double) { return 60.0 + 40.0 * std::sin(x / 1500.0); };
-    a.hold(deg2rad(90.0), 100.0, p.cruise_speed, AltitudeRef::AboveTerrain);
+    a.hold(deg2rad(90.0), 200.0, p.cruise_speed, AltitudeRef::AboveTerrain);
     double max_error = 0.0;
     simulate(a, 400.0, terrain, {}, [&](const FlightState& s, double t) {
         if (t > 60.0)
-            max_error = std::max(max_error, std::abs(s.height_above_terrain - 100.0));
+            max_error = std::max(max_error, std::abs(s.height_above_terrain - 200.0));
     });
     CHECK(max_error < 25.0);
 }
@@ -212,10 +212,10 @@ TEST_CASE("fixed-wing: formation flight keeps the slot through a turn") {
 }
 
 TEST_CASE("fixed-wing: losing the leader falls back to straight flight") {
-    const FixedWingParams p = presets::fixed_wing_uav();
+    const FixedWingParams p = presets::propeller_uav();
     FixedWingAgent a(p, airborne({0, 0, 300}, 0.0, p.cruise_speed));
     a.join_formation(formation::trail(0, 50.0));
-    a.set_leader_state({{0, 200, 300}, {0, 22, 0}, 0.0, true});
+    a.set_leader_state({{0, 200, 300}, {0, p.cruise_speed, 0}, 0.0, true});
     simulate(a, 1.0);
     CHECK(a.mode() == FlightMode::Formation);
     simulate(a, 3.0);  // no more leader updates
@@ -261,7 +261,7 @@ LandingResult fly_landing(FixedWingAgent& a, double seconds, double runway_eleva
 TEST_CASE("fixed-wing: approach and landing for every preset") {
     for (const FixedWingParams& p : {presets::fast_jet(), presets::airliner_jet(),
                                      presets::regional_turboprop(), presets::light_propeller(),
-                                     presets::fixed_wing_uav()}) {
+                                     presets::propeller_uav(), presets::twin_propeller_uav()}) {
         // Start abeam the runway on the wrong side, flying the opposite direction.
         const double k = p.final_approach_distance / 12000.0;
         FixedWingAgent a(p, airborne({20000 * k, 12000 * k, 200 + 2500 * k}, 270.0, p.cruise_speed));

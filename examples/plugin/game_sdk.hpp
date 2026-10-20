@@ -22,11 +22,12 @@ struct Hot {
 
 // Asks the flight plugin to fly this entity.
 struct FlightRequest {
-    // 0 airliner, 1 regional turboprop, 2 light propeller, 3 small UAV, 4 generic jet,
-    // 5 multirotor, 6 single-engine fighter (F-16 class), 7 twin-engine fighter (F-15 class),
-    // 8 turboprop trainer (Hurkus class), 9 jet UAV (Kizilelma class), 10 attack helicopter
-    // (T129 class), 11 heavy attack helicopter (AH-64 class), 12 transport helicopter (CH-47),
-    // 13 helicopter / UAV carrier ship (TCG Anadolu class)
+    // 0 airliner, 1 regional turboprop, 2 light propeller, 3 propeller UAV (Anka class),
+    // 4 generic jet, 5 multirotor, 6 single-engine fighter (F-16 class), 7 twin-engine
+    // fighter (F-15 class), 8 turboprop trainer (Hurkus class), 9 jet UAV (Kizilelma class),
+    // 10 attack helicopter (T129 class), 11 heavy attack helicopter (AH-64 class),
+    // 12 transport helicopter (CH-47), 13 helicopter / UAV carrier ship (TCG Anadolu class),
+    // 14 twin propeller UAV (Aksungur class)
     int vehicle = 0;
     double speed = 0.0;     // m/s initial speed (0 = parked on the ground)
     double dest_lat = 0.0;  // deg, destination; 0/0 = fly straight ahead

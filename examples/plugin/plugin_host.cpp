@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
     world.entity("UAV1")
         .set<game::Transform>({41.05, 29.05, 600.0, 0, 0, 180})
         .set<game::Hot>({query_hot(41.05, 29.05)})
-        .set<game::FlightRequest>({3, 22.0});                       // flies straight south
+        .set<game::FlightRequest>({3, 46.0});                       // flies straight south
     world.entity("Drone1")
         .set<game::Transform>({41.06, 29.06, 300.0, 0, 0, 0})
         .set<game::Hot>({query_hot(41.06, 29.06)})

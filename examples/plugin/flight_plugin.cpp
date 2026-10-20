@@ -26,7 +26,7 @@ fm::VehicleParams vehicle_params(int vehicle) {
         case 0: return fm::presets::airliner_jet();
         case 1: return fm::presets::regional_turboprop();
         case 2: return fm::presets::light_propeller();
-        case 3: return fm::presets::fixed_wing_uav();
+        case 3: return fm::presets::propeller_uav();
         case 4: return fm::presets::fast_jet();
         case 6: return fm::presets::single_engine_fighter();
         case 7: return fm::presets::twin_engine_fighter();
@@ -36,6 +36,7 @@ fm::VehicleParams vehicle_params(int vehicle) {
         case 11: return fm::presets::heavy_attack_helicopter();
         case 12: return fm::presets::transport_helicopter();
         case 13: return fm::presets::carrier_ship();
+        case 14: return fm::presets::twin_propeller_uav();
         default: return fm::presets::multirotor();
     }
 }

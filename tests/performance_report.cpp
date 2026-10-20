@@ -46,6 +46,8 @@ void print(const std::string& title, const std::vector<Row>& rows) {
 struct FixedWingReference {
     double high_altitude = 0.0;  // m, where the top speed is given
     std::string top_speed, sea_level_speed, climb, ceiling, stall, takeoff, landing;
+    double light_mass = 0.0;     // kg, also measure the ceiling at this mass (0 = no)
+    std::string light_ceiling{};
 };
 
 void report(const FixedWingParams& p, const std::string& title, const FixedWingReference& ref) {
@@ -77,6 +79,13 @@ void report(const FixedWingParams& p, const std::string& title, const FixedWingR
          format("%.1f deg/s", rad2deg(turn.rate)) + format(" at %.0f deg bank", rad2deg(turn.bank)),
          ""},
     };
+    if (ref.light_mass > 0.0) {
+        FixedWingParams light = p;
+        light.mass = ref.light_mass;
+        rows.insert(rows.begin() + 4, {format("Service ceiling at %.0f kg", ref.light_mass),
+                                       format("%.0f ft", ft(service_ceiling(light))),
+                                       ref.light_ceiling});
+    }
     print(title, rows);
 }
 
@@ -167,9 +176,20 @@ int main(int argc, char** argv) {
         report(presets::jet_uav(), "jet_uav: Bayraktar Kizilelma class, 6,000 kg",
                {feet(30000.0), "M0.9", "", "", "12,000-14,000 m", "", "", ""});
     }
+    if (wanted(filter, "propeller_uav")) {
+        report(presets::propeller_uav(), "propeller_uav: TAI Anka-S class, 1,700 kg",
+               {feet(20000.0), "", "117 kt (217 km/h)", "", "30,000 ft", "", "", ""});
+    }
+    if (wanted(filter, "twin_propeller_uav")) {
+        FixedWingReference ref{feet(20000.0), "", "135 kt (250 km/h)", "",
+                               "25,000 ft operating altitude with 750 kg payload", "", "", ""};
+        ref.light_mass = 2700.0;
+        ref.light_ceiling = "35,000 ft with 150 kg payload; 40,000 ft maximum";
+        report(presets::twin_propeller_uav(), "twin_propeller_uav: TAI Aksungur class, 3,300 kg",
+               ref);
+    }
     for (const FixedWingParams& p : {presets::fast_jet(), presets::airliner_jet(),
-                                     presets::regional_turboprop(), presets::light_propeller(),
-                                     presets::fixed_wing_uav()}) {
+                                     presets::regional_turboprop(), presets::light_propeller()}) {
         FixedWingReference none;
         none.high_altitude = 6000.0;
         if (wanted(filter, p.name)) report(p, p.name + " (generic class preset)", none);

@@ -87,6 +87,29 @@ TEST_CASE("presets: jet UAV (Kizilelma class)") {
     CHECK(landing(p).landed);
 }
 
+TEST_CASE("presets: propeller UAV (Anka-S class)") {
+    const FixedWingParams p = presets::propeller_uav();
+    CHECK(within(max_level_speed(p, 0.0, true), knots(117.0), 0.02));  // 217 km/h
+    CHECK(ceiling_between(p, feet(28500.0), feet(31500.0)));           // 30,000 ft
+    // The turbocharged engine keeps its power to 20,000 ft: faster at mission altitude.
+    CHECK(max_level_speed(p, feet(20000.0), false) > 1.1 * knots(117.0));
+    CHECK(max_level_speed(p, feet(20000.0), true) > knots(110.0));     // cruise 75-110 kt
+    CHECK(takeoff(p).ground_roll < 700.0);
+    CHECK(landing(p).landed);
+}
+
+TEST_CASE("presets: twin propeller UAV (Aksungur class)") {
+    const FixedWingParams p = presets::twin_propeller_uav();
+    CHECK(within(max_level_speed(p, 0.0, true), knots(135.0), 0.02));  // 250 km/h
+    FixedWingParams light = p;
+    light.mass = 2700.0;  // 150 kg payload: 35,000 ft; 40,000 ft maximum
+    CHECK(ceiling_between(light, feet(35000.0), feet(40000.0)));
+    CHECK(ceiling_between(p, feet(25000.0), feet(35000.0)));           // 750 kg: 25,000 ft
+    CHECK(max_level_speed(p, feet(20000.0), true) > p.cruise_speed);   // cruise 180 km/h
+    CHECK(takeoff(p).ground_roll < 700.0);
+    CHECK(landing(p).landed);
+}
+
 // --- Helicopters ---------------------------------------------------------------------------
 
 TEST_CASE("presets: attack helicopter (T129 ATAK class)") {
@@ -133,13 +156,14 @@ TEST_CASE("presets: helicopters turn banked, keep their speed and hold routes") 
 
 TEST_CASE("presets: fixed-wing presets take off, fly a route and land") {
     for (const FixedWingParams& p : {presets::single_engine_fighter(), presets::twin_engine_fighter(),
-                                     presets::turboprop_trainer(), presets::jet_uav()}) {
+                                     presets::turboprop_trainer(), presets::jet_uav(),
+                                     presets::propeller_uav(), presets::twin_propeller_uav()}) {
         InitialConditions ic;
         ic.on_ground = true;
         FlightAgent a(p, ic);
         Route r;
         Waypoint w;
-        w.position = {0.0, 15000.0, 1500.0};
+        w.position = {0.0, 20000.0, 1000.0};
         r.waypoints.push_back(w);
         r.on_end = EndBehavior::Land;
         r.runway = Runway{{0.0, 0.0, 0.0}, 0.0};
@@ -149,7 +173,7 @@ TEST_CASE("presets: fixed-wing presets take off, fly a route and land") {
         fmtest::simulate(a, 1500.0, [](double, double) { return 0.0; }, {},
                          [&](const FlightState& s, double) {
                              crashed = crashed || s.phase == FlightPhase::TerrainContact;
-                             flew = flew || s.position.z > 1000.0;
+                             flew = flew || s.position.z > 700.0;
                          });
         CHECK(flew);
         CHECK(!crashed);

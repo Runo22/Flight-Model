@@ -47,7 +47,7 @@ TEST_CASE("flecs: terrain height input keeps clearance") {
     flecs::entity uav = world.entity();
     const double heading = ecs::heading_from_world_forward(world, {0, 1, 0});  // +Y = east
     CHECK_NEAR(heading, deg2rad(90.0), 1e-9);
-    ecs::attach_at(uav, presets::fixed_wing_uav(), {0, 0, 10000}, heading, 22.0, false);
+    ecs::attach_at(uav, presets::propeller_uav(), {0, 0, 10000}, heading, 55.0, false);
     auto terrain_cm = [](double east_cm) { return std::max(0.0, (east_cm - 300000.0) * 0.06); };
     double min_agl = 1e9;
     for (int i = 0; i < static_cast<int>(300.0 / kDt); ++i) {
@@ -114,7 +114,7 @@ TEST_CASE("flecs: drone follows an entity that only has a TrackedPose") {
 TEST_CASE("flecs: parked aircraft takes off when given a route") {
     flecs::world world = make_world(WorldFrame::godot());  // +Y up, -Z north
     flecs::entity e = world.entity();
-    ecs::attach_at(e, presets::fixed_wing_uav(), {0, 0, 0}, 0.0, 0.0, true);
+    ecs::attach_at(e, presets::propeller_uav(), {0, 0, 0}, 0.0, 0.0, true);
     CHECK(pose_of(e).on_ground);
     Route r;
     Waypoint wp;

@@ -244,66 +244,6 @@ FixedWingParams light_propeller() {
     return p;
 }
 
-FixedWingParams fixed_wing_uav() {
-    FixedWingParams p;
-    p.name = "fixed_wing_uav";
-    p.mass = 25.0;
-    p.wing_area = 1.6;
-    p.cl0 = 0.3;
-    p.cl_alpha = 5.0;
-    p.cl_max = 1.3;
-    p.cd0 = 0.035;
-    p.induced_drag_k = 0.04;
-    p.mach_critical = 0.6;
-    p.wave_drag = 0.0;
-    p.flaps_dcl0 = 0.2;
-    p.flaps_dcl_max = 0.2;
-    p.flaps_dcd0 = 0.01;
-    p.engine.type = EngineType::Propeller;
-    p.engine.max_power = 4000.0;
-    p.engine.static_thrust = 180.0;
-    p.engine.prop_efficiency = 0.7;
-    p.engine.density_exponent = 0.3;
-    p.engine.spool_time = 0.3;
-    p.engine.idle_throttle = 0.0;
-    p.load_factor_max = 2.5;
-    p.load_factor_min = 0.2;
-    p.bank_max = deg2rad(35.0);
-    p.roll_rate_max = deg2rad(60.0);
-    p.climb_angle_max = deg2rad(15.0);
-    p.descent_angle_max = deg2rad(12.0);
-    p.climb_rate_max = 6.0;
-    p.descent_rate_max = 6.0;
-    p.cruise_speed = 22.0;
-    p.max_speed = 35.0;  // EAS
-    p.mach_max = 0.15;
-    p.rotation_rate = deg2rad(8.0);
-    p.rolling_friction = 0.05;
-    p.gear_height = 0.3;
-    p.roll_time_constant = 0.3;
-    p.gamma_time_constant = 0.8;
-    p.heading_time_constant = 1.5;
-    p.altitude_time_constant = 4.0;
-    p.speed_time_constant = 3.0;
-    p.l1_period = 12.0;
-    p.min_terrain_clearance = 40.0;
-    p.terrain_lookahead = 10.0;
-    p.takeoff_climb_height = 80.0;
-    p.flaps_up_height = 30.0;
-    p.formation_min_separation = 5.0;
-    p.retractable_gear = false;
-    p.gear_dcd0 = 0.0;
-    p.gear_up_height = 0.0;
-    p.final_approach_distance = 600.0;
-    p.touchdown_distance = 30.0;
-    p.approach_speed_factor = 1.3;
-    p.flare_height = 1.5;
-    p.touchdown_sink_rate = 0.4;
-    p.decision_height = 10.0;
-    p.brake_deceleration = 1.5;
-    return p;
-}
-
 RotorcraftParams multirotor() {
     RotorcraftParams p;
     p.name = "multirotor";
@@ -576,6 +516,94 @@ FixedWingParams jet_uav() {
     p.touchdown_sink_rate = 0.6;
     p.decision_height = 40.0;
     p.brake_deceleration = 2.5;
+    return p;
+}
+
+// Shared by the TAI MALE UAVs: TEI PD170 turbodiesel (170 hp, two-stage turbocharger:
+// rated to 20,000 ft, 130 hp at 30,000 ft, 90 hp at 40,000 ft), constant-speed propeller,
+// retractable gear, long high aspect ratio wing.
+namespace {
+FixedWingParams male_uav_common() {
+    FixedWingParams p;
+    p.cl0 = 0.35;
+    p.cl_alpha = 5.3;
+    p.cl_max = 1.6;
+    p.mach_critical = 0.6;
+    p.wave_drag = 0.0;
+    p.flaps_dcl0 = 0.3;
+    p.flaps_dcl_max = 0.4;
+    p.flaps_dcd0 = 0.02;
+    p.speedbrake_dcd0 = 0.0;
+    p.engine.type = EngineType::Propeller;
+    p.engine.prop_efficiency = 0.8;
+    p.engine.density_exponent = 0.75;
+    p.engine.critical_altitude = 6096.0;  // 20,000 ft
+    p.engine.spool_time = 1.0;
+    p.engine.idle_throttle = 0.05;
+    p.load_factor_max = 2.5;
+    p.load_factor_min = 0.0;
+    p.bank_max = deg2rad(30.0);
+    p.roll_rate_max = deg2rad(25.0);
+    p.climb_angle_max = deg2rad(8.0);
+    p.descent_angle_max = deg2rad(6.0);
+    p.climb_rate_max = 5.0;
+    p.descent_rate_max = 8.0;
+    p.mach_max = 0.3;
+    p.rotation_rate = deg2rad(4.0);
+    p.rolling_friction = 0.03;
+    p.roll_time_constant = 0.8;
+    p.gamma_time_constant = 2.0;
+    p.heading_time_constant = 4.0;
+    p.altitude_time_constant = 10.0;
+    p.speed_time_constant = 10.0;
+    p.l1_period = 20.0;
+    p.min_terrain_clearance = 150.0;
+    p.terrain_lookahead = 20.0;
+    p.takeoff_climb_height = 300.0;
+    p.flaps_up_height = 120.0;
+    p.formation_min_separation = 60.0;
+    p.retractable_gear = true;
+    p.gear_dcd0 = 0.015;
+    p.gear_up_height = 15.0;
+    p.final_approach_distance = 4000.0;
+    p.touchdown_distance = 150.0;
+    p.approach_speed_factor = 1.3;
+    p.flare_height = 4.0;
+    p.touchdown_sink_rate = 0.5;
+    p.decision_height = 30.0;
+    p.brake_deceleration = 2.0;
+    return p;
+}
+}  // namespace
+
+FixedWingParams propeller_uav() {
+    FixedWingParams p = male_uav_common();
+    p.name = "propeller_uav";          // TAI Anka-S class
+    p.mass = 1700.0;                   // maximum takeoff weight
+    p.wing_area = 16.0;                // 17.5 m span, aspect ratio ~19
+    p.cd0 = 0.040;                     // with the sensor turret and SATCOM radome
+    p.induced_drag_k = 0.021;          // e ~0.8
+    p.engine.max_power = 126.8e3;      // 1x PD170, 170 hp
+    p.engine.static_thrust = 3000.0;
+    p.cruise_speed = 46.3;             // 90 kt (sources: 75-110 kt)
+    p.max_speed = 60.3;                // 217 km/h (117 kt), EAS
+    p.gear_height = 1.2;
+    return p;
+}
+
+FixedWingParams twin_propeller_uav() {
+    FixedWingParams p = male_uav_common();
+    p.name = "twin_propeller_uav";     // TAI Aksungur class
+    p.mass = 3300.0;                   // maximum takeoff weight (750 kg payload)
+    p.wing_area = 29.0;                // 24.2 m span, aspect ratio ~20
+    p.cd0 = 0.031;
+    p.induced_drag_k = 0.0197;         // e ~0.8
+    p.engine.max_power = 253.6e3;      // 2x PD170, 170 hp each
+    p.engine.static_thrust = 6000.0;
+    p.cruise_speed = 50.0;             // 180 km/h (97 kt)
+    p.max_speed = 69.4;                // 250 km/h (135 kt), EAS
+    p.gear_height = 1.5;
+    p.formation_min_separation = 80.0;
     return p;
 }
 
