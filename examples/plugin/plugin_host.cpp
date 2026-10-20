@@ -105,6 +105,10 @@ int main(int argc, char** argv) {
         .set<game::Transform>({41.06, 29.06, 300.0, 0, 0, 0})
         .set<game::Hot>({query_hot(41.06, 29.06)})
         .set<game::FlightRequest>({5, 10.0, 41.065, 29.065, 300.0});  // multirotor go-to
+    world.entity("ATAK1")
+        .set<game::Transform>({41.08, 29.02, query_hot(41.08, 29.02), 0, 0, 45})
+        .set<game::Hot>({query_hot(41.08, 29.02)})
+        .set<game::FlightRequest>({10, 0.0, 41.12, 29.08, 600.0});  // parked T129, go-to
 
     int failures = 0;
     for (int cycle = 0; cycle < 2; ++cycle) {
