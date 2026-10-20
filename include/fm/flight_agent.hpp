@@ -15,6 +15,7 @@
 
 #include "fm/fixed_wing.hpp"
 #include "fm/rotorcraft.hpp"
+#include "fm/ship.hpp"
 
 namespace fm {
 
@@ -47,7 +48,7 @@ concept FlightModel = requires(T m, const T cm, double d, const Vec3& p, const E
 };
 
 // The registered vehicle models. Order does not matter.
-using AgentVariant = std::variant<FixedWingAgent, RotorcraftAgent>;
+using AgentVariant = std::variant<FixedWingAgent, RotorcraftAgent, ShipAgent>;
 
 namespace detail {
 template <typename V>
@@ -103,12 +104,14 @@ public:
     void loiter(const Vec3& center, double radius = 0.0, bool clockwise = true,
                 AltitudeRef altitude_ref = AltitudeRef::Absolute);
     bool takeoff(const TakeoffPlan& plan = {});
-    // Rotorcraft holds position; fixed-wing aircraft orbit the current position.
+    // Rotorcraft holds position; fixed-wing aircraft orbit the current position; ships stop
+    // and keep station.
     void hover();
     // Rotorcraft: vertical landing here. Fixed-wing: needs a runway (returns false).
+    // Ships: false (use hover() to stop).
     bool land();
     // Fixed-wing: approach and landing on the runway. Rotorcraft: fly to the runway start
-    // at the current altitude and land vertically there.
+    // at the current altitude and land vertically there. Ships: false.
     bool land(const Runway& runway);
     void join_formation(const FormationSlot& slot);
     void set_leader_state(const LeaderState& leader);
@@ -145,8 +148,10 @@ public:
     const A* as() const { return std::get_if<A>(&impl_); }
     FixedWingAgent* fixed_wing() { return as<FixedWingAgent>(); }
     RotorcraftAgent* rotorcraft() { return as<RotorcraftAgent>(); }
+    ShipAgent* ship() { return as<ShipAgent>(); }
     const FixedWingAgent* fixed_wing() const { return as<FixedWingAgent>(); }
     const RotorcraftAgent* rotorcraft() const { return as<RotorcraftAgent>(); }
+    const ShipAgent* ship() const { return as<ShipAgent>(); }
 
     // Calls f(model) with the concrete model, for features only one type has.
     template <typename F>

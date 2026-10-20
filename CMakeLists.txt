@@ -34,6 +34,7 @@ add_library(flight_model
   src/presets.cpp
   src/rotorcraft.cpp
   src/route_tracker.cpp
+  src/ship.cpp
   src/terrain.cpp
 )
 add_library(fm::core ALIAS flight_model)

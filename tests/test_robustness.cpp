@@ -29,9 +29,10 @@ bool finite_state(const FlightState& s) {
 }  // namespace
 
 TEST_CASE("robustness: non-finite step inputs are ignored") {
-    for (int vehicle = 0; vehicle < 2; ++vehicle) {
-        FlightAgent a = vehicle == 0 ? FlightAgent(presets::light_propeller(), airborne({0, 0, 1000}, 50.0))
-                                     : FlightAgent(presets::multirotor(), airborne({0, 0, 100}, 8.0));
+    for (int vehicle = 0; vehicle < 3; ++vehicle) {
+        FlightAgent a = vehicle == 0   ? FlightAgent(presets::light_propeller(), airborne({0, 0, 1000}, 50.0))
+                        : vehicle == 1 ? FlightAgent(presets::multirotor(), airborne({0, 0, 100}, 8.0))
+                                       : FlightAgent(presets::carrier_ship(), airborne({0, 0, 0}, 8.0));
         Environment env;
         env.wind = {kNaN, 0.0, 0.0};
         env.terrain_elevation = kInf;

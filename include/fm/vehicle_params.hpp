@@ -141,11 +141,45 @@ struct RotorcraftParams {
     double max_rearward_speed = 0.0;     // m/s (0 = unlimited)
 };
 
+// Large surface ship: propulsion against hull resistance, first-order (Nomoto) steering
+// with a turning circle, drift angle, speed loss and outward heel in turns. It stays on the
+// water surface (position.z = water_level).
+struct ShipParams {
+    std::string name = "ship";
+    double displacement = 5.0e6;          // kg
+    double length = 120.0;                // m
+    double propulsion_power = 10.0e6;     // W, all propellers
+    double propulsive_efficiency = 0.65;  // thrust power / shaft power at speed
+    double bollard_pull = 1.0e6;          // N, static thrust ahead
+    double astern_thrust_factor = 0.6;    // astern / ahead thrust (azimuth pods: ~0.8)
+    double propulsion_time_constant = 8.0;  // s, thrust response
+    double max_speed = 10.0;              // m/s, sets the hull resistance with the power
+    double cruise_speed = 8.0;            // m/s
+    double max_astern_speed = 3.0;        // m/s
+    double turning_diameter = 600.0;      // m, steady turning circle at full rudder
+    double steering_time_constant = 1.5;  // Nomoto T' (yaw lag T = T' * length / speed)
+    double pivot_rate = 0.005;            // rad/s, turn rate at rest (bow thrusters, pods)
+    double turn_speed_loss = 0.3;         // speed lost in a steady full-rudder turn
+    double drift_angle_max = 0.15;        // rad, bow inside the turn at full rudder
+    double heel_max = 0.05;               // rad, outward heel, full rudder at max speed
+    double water_level = 0.0;             // m, altitude of the waterline
+    double brake_deceleration = 0.05;     // m/s^2, planned slowing to stop at a point
+    // m, line-of-sight distance of path following (lower = tighter, too low = weaving);
+    // 0 = 3 * steering_time_constant * length.
+    double path_lookahead = 0.0;
+    double formation_min_separation = 300.0;  // m
+    // Swell (0 = calm water): roll and pitch oscillations added to the attitude.
+    double roll_amplitude = 0.0;          // rad
+    double roll_period = 12.0;            // s
+    double pitch_amplitude = 0.0;         // rad
+    double pitch_period = 8.0;            // s
+};
+
 // Every vehicle type: one params struct here, one agent class (see docs/EXTENDING.md).
 // Adding a type = add its params to VehicleParams, its agent to fm::AgentVariant
 // (flight_agent.hpp) and a value to VehicleKind.
-using VehicleParams = std::variant<FixedWingParams, RotorcraftParams>;
+using VehicleParams = std::variant<FixedWingParams, RotorcraftParams, ShipParams>;
 
-enum class VehicleKind { FixedWing, Rotorcraft };
+enum class VehicleKind { FixedWing, Rotorcraft, Ship };
 
 }  // namespace fm

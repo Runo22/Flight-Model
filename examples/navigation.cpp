@@ -1,6 +1,6 @@
 // Navigation commands in a geodetic Flecs world: go to a point, loiter, hover, routes
 // (fly-over, speeds, terrain-following, patrol loops, waypoint holds, landing on a runway),
-// heading/altitude holds and commands given as game components.
+// heading/altitude holds, a ship and commands given as game components.
 //
 // Every snippet of docs/NAVIGATION.md comes from here. The program checks its own results
 // and is run as a test (fm_navigation_example).
@@ -34,6 +34,7 @@ struct FlyTo {
 };
 
 double query_hot(double lat, double lon) {
+    if (lat < 40.85) return 0.0;  // sea: the height of the sea surface
     return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
 }
 
@@ -228,6 +229,17 @@ int main() {
     run(world, 0.5);  // the command waits: no agent yet
     fm::ecs::attach_geo(late, fm::presets::multirotor(), {41.09, 29.09, 200.0}, 0.0, 0.0, false);
 
+    // 10) A ship: sail a route, stop at the last waypoint and keep station there. It stays on
+    //     the sea surface (the altitude of the waypoints is ignored).
+    flecs::entity carrier = spawn(world, "Carrier", fm::presets::carrier_ship(),
+                                  {40.80, 29.00, 0.0, 0, 0, 90.0}, 8.0, false);
+    {
+        fm::Route r;
+        r.waypoints = {wp(world, 40.80, 29.03, 0.0), wp(world, 40.785, 29.03, 0.0)};
+        r.on_end = fm::EndBehavior::Land;  // ships: stop and keep station there
+        fm::ecs::agent(carrier)->follow_route(r);
+    }
+
     // Progress can be followed through the mode, the phase and the route index.
     int patrol_laps = 0;
     std::size_t last_index = 0;
@@ -279,6 +291,10 @@ int main() {
           "8  holds true course 045 at 7000 m");
     check(!late.has<game::FlyTo>() && distance(world, late, 41.0910, 29.0910) < 1.0,
           "9  command component waited for the agent and was carried out");
+    check(pose(carrier).mode == fm::FlightMode::Hover &&
+              pose(carrier).phase == fm::FlightPhase::Parked &&
+              distance(world, carrier, 40.785, 29.03) < 30.0 && transform(carrier).alt == 0.0,
+          "10 ship sailed the route and stopped at the last waypoint");
     std::printf("\n%s\n", failures == 0 ? "all examples OK" : "SOME EXAMPLES FAILED");
     return failures == 0 ? 0 : 1;
 }

@@ -1,6 +1,6 @@
 # Flight Model
 
-Generic, game-oriented flight AI for aircraft and drones, with a thin
+Generic, game-oriented flight AI for aircraft, drones and ships, with a thin
 [Flecs](https://github.com/SanderMertens/flecs) 4.x integration.
 
 Attach an agent to an entity, give it a command (or none) and read back position,
@@ -12,10 +12,11 @@ agent contains its own autopilot.
 | Fixed-wing | Point-mass (3-DOF) flight dynamics with lift/drag polar, jet (afterburner, ram effect) or propeller thrust, thrust lapse with altitude, ISA atmosphere, load-factor/stall/bank limits; attitude derived from angle of attack and bank | `single_engine_fighter` (F-16C class), `twin_engine_fighter` (F-15C class), `turboprop_trainer` (Hürkuş class), `jet_uav` (Kızılelma class); generic: `fast_jet`, `airliner_jet`, `regional_turboprop`, `light_propeller`, `fixed_wing_uav` |
 | Helicopter | Thrust-vector dynamics with power-limited performance (momentum theory, ground effect, profile and parasite power, engine and transmission limits), banked turns, sideways/rearward limits | `attack_helicopter` (T129 ATAK class), `heavy_attack_helicopter` (AH-64D class), `transport_helicopter` (CH-47F class) |
 | Multirotor | Thrust-vector dynamics: tilts to accelerate, quadratic drag sets top speed | `multirotor` |
+| Ship | Propulsion (power and bollard-pull limited) against hull resistance, first-order (Nomoto) steering with a turning circle, speed loss, drift angle and outward heel in turns, pivoting at rest, optional swell; line-of-sight autopilot, station keeping, running aground | `carrier_ship` (TCG Anadolu class LHD, helicopter / UAV carrier) |
 
 The reference-class presets are fitted to published performance and verified by flying them
 through the agents: top speed, climb, ceilings, stall, takeoff and landing distances,
-helicopter hover ceilings. Measured values against the references, sources and a tuning
+helicopter hover ceilings, ship turning circle and stopping distance. Measured values against the references, sources and a tuning
 guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 
 ## Behaviours
@@ -32,6 +33,11 @@ guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 | route `on_end = Land` | lands on `route.runway` | lands at the last waypoint |
 | `join_formation(slot)` + `set_leader_state()` | formation flight / follow another entity | same |
 
+Ships take the same commands on the sea surface (altitudes are ignored): `go_to` / routes
+ending in `Land` or `Loiter`, and `hover()`, stop and keep station; `loiter` circles;
+`agent.ship()->steer(rate)` turns at a fixed rate or full rudder; `takeoff`/`land` return
+false. See [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
+
 Altitudes can be absolute or **above terrain** (terrain following). Terrain is only
 needed directly below the vehicle (a height-of-terrain query at the entity position); the
 slope ahead is estimated from the recent samples to keep a minimum clearance.
@@ -45,7 +51,8 @@ include/fm/, src/          Flecs-independent core (C++20, builds as C++23 too)
   terrain                   terrain monitor (clearance from point samples)
   guidance, route_tracker   L1 path following, waypoint sequencing
   formation                 slots, layouts, leader tracking
-  fixed_wing, rotorcraft    the agents: dynamics + autopilot + navigation modes
+  fixed_wing, rotorcraft,   the agents: dynamics + autopilot + navigation modes
+  ship
   relocation                rules for continuing after the host moved a vehicle
   flight_agent              single entry point (std::variant over the models)
   frames                    ENU <-> engine world frames (Unity, Unreal, Godot, NED)
@@ -297,12 +304,12 @@ handedness.
 ## Switching models
 
 * **Aircraft type**: a different parameter set (`presets::*` or your own
-  `FixedWingParams` / `RotorcraftParams`), no code change. `fm_performance_report` measures
+  `FixedWingParams` / `RotorcraftParams` / `ShipParams`), no code change. `fm_performance_report` measures
   any parameter set (see [`docs/PRESETS.md`](docs/PRESETS.md)).
 * **Model at runtime** (e.g. level of detail): `FlightAgent::snapshot()` returns initial
   conditions reproducing the current state; build the new agent from it and re-issue the
   command.
-* **New vehicle types** (helicopter, balloon, glider, VTOL ...): a params struct, an agent
+* **New vehicle types** (balloon, glider, VTOL, ground vehicle ...): a params struct, an agent
   class implementing the `fm::FlightModel` concept and one line in `fm::AgentVariant`; the
   Flecs module needs no change. Step-by-step guide with a complete worked example:
   [`docs/EXTENDING.md`](docs/EXTENDING.md) (Turkish).

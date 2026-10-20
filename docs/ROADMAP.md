@@ -27,7 +27,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 ## 2. Faz 0 — tamamlandı
 
 - **Araç sınıfları:** sabit kanat (jet, yolcu jeti, turboprop, hafif pervaneli, sabit
-  kanat İHA) ve multirotor, hazır parametre setleriyle.
+  kanat İHA), multirotor, helikopter ve gemi, hazır parametre setleriyle.
 - **Komutlar:** düz uçuş (hedef yoksa), rota/iz tutma, bir noktaya git, rota (fly-by /
   fly-over, döngü, waypoint bekleme süresi), loiter/orbit, pistten kalkış (koşu, rotasyon,
   havalanma, flap toplama, tırmanış), multirotor dikey kalkış/iniş/hover.
@@ -51,13 +51,17 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   Küçük düzeltmeler görevi bozmaz; büyük sıçramalarda rota bacağı, düz uçuş hattı,
   yaklaşma yeni konumdan yeniden kurulur; yer/hava geçişleri ve saçma değerler ele alınır.
 - **Referans sınıfı presetler:** F-16C, F-15C, Hürkuş, Kızılelma, T129 ATAK, AH-64D,
-  CH-47F sınıflarında, yayımlanmış performansa uydurulup araç uçurularak ölçülen modeller
+  CH-47F, TCG Anadolu sınıflarında, yayımlanmış performansa uydurulup araç uçurularak ölçülen modeller
   (`docs/PRESETS.md`, `fm_performance_report`).
 - **Helikopter kipi:** güce dayalı performans (momentum teorisi, yer etkisi, profil ve parazit
   güç, motor ve şanzıman sınırı), yatışlı dönüşler, köşelerde yay, yana/geri hız sınırı.
 - **Motor ve atmosfer:** tropopoz üstünde itki/güç yoğunlukla orantılı, jet ram etkisi,
   ISA 32 km'ye kadar.
-- **Testler:** 61 çekirdek + 19 Flecs + navigasyon örneği + 2 plugin testi;
+- **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
+  itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
+  otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra
+  değerleri IMO standartlarıyla karşılaştırılarak ölçülür.
+- **Testler:** 70 çekirdek + 20 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -98,7 +102,9 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - Kalkış/iniş sıralaması (aynı pistte birden fazla uçak).
 
 ### Faz 6 — Ek model tipleri
-- Tek rotorlu helikopter (otorotasyon olmadan, oyun seviyesinde).
+- Helikopterde motor arızası ve otorotasyon.
+- Hareketli güverteye iniş: helikopter / İHA'nın seyirdeki gemiye yaklaşıp inmesi ve
+  gemiyle birlikte hareket etmesi.
 - VTOL / tiltrotor (multirotor ↔ sabit kanat geçişi).
 - İsteğe bağlı 6-DOF sabit kanat modeli: otopilot çıkışını (yatış, uçuş yolu açısı, gaz)
   kumanda yüzeylerine çeviren bir iç döngü ile aynı arayüzü (`FlightModel` concept) uygular.
@@ -112,7 +118,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 
 | Senaryo | Yöntem |
 |---|---|
-| Farklı uçak tipi | Farklı parametre seti (preset veya kendi `FixedWingParams`/`RotorcraftParams`); kod değişmez. |
+| Farklı uçak / gemi tipi | Farklı parametre seti (preset veya kendi `FixedWingParams`/`RotorcraftParams`/`ShipParams`); kod değişmez. |
 | Çalışırken model/parametre değişimi (LOD) | `FlightAgent::snapshot()` → yeni ajan → komutu tekrar ver. |
 | Yeni model tipi | `FlightModel` concept'ini sağlayan sınıf yazılır, `AgentVariant`'a eklenir; adım adım rehber: [`EXTENDING.md`](EXTENDING.md). |
 
@@ -130,5 +136,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - Yan kayma (sideslip) yok; uçuş her zaman koordineli.
 - Yerdeyken rüzgâr yok sayılır.
 - Atmosfer modeli 32 km'ye kadar (ISA).
+- Gemide rüzgâr, akıntı ve sığ su etkisi yok; dalga yalnızca görsel yalpa/baş-kıç
+  vurmasıdır. Liman manevrası (yanaşma, römorkör) yok.
 - Arazi öngörüsü geçmiş örneklere dayanır; ani dik yamaçlarda (ör. uçurum) koruma sınırlıdır.
   Oyun ileride ileriye dönük arazi sorgusu sağlarsa `TerrainMonitor` buna genişletilebilir.

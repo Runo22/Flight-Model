@@ -687,4 +687,29 @@ RotorcraftParams transport_helicopter() {
     return p;
 }
 
+ShipParams carrier_ship() {
+    ShipParams p;
+    p.name = "carrier_ship";           // TCG Anadolu (L-400) class LHD: helicopter / UAV carrier
+    p.displacement = 27.4e6;           // 27,400 t
+    p.length = 231.0;
+    p.propulsion_power = 22.0e6;       // 2x 11 MW azimuth pods
+    p.propulsive_efficiency = 0.65;
+    p.bollard_pull = 2.0e6;            // ~9 t per MW
+    p.astern_thrust_factor = 0.8;      // pods turn round for full astern
+    p.propulsion_time_constant = 20.0; // diesel-electric power ramp
+    p.max_speed = 10.8;                // 21 kt
+    p.cruise_speed = 8.2;              // 16 kt
+    p.max_astern_speed = 4.0;          // ~8 kt
+    p.turning_diameter = 600.0;        // ~2.6 ship lengths (pods; IMO limit 5 L)
+    p.steering_time_constant = 1.2;
+    p.pivot_rate = deg2rad(0.4);       // 2x 1.5 MW bow thrusters + pods
+    p.turn_speed_loss = 0.35;
+    p.drift_angle_max = deg2rad(10.0);
+    p.heel_max = deg2rad(3.0);
+    p.water_level = 0.0;
+    p.brake_deceleration = 0.04;
+    p.formation_min_separation = 400.0;
+    return p;
+}
+
 }  // namespace fm::presets

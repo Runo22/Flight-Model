@@ -17,6 +17,7 @@
 | `attack_helicopter()` | TUSAŞ T129 ATAK | Hafif / orta taarruz helikopteri |
 | `heavy_attack_helicopter()` | AH-64D Apache | Ağır taarruz helikopteri |
 | `transport_helicopter()` | CH-47F Chinook | Ağır nakliye helikopteri (tandem rotor), azami ağırlıkta |
+| `carrier_ship()` | TCG Anadolu (L-400) | Helikopter / İHA gemisi (LHD), 27.400 t |
 
 ## Nasıl ayarlandı
 
@@ -203,6 +204,76 @@ Daha hafif bir yük için `mass` düşürülürse (ör. 18.000 kg) model ~160 kt
 | Stop from cruise speed | 86 s, 2521 m |  |
 | Turn at cruise speed | 3.6 deg/s, 25 deg bank, radius 1134 m |  |
 
+## Gemi
+
+`ShipAgent`, büyük su üstü gemisi modelidir (uçak / helikopter / İHA gemisi, eskort). Hep su
+yüzeyinde kalır: `position.z = water_level`, komutlarda yalnızca x/y kullanılır.
+
+* **İtki ve direnç:** karesel tekne direnci, tam güçte `max_speed` tutulacak şekilde
+  ayarlanır. İtki = min(bollard pull, η·P/U), dizel-elektrik gecikmesiyle.
+* **Dümen:** birinci derece (Nomoto) tepki, T = T′·L/U. Dönüş çemberi `turning_diameter`.
+  Dönüşte hız kaybı, dışa yatma (heel) ve pruvanın içe bakması (drift açısı) var.
+* **Yerinde dönüş:** pod ve baş itici ile `pivot_rate`.
+* **Otopilot:** görüş hattı (LOS) yol takibi ve Nomoto'ya göre ayarlı yön PD'si.
+  Salınım yapmadan rotaya oturur.
+* **Durma ve istasyon tutma:** `go_to(..., Land/Loiter)` ve `hover()` ile çalışır. Nokta
+  arkadaysa geri gelir, yandaysa pivot yapar, uzaktaysa dönüp seyir hızıyla gider.
+* **Karaya oturma:** HOT (arazi yüksekliği) `water_level + 0.5` m'yi geçerse gemi karaya
+  oturur (`TerrainContact`), taşınana kadar orada kalır.
+* **Gemiye özel:** `agent.ship()->steer(turn_rate)` belirli bir dönüş hızıyla döner
+  (±∞ = tam dümen). Dalga için `roll_amplitude`, `roll_period`, `pitch_amplitude` ve
+  `pitch_period` ayarlanabilir (preset'te sakin deniz).
+
+**HOT datumu:** oyunun HOT sorgusu denizde deniz yüzeyini döndürüyorsa (çoğu oyunda 0)
+`water_level = 0` doğrudur. İrtifalar elipsoit yüksekliğiyse ve deniz yüzeyi ör. 36 m'de
+görünüyorsa `water_level = 36` yapın.
+
+### `carrier_ship()` — TCG Anadolu (L-400) sınıfı LHD, 27.400 t, 231 m
+
+Veri:
+
+* 27.400 t tam yük deplasman, 231 m boy.
+* CODAD tipi elektrikli tahrik: 5× MAN 16V32/40 dizel jeneratör (her biri ~8 MW).
+* 2× Siemens eSiPOD azimut pod (her biri 11 MW, 360° döner).
+* 2× 1,5 MW baş itici.
+* Azami hız ~21 kt (kaynaklarda 20,5-21,5 kt). Menzil 16 kt'da 9.000 deniz mili; preset
+  seyir hızı bu yüzden 16 kt.
+
+Manevra verisi (dönüş çemberi, durma mesafesi) yayımlanmamış. IMO manevra standartlarına
+ve podlu, dolgun formlu gemilerin tipik değerlerine göre tahmin edildi. Bollard pull
+~9 t/MW, durma için pod'lar tam tornistan döner (`astern_thrust_factor = 0.8`).
+
+| | Measured | Reference |
+|---|---|---|
+| Top speed | 21.0 kt | 21 kt |
+| 0 to cruise speed / to 90% of top speed | 159 / 216 s |  |
+| Crash stop from top speed (full astern) | 180 s, 976 m (4.2 L) | IMO: track reach <= 15 L |
+| Advance (full rudder at top speed) | 570 m (2.5 L) | IMO: <= 4.5 L |
+| Tactical diameter | 638 m (2.8 L) | IMO: <= 5 L; full-bodied ships 2.4-4 L |
+| Steady turning circle | 600 m |  |
+| Speed in the steady turn | 15.8 kt (25% lost) |  |
+| Heel / drift angle in the turn | 1.7 deg outward / 10 deg |  |
+
+Rota takibi (`tests/test_ship.cpp`):
+
+* 8 km'lik kare rotada köşelerde dışarı taşma 40 m.
+* 1.500 m'lik daire üzerinde sapma < 1 m.
+* Eskort, lider 90° döndükten sonra ~15 dakikada slotunun 50 m yakınına, ~20 dakikada
+  metre altına oturur.
+* `go_to` ile durma: noktaya ~10 m.
+
+Ayarlarken:
+
+| Ölçülen | Asıl etkileyen |
+|---|---|
+| Azami hız | `max_speed` (direnç buna göre ayarlanır), `propulsion_power` |
+| İvmelenme | `bollard_pull`, `propulsion_time_constant`, `displacement` |
+| Durma | `astern_thrust_factor`, `bollard_pull`; planlı durma `brake_deceleration` |
+| Dönüş çemberi / ilk tepki | `turning_diameter` / `steering_time_constant` (advance) |
+| Dönüşte hız kaybı, yatma, drift | `turn_speed_loss`, `heel_max`, `drift_angle_max` |
+| Yerinde dönüş | `pivot_rate` (baş itici yoksa küçük) |
+| Rota takibinin sıkılığı | `path_lookahead` (çok küçük = zikzak) |
+
 ## Kendi uçağını ayarlamak
 
 1. En yakın preset'ten başla (ör. `auto p = fm::presets::twin_engine_fighter();`).
@@ -243,5 +314,14 @@ Daha hafif bir yük için `mass` düşürülürse (ör. 18.000 kg) model ~160 kt
   [Aeropedia](https://aeropedia.com.au/?p=23448)
 * CH-47F: [MiGFlug](https://migflug.com/aircraft/ch-47-chinook/),
   [helis.com](https://www.helis.com/database/model/CH-47F-Chinook/)
+* TCG Anadolu: [Wikipedia](https://en.wikipedia.org/wiki/TCG_Anadolu),
+  [GlobalSecurity](https://www.globalsecurity.org/military/world/europe/tcg-lhd-specs.htm),
+  [Baird Maritime](https://www.bairdmaritime.com/?p=277911),
+  [Defence Turkey](https://defenceturkey.com/news/tcg-anadolu-multi-purpose-amphibious-assault-ship-planned-to-be-delivered-at-the-end-of-2022);
+  kardeş gemi Juan Carlos I: [Wikipedia](https://en.wikipedia.org/wiki/Spanish_ship_Juan_Carlos_I),
+  [GlobalSecurity](https://www.globalsecurity.org/military/world/europe/bpe-specs.htm)
+* Manevra standartları: [IMO A.751(18)](https://wwwcdn.imo.org/localresources/en/KnowledgeCentre/IndexofIMOResolutions/AssemblyDocuments/A.751(18).pdf),
+  [Wärtsilä: manoeuvring parameters](https://www.wartsila.com/encyclopedia/term/manoeuvring-parameters),
+  [MaritimePage: turning circle](https://maritimepage.com/turning-circle-of-ship-parts-and-characteristics/)
 
 Kaynaklar bazı değerlerde birbirini tutmuyor; tabloda kullanılan değer ve aralık yazıldı.

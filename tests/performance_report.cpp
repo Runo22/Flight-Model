@@ -112,6 +112,34 @@ void report(const RotorcraftParams& p, const std::string& title, const RotorRefe
     print(title, rows);
 }
 
+void report(const ShipParams& p, const std::string& title) {
+    const ShipAcceleration acc = ship_acceleration(p);
+    const ShipStop stop = ship_crash_stop(p);
+    const TurningCircle turn = turning_circle(p);
+    const double l = p.length;
+    std::vector<Row> rows = {
+        {"Top speed", format("%.1f kt", kt(acc.max_speed)), "21 kt"},
+        {"0 to cruise speed / to 90% of top speed",
+         format("%.0f", acc.to_cruise) + format(" / %.0f s", acc.to_90_percent), ""},
+        {"Crash stop from top speed (full astern)",
+         format("%.0f s", stop.time) + format(", %.0f m", stop.distance) +
+             format(" (%.1f L)", stop.distance / l), "IMO: track reach <= 15 L"},
+        {"Advance (full rudder at top speed)",
+         format("%.0f m", turn.advance) + format(" (%.1f L)", turn.advance / l), "IMO: <= 4.5 L"},
+        {"Tactical diameter", format("%.0f m", turn.tactical_diameter) +
+                                  format(" (%.1f L)", turn.tactical_diameter / l),
+         "IMO: <= 5 L; full-bodied ships 2.4-4 L"},
+        {"Steady turning circle", format("%.0f m", turn.steady_diameter), ""},
+        {"Speed in the steady turn",
+         format("%.1f kt", kt(turn.speed)) +
+             format(" (%.0f%% lost)", 100.0 * (1.0 - turn.speed / acc.max_speed)), ""},
+        {"Heel / drift angle in the turn",
+         format("%.1f", -rad2deg(turn.heel)) + format(" deg outward / %.0f deg", rad2deg(turn.drift)),
+         ""},
+    };
+    print(title, rows);
+}
+
 bool wanted(const char* filter, const std::string& name) {
     return filter == nullptr || name == filter;
 }
@@ -165,6 +193,11 @@ int main(int argc, char** argv) {
         const RotorcraftParams p = presets::multirotor();
         std::printf("### multirotor (generic class preset)\n\nNo power model: limits only "
                     "(max speed %.0f m/s, climb %.0f m/s).\n\n", p.max_speed, p.climb_rate_max);
+    }
+
+    if (wanted(filter, "carrier_ship")) {
+        report(presets::carrier_ship(),
+               "carrier_ship: TCG Anadolu (L-400) class LHD, 27,400 t, 231 m");
     }
     return 0;
 }

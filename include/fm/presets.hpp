@@ -21,5 +21,6 @@ FixedWingParams jet_uav();                    // Bayraktar Kizilelma class jet U
 RotorcraftParams attack_helicopter();         // TAI T129 ATAK class
 RotorcraftParams heavy_attack_helicopter();   // Boeing AH-64D Apache class
 RotorcraftParams transport_helicopter();      // Boeing CH-47F Chinook class
+ShipParams carrier_ship();                    // TCG Anadolu class LHD (helicopter / UAV carrier)
 
 }  // namespace fm::presets

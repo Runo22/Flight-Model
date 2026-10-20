@@ -9,6 +9,7 @@
 
 #include "fm/fixed_wing.hpp"
 #include "fm/rotorcraft.hpp"
+#include "fm/ship.hpp"
 
 namespace fmperf {
 
@@ -381,6 +382,85 @@ inline RotorTurn course_reversal(const RotorcraftParams& p, double speed) {
         return std::abs(wrap_pi(s.track - deg2rad(180.0))) < deg2rad(2.0);
     });
     r.radius = r.rate > 0.0 ? speed / r.rate : 0.0;
+    return r;
+}
+
+// --- Ships ---------------------------------------------------------------------------------
+
+struct ShipAcceleration {
+    double max_speed = 0.0;     // m/s, steady at full power
+    double to_cruise = 0.0;     // s, from rest to the cruise speed
+    double to_90_percent = 0.0; // s, from rest to 90% of the maximum speed
+};
+
+inline ShipAcceleration ship_acceleration(const ShipParams& p) {
+    ShipAgent a(p, airborne(0.0, 0.0));
+    a.hold(0.0, 0.0, p.max_speed);
+    ShipAcceleration r;
+    fly(a, 1800.0, kUnknown, [&](const FlightState& s, double t) {
+        if (r.to_cruise == 0.0 && s.airspeed >= p.cruise_speed) r.to_cruise = t;
+        if (r.to_90_percent == 0.0 && s.airspeed >= 0.9 * p.max_speed) r.to_90_percent = t;
+        return false;
+    });
+    r.max_speed = a.state().airspeed;
+    return r;
+}
+
+struct ShipStop {
+    double time = 0.0;      // s
+    double distance = 0.0;  // m, head reach
+};
+
+// Crash stop: full astern from full speed until the ship is stopped in the water.
+inline ShipStop ship_crash_stop(const ShipParams& p) {
+    ShipAgent a(p, airborne(0.0, p.max_speed));
+    a.hold(0.0, 0.0, p.max_speed);
+    fly(a, 60.0, kUnknown);
+    const double y0 = a.state().position.y;
+    a.set_speed(0.0);
+    ShipStop r;
+    r.time = fly(a, 1800.0, kUnknown, [](const FlightState& s, double) { return s.airspeed < 0.1; });
+    r.distance = a.state().position.y - y0;
+    return r;
+}
+
+struct TurningCircle {
+    double advance = 0.0;          // m, along the original course at 90 deg of heading change
+    double tactical_diameter = 0.0;  // m, across the original course at 180 deg
+    double steady_diameter = 0.0;  // m
+    double speed = 0.0;            // m/s in the steady turn
+    double heel = 0.0;             // rad, negative = to port (outward in a starboard turn)
+    double drift = 0.0;            // rad, heading minus track
+};
+
+// Full starboard rudder from full speed.
+inline TurningCircle turning_circle(const ShipParams& p) {
+    ShipAgent a(p, airborne(0.0, p.max_speed));
+    a.hold(0.0, 0.0, p.max_speed);
+    fly(a, 30.0, kUnknown);
+    const Vec3 start = a.state().position;
+    a.steer(1e9);  // full rudder
+    TurningCircle r;
+    double turned = 0.0;
+    double last = a.state().attitude.heading;
+    double x_min = 1e18;
+    double x_max = -1e18;
+    fly(a, 3600.0, kUnknown, [&](const FlightState& s, double) {
+        turned += wrap_pi(s.attitude.heading - last);
+        last = s.attitude.heading;
+        const Vec3 d = s.position - start;
+        if (r.advance == 0.0 && turned >= deg2rad(90.0)) r.advance = d.y;
+        if (r.tactical_diameter == 0.0 && turned >= deg2rad(180.0)) r.tactical_diameter = d.x;
+        if (turned > deg2rad(400.0)) {  // steady turn
+            x_min = std::min(x_min, d.x);
+            x_max = std::max(x_max, d.x);
+            r.speed = s.airspeed;
+            r.heel = s.attitude.roll;
+            r.drift = wrap_pi(s.attitude.heading - s.track);
+        }
+        return turned > deg2rad(760.0);
+    });
+    r.steady_diameter = x_max - x_min;
     return r;
 }
 

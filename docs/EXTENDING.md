@@ -14,7 +14,7 @@ gösterir. Aşağıdaki kodun tamamı bu deponun bir kopyasında derlendi ve tes
 |---|---|
 | Aynı sınıftan başka bir uçak (ör. başka bir jet, daha büyük bir drone) | Sadece parametre seti: `presets.cpp`'ye bir fonksiyon ya da kendi `FixedWingParams` / `RotorcraftParams` değerleriniz. Kod değişmez. |
 | Mevcut bir tipin davranışına küçük ekleme | O tipin `.cpp` dosyası (ör. `fixed_wing.cpp`). |
-| Farklı fizik ve/veya farklı komut mantığı (helikopter, balon, zeplin, planör, VTOL ...) | **Yeni tip**: bu rehber. |
+| Farklı fizik ve/veya farklı komut mantığı (balon, zeplin, planör, VTOL, kara aracı ...) | **Yeni tip**: bu rehber. |
 
 ## 1. Mimari özeti
 
@@ -65,9 +65,9 @@ struct BalloonParams {
     double takeoff_height = 150.0;        // m AGL
 };
 
-using VehicleParams = std::variant<FixedWingParams, RotorcraftParams, BalloonParams>;
+using VehicleParams = std::variant<FixedWingParams, RotorcraftParams, ShipParams, BalloonParams>;
 
-enum class VehicleKind { FixedWing, Rotorcraft, Balloon };
+enum class VehicleKind { FixedWing, Rotorcraft, Ship, Balloon };
 ```
 
 Kurallar:
@@ -331,7 +331,7 @@ adımlara bölün (`fixed_wing.cpp`: 0.02 s, `rotorcraft.cpp`: 0.01 s).
 #include "fm/fixed_wing.hpp"
 #include "fm/rotorcraft.hpp"
 ...
-using AgentVariant = std::variant<FixedWingAgent, RotorcraftAgent, BalloonAgent>;
+using AgentVariant = std::variant<FixedWingAgent, RotorcraftAgent, ShipAgent, BalloonAgent>;
 ```
 
 Başka bir şey gerekmez. İsterseniz kısayol erişimci ekleyebilirsiniz (zorunlu değil,
@@ -504,8 +504,11 @@ const Relocation r = classify_relocation(old_position, old_heading, position, he
 | `fm/relocation.hpp` | `classify_relocation`, `combine`, eşik sabitleri |
 | `fm/flight_state.hpp` | `sanitized(env)`, `kUnknown` (NaN) |
 
-Mevcut iki agent (`fixed_wing.cpp`, `rotorcraft.cpp`) bu parçaların nasıl birleştiğini
-gösteren tam örneklerdir: komut → guidance → otopilot → dinamik → `update_output`.
+Mevcut üç agent (`fixed_wing.cpp`, `rotorcraft.cpp`, `ship.cpp`) bu parçaların nasıl
+birleştiğini gösteren tam örneklerdir: komut → guidance → otopilot → dinamik →
+`update_output`. `ship.cpp` en kısasıdır ve 3. boyutu olmayan bir aracın ortak arayüzü nasıl
+karşıladığını gösterir: irtifayı yok sayar, `takeoff`/`land` için `false` döner, kendine özel
+komutu (`steer`) `agent.ship()` ile açar.
 
 ## 6. Flecs tarafında yapılacak bir şey yok
 

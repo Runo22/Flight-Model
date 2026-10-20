@@ -195,24 +195,49 @@ entity.set<game::FlyTo>({41.0910, 29.0910, 200.0, true});
 * `event(flecs::OnSet)` ile bir observer da olur, ama komut agent oluşmadan gelirse kaybolur.
   Sistem hali komutu agent oluşana kadar bekletir.
 
-## 7. İlerlemeyi takip etmek
+## 7. Gemi
+
+```cpp
+flecs::entity carrier = spawn(world, "Carrier", fm::presets::carrier_ship(),
+                              {40.80, 29.00, 0.0, 0, 0, 90.0}, 8.0, false);
+fm::Route r;
+r.waypoints = {wp(world, 40.80, 29.03, 0.0), wp(world, 40.785, 29.03, 0.0)};
+r.on_end = fm::EndBehavior::Land;  // ships: stop and keep station there
+fm::ecs::agent(carrier)->follow_route(r);
+```
+
+* Gemi hep su yüzeyinde kalır (`water_level`, varsayılan 0). Komutlardaki ve
+  `game::Transform`'daki irtifa yok sayılır, `AltitudeRef` önemsizdir.
+* Durmak için: `go_to` ya da rota sonunda `Land`/`Loiter` (yarıçapsız), ya da `hover()`.
+  Gemi planlı yavaşlar, noktayı geçerse geri gelir, nokta yandaysa pod'larla yerinde döner.
+  `set_speed(0)` yalnızca durur; negatif hız tornistandır.
+* `loiter(merkez, r)` en az dönüş yarıçapıyla (preset'te 300 m) tur atar; `r = 0` orada
+  istasyon tutar.
+* Tam dümen ya da sabit bir dönüş hızı için `agent->ship()->steer(rad_s)`
+  (`+inf` = sancağa tam dümen). Başka bir komut gelene kadar sürer.
+* HOT `water_level + 0.5` m'yi geçerse gemi karaya oturur (`phase = TerrainContact`) ve oyun
+  onu taşıyana kadar durur.
+* Kol (eskort / konvoy) `join_formation` ile aynı şekilde kurulur; lider durursa gemi slotunda
+  istasyon tutar.
+
+## 8. İlerlemeyi takip etmek
 
 | Ne | Nereden |
 |---|---|
 | Ne yapıyor | `agent->mode()` ya da `FlightPose::mode`: `GoTo`/`Route` varınca `Loiter`, `Hover`, `Cruise` ya da `Land` olur |
-| Kalkış/iniş aşaması | `FlightPose::phase`: `TakeoffRoll`, `InitialClimb`, `Approach`, `Flare`, `Rollout`, `Landed` ... |
+| Kalkış/iniş aşaması | `FlightPose::phase`: `TakeoffRoll`, `InitialClimb`, `Approach`, `Flare`, `Rollout`, `Landed` ... Gemide `Underway` (seyirde), `Parked` (durdu), `TerrainContact` (karaya oturdu) |
 | Yerde mi | `FlightPose::on_ground` |
-| Rotada kaçıncı waypoint | `agent->fixed_wing()->route().index()` / `agent->rotorcraft()->route().index()` |
+| Rotada kaçıncı waypoint | `agent->fixed_wing()->route().index()` / `agent->rotorcraft()->route().index()` / `agent->ship()->route().index()` |
 | Araziden yükseklik | `agent->state().height_above_terrain` |
 
-## 8. Hangi araç ne yapar
+## 9. Hangi araç ne yapar
 
-| Komut | Sabit kanat | Helikopter / drone |
-|---|---|---|
-| `go_to` | Noktaya uçar; varınca düz devam ya da tur (`Land` için pist gerekir, yoksa tur atar) | Noktaya uçar; varınca düz devam, üstünde bekleme (yavaşlayıp durur) ya da iniş |
-| `loiter(merkez, r)` | `r` yarıçaplı tur (0 = performanstan) | `r` yarıçaplı tur; `r = 0` üstünde bekleme |
-| `hover()` | Bulunduğu yerin etrafında tur | Bulunduğu yerde bekleme |
-| `follow_route` | Fly-by / fly-over, waypoint hızları | Aynısı, ayrıca `hold_time`. Drone keskin köşede yavaşlar; helikopter köşeyi hızını koruyarak yatışlı bir yayla alır |
-| `takeoff` | Pistten: koşu, rotasyon, tırmanış | Dikey kalkış |
-| `land(runway)` | Pist yaklaşması, flare, frenleme | Pist başına uçup dikey iniş |
-| `land()` | Pist olmadan inemez (`false`) | Bulunduğu yere dikey iniş |
+| Komut | Sabit kanat | Helikopter / drone | Gemi |
+|---|---|---|---|
+| `go_to` | Noktaya uçar; varınca düz devam ya da tur (`Land` için pist gerekir, yoksa tur atar) | Noktaya uçar; varınca düz devam, üstünde bekleme (yavaşlayıp durur) ya da iniş | Noktaya gider; varınca düz devam, ya da (`Loiter`/`Land`) yavaşlayıp durur ve orada istasyon tutar |
+| `loiter(merkez, r)` | `r` yarıçaplı tur (0 = performanstan) | `r` yarıçaplı tur; `r = 0` üstünde bekleme | `r` yarıçaplı tur (en az dönüş yarıçapı); `r = 0` orada istasyon tutma |
+| `hover()` | Bulunduğu yerin etrafında tur | Bulunduğu yerde bekleme | Durur, bulunduğu yerde istasyon tutar |
+| `follow_route` | Fly-by / fly-over, waypoint hızları | Aynısı, ayrıca `hold_time`. Drone keskin köşede yavaşlar; helikopter köşeyi hızını koruyarak yatışlı bir yayla alır | Fly-by, waypoint hızları; dümen gecikmesi için dönüşe erken başlar (`hold_time` yok) |
+| `takeoff` | Pistten: koşu, rotasyon, tırmanış | Dikey kalkış | Yok (`false`) |
+| `land(runway)` | Pist yaklaşması, flare, frenleme | Pist başına uçup dikey iniş | Yok (`false`) |
+| `land()` | Pist olmadan inemez (`false`) | Bulunduğu yere dikey iniş | Yok (`false`); durmak için `hover()` |

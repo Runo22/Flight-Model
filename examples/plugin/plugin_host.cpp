@@ -34,6 +34,7 @@ static bool library_still_loaded(const char* path) {
 namespace {
 
 double query_hot(double lat, double lon) {
+    if (lat < 40.98) return 0.0;  // sea: the height of the sea surface
     return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
 }
 
@@ -109,6 +110,10 @@ int main(int argc, char** argv) {
         .set<game::Transform>({41.08, 29.02, query_hot(41.08, 29.02), 0, 0, 45})
         .set<game::Hot>({query_hot(41.08, 29.02)})
         .set<game::FlightRequest>({10, 0.0, 41.12, 29.08, 600.0});  // parked T129, go-to
+    world.entity("TCG1")
+        .set<game::Transform>({40.95, 29.0, 0.0, 0, 0, 90})
+        .set<game::Hot>({query_hot(40.95, 29.0)})
+        .set<game::FlightRequest>({13, 8.0});                       // ship sailing east
 
     int failures = 0;
     for (int cycle = 0; cycle < 2; ++cycle) {
@@ -124,11 +129,17 @@ int main(int argc, char** argv) {
         if (!loaded) return 1;
 
         const game::Transform before = read<game::Transform>(world, "UAV1");
+        const game::Transform ship_before = read<game::Transform>(world, "TCG1");
         run(world, 60.0);
         print(world, cycle == 0 ? "plugin loaded, 60 s" : "plugin reloaded, 60 s");
         const game::Transform after = read<game::Transform>(world, "UAV1");
         if (!(after.lat < before.lat - 0.005)) {
             std::printf("FAIL: UAV1 did not fly south\n");
+            ++failures;
+        }
+        const game::Transform ship_after = read<game::Transform>(world, "TCG1");
+        if (!(ship_after.lon > ship_before.lon + 0.004 && ship_after.alt == 0.0)) {
+            std::printf("FAIL: TCG1 did not sail east on the sea surface\n");
             ++failures;
         }
 

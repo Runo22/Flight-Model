@@ -432,6 +432,49 @@ TEST_CASE("flecs geo: bind_geo_transform takes over moves made by the game") {
     CHECK(ecs::agent(plane)->mode() == FlightMode::Cruise);
 }
 
+TEST_CASE("flecs geo: a ship sails a route, stops and is moved by the game") {
+    flecs::world world;
+    ecs::load(world);
+    ecs::set_geo_origin(world, 40.9, 29.0);
+    world.component<GameTransform>();
+    ecs::bind_geo_transform<GameTransform>(world);
+    flecs::entity ship = world.entity().set<GameTransform>({40.9, 29.0, 0.0, 0, 0, 90});
+    ecs::attach_geo(ship, presets::carrier_ship(), {40.9, 29.0, 0.0}, 90.0, 8.0, false);
+    CHECK(ecs::agent(ship)->kind() == VehicleKind::Ship);
+    const auto transform = [&] { return *ecs::compat::try_get<GameTransform>(ship); };
+
+    const GeoPoint stop_at{40.86, 29.06, 0.0};
+    Route r;
+    Waypoint w;
+    w.position = ecs::to_local(world, {40.9, 29.06, 0.0});
+    r.waypoints.push_back(w);
+    w.position = ecs::to_local(world, stop_at);
+    r.waypoints.push_back(w);
+    r.on_end = EndBehavior::Land;  // stop and keep station at the last waypoint
+    ecs::agent(ship)->follow_route(r);
+
+    double max_alt = 0.0;
+    for (int i = 0; i < static_cast<int>(1800.0 / kDt); ++i) {
+        ship.set<ecs::TerrainHeight>({0.0});  // the game's HOT at sea: the sea surface
+        world.progress(kDt);
+        max_alt = std::max(max_alt, std::abs(transform().alt));
+    }
+    const GeoProjection& proj = *ecs::geo(world);
+    const auto local = [&] { return proj.to_local({transform().lat, transform().lon, 0.0}); };
+    CHECK(max_alt < 1e-6);
+    CHECK((local() - proj.to_local(stop_at)).xy().length() < 30.0);
+    CHECK(ecs::agent(ship)->mode() == FlightMode::Hover);
+    CHECK(pose_of(ship).phase == FlightPhase::Parked);
+
+    // The game moves the ship 1 km east (the altitude is ignored): it keeps the station it
+    // was given and sails back.
+    ship.set<GameTransform>({stop_at.latitude, stop_at.longitude + 0.012, 50.0, 0, 0, 0});
+    world.progress(kDt);
+    CHECK(std::abs(transform().alt) < 1e-6);
+    for (int i = 0; i < static_cast<int>(1200.0 / kDt); ++i) world.progress(kDt);
+    CHECK((local() - proj.to_local(stop_at)).xy().length() < 30.0);
+}
+
 TEST_CASE("flecs: a teleported leader does not fling its followers") {
     flecs::world world = make_world(WorldFrame::enu());
     flecs::entity car = world.entity("car").set<ecs::TrackedPose>({{0, 0, 0}});

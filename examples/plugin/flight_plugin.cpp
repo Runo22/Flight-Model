@@ -35,6 +35,7 @@ fm::VehicleParams vehicle_params(int vehicle) {
         case 10: return fm::presets::attack_helicopter();
         case 11: return fm::presets::heavy_attack_helicopter();
         case 12: return fm::presets::transport_helicopter();
+        case 13: return fm::presets::carrier_ship();
         default: return fm::presets::multirotor();
     }
 }

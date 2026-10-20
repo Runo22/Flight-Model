@@ -35,7 +35,7 @@ enum class FlightMode {
     Loiter,   // orbit a point
     Takeoff,  // takeoff run / vertical takeoff and initial climb
     Land,      // rotorcraft vertical landing
-    Hover,     // rotorcraft position hold
+    Hover,     // rotorcraft position hold; ship: station keeping
     Formation, // keep a slot relative to a leader entity
 };
 
@@ -51,7 +51,8 @@ enum class FlightPhase {
     Landing,         // rotorcraft: vertical descent
     Rollout,         // fixed-wing: braking on the runway after touchdown
     Landed,
-    TerrainContact,  // touched the ground while airborne (crash / unplanned)
+    TerrainContact,  // touched the ground while airborne (crash / unplanned); ship: aground
+    Underway,        // ship: moving (stopped ships are Parked)
 };
 
 constexpr const char* to_string(FlightMode m) {
@@ -82,6 +83,7 @@ constexpr const char* to_string(FlightPhase p) {
         case FlightPhase::Rollout: return "Rollout";
         case FlightPhase::Landed: return "Landed";
         case FlightPhase::TerrainContact: return "TerrainContact";
+        case FlightPhase::Underway: return "Underway";
     }
     return "?";
 }
