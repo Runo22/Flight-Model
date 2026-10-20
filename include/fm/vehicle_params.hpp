@@ -67,6 +67,10 @@ struct FixedWingParams {
 
     // Speeds (m/s)
     double cruise_speed = 60.0;        // true airspeed used when no speed is commanded
+    // Large climbs the commanded speed cannot sustain are flown at full power at this
+    // equivalent airspeed (0 = best climb rate speed of the model, < 0 = always climb at
+    // the commanded speed).
+    double climb_speed = 0.0;
     double max_speed = 90.0;           // equivalent airspeed limit (like Vmo)
     double mach_max = 0.6;             // Mach limit (like Mmo)
     double rotate_speed = 0.0;         // 0 = derived from stall speed in takeoff config

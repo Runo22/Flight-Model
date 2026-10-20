@@ -64,6 +64,7 @@ inline double highest(double lo, double hi, double tolerance, const std::functio
 
 // The aircraft without the AI pilot's operating limits: what the airframe and engines can do.
 inline FixedWingParams physical(FixedWingParams p, bool keep_speed_limits = false) {
+    p.climb_speed = -1.0;  // measure at the given speed
     p.climb_rate_max = 1000.0;
     p.climb_angle_max = deg2rad(80.0);
     p.altitude_time_constant = 1.0;

@@ -83,6 +83,7 @@ private:
         bool rotate = false;
         bool terrain_alert = false;
         bool terrain_floor = true;        // keep the minimum terrain clearance
+        bool climb_mode = false;          // a large climb may slow to the climb speed
         double vertical_speed_ff = 0.0;   // m/s, feedforward added to the altitude loop
         bool idle_thrust = false;         // flare: idle, flight path from vertical speed only
         double gamma_time_constant = 0.0; // s, 0 = params default (flare uses a quicker one)
@@ -125,10 +126,15 @@ private:
     double loiter_radius_default() const;
     double approach_speed(double density) const;
     double min_drag_speed(double density) const;  // best climb angle, roughly
+    double climb_speed(const AtmosphereSample& atm, double v_min, double v_max);
+    double climb_rate_at(double tas, const AtmosphereSample& atm) const;  // m/s, full power
     Vec3 aim_point() const;  // glide path touchdown aim point on the runway
 
     FixedWingParams p_;
     double rated_lapse_ = 1.0;  // engine density lapse at the critical altitude
+    bool climbing_ = false;     // climb mode: full power at the climb speed
+    double best_climb_speed_ = 0.0;              // m/s TAS, cached ...
+    double best_climb_altitude_ = -1e9;          // ... for this altitude
     FlightState out_{};
 
     // Dynamic state

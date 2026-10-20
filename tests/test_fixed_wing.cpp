@@ -150,6 +150,41 @@ TEST_CASE("fixed-wing: go_to then loiter at the point") {
     CHECK(max_r < 1.25 * expected);
 }
 
+TEST_CASE("fixed-wing: large climbs at the climb speed, then back to the commanded speed") {
+    // Anka class commanded to 110 kt: near its top speed, little power left for climbing.
+    struct Result {
+        double rate = 0.0;       // m/s, average 500 -> 4,000 m
+        double slowest = 1e9;    // m/s during the climb
+    };
+    auto climb = [](FixedWingParams p) {
+        FixedWingAgent a(p, airborne({0, 0, 500}, 0.0, knots(110.0)));
+        a.hold(0.0, 4000.0, knots(110.0));
+        Result r;
+        double t = 0.0;
+        while (a.state().position.z < 3990.0 && t < 3000.0) {
+            a.step(1.0 / 60.0, {});
+            t += 1.0 / 60.0;
+            if (a.state().position.z > 700.0) r.slowest = std::min(r.slowest, a.state().airspeed);
+        }
+        r.rate = 3490.0 / t;
+        simulate(a, 300.0);
+        CHECK_NEAR(a.state().position.z, 4000.0, 5.0);
+        CHECK_NEAR(a.state().airspeed, knots(110.0), 1.0);  // back to the commanded speed
+        return r;
+    };
+    FixedWingParams p = presets::propeller_uav();
+    const Result best = climb(p);                 // best climb rate speed of the model
+    CHECK(best.slowest < knots(90.0));
+    p.climb_speed = knots(95.0);                  // a set climb speed (EAS)
+    const Result set = climb(p);
+    CHECK(set.slowest > knots(94.0) && set.slowest < knots(105.0));
+    p.climb_speed = -1.0;                         // off: climbs at the commanded speed
+    const Result off = climb(p);
+    CHECK(off.slowest > knots(109.0));
+    CHECK(best.rate > 1.5 * off.rate);
+    CHECK(best.rate > set.rate);
+}
+
 TEST_CASE("fixed-wing: keeps terrain clearance over rising ground") {
     // Only the height under the aircraft is known; a 6% slope starts 3 km ahead.
     const FixedWingParams p = presets::propeller_uav();

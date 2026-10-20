@@ -59,6 +59,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   turbo-şarjlı / flat-rated motorlarda kritik irtifaya kadar sabit güç, ISA 32 km'ye kadar.
 - **Arazi:** arazi tabanının altında kalan uçak hızını en iyi tırmanma açısı hızına düşürüp
   enerjiyi tırmanmaya verir (zayıf tırmanan İHA'lar yükselen araziyi aşar).
+- **Tırmanış kipi:** büyük tırmanışlar, komut edilen hız yetmiyorsa tam güçle en iyi
+  tırmanma hızında (ya da `climb_speed` ile verilen hızda) uçulur.
 - **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
   itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
   otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra

@@ -22,6 +22,9 @@ constexpr double kLeaderTimeout = 2.0;     // s without leader updates before gi
 constexpr double kFormationSpeedTau = 3.0; // s, speed response while station keeping
 constexpr double kFormationAlongGain = 0.1;  // 1/s, along-track error to speed
 constexpr double kTropopauseSigma = 0.2971;  // ISA density ratio at 11 km
+constexpr double kClimbModeEnter = 150.0;  // m below the target altitude
+constexpr double kClimbModeExit = 30.0;    // m
+constexpr double kClimbSpeedRefresh = 150.0;  // m of altitude change before recomputing Vy
 
 // Thrust / power lapse at the density ratio sigma: sigma^n in the troposphere; above the
 // tropopause (constant temperature) in proportion to the density.
@@ -309,6 +312,7 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
 
     if ((mode_ == FlightMode::GoTo || mode_ == FlightMode::Route) && route_.active()) {
         guide_route(cmd, vg, lookahead);  // may finish the route and switch mode
+        cmd.climb_mode = true;
     }
     switch (mode_) {
         case FlightMode::Cruise:
@@ -316,12 +320,14 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
             cmd.lateral_accel = l1_line(course_anchor_, heading_vector(course_target_),
                                         position_.xy(), vg, l1_settings(gs));
             cmd.altitude = altitude_target_now(lookahead);
+            cmd.climb_mode = true;
             break;
         case FlightMode::Loiter:
             cmd.use_accel = true;
             cmd.lateral_accel = l1_loiter(loiter_center_.xy(), loiter_radius_, loiter_clockwise_,
                                           position_.xy(), vg, l1_settings(gs));
             cmd.altitude = altitude_target_now(lookahead);
+            cmd.climb_mode = true;
             break;
         case FlightMode::Takeoff:
             guide_takeoff(cmd, atm);
@@ -657,6 +663,19 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     // Below the terrain floor: slow down towards the best climb angle speed and put the
     // energy into climbing, like a pilot clearing rising ground.
     if (cmd.terrain_alert) v_cmd = std::min(v_cmd, std::max(v_min, min_drag_speed(atm.density)));
+
+    // Climb mode (like a flight level change): a large climb that the commanded speed
+    // cannot sustain at the wanted rate is flown at full power at the climb speed, back to
+    // the commanded speed near the target altitude.
+    const double altitude_error = cmd.altitude - position_.z;
+    if (!cmd.climb_mode || p_.climb_speed < 0.0 || altitude_error < kClimbModeExit) {
+        climbing_ = false;
+    } else if (!climbing_ && altitude_error > kClimbModeEnter) {
+        const double wanted = std::min(
+            p_.climb_rate_max, cmd.vertical_speed_ff + altitude_error / p_.altitude_time_constant);
+        climbing_ = climb_rate_at(v_cmd, atm) < 0.8 * wanted;
+    }
+    if (climbing_) v_cmd = std::min(v_cmd, climb_speed(atm, v_min, v_max));
 
     // Lateral: bank from lateral acceleration or heading error, limited by stall margin.
     const double qs = 0.5 * atm.density * v * v * p_.wing_area;
@@ -1001,6 +1020,30 @@ double FixedWingAgent::stall_speed(double density, bool flaps) const {
 double FixedWingAgent::min_drag_speed(double density) const {
     const double cl = std::sqrt(cd0() / std::max(p_.induced_drag_k, 1e-6));
     return std::sqrt(2.0 * p_.mass * kGravity / (density * p_.wing_area * cl));
+}
+
+double FixedWingAgent::climb_rate_at(double tas, const AtmosphereSample& atm) const {
+    const double v = std::max(tas, kMinAirspeed);
+    return (thrust_available(v, atm) - drag(v, 1.0, atm, false)) * v / (p_.mass * kGravity);
+}
+
+double FixedWingAgent::climb_speed(const AtmosphereSample& atm, double v_min, double v_max) {
+    if (p_.climb_speed > 0.0) return std::clamp(p_.climb_speed / std::sqrt(atm.sigma), v_min, v_max);
+    // Best climb rate speed of the model, refreshed as the altitude changes.
+    if (std::abs(position_.z - best_climb_altitude_) > kClimbSpeedRefresh) {
+        constexpr int kSamples = 24;
+        double best_rate = -1e9;
+        for (int i = 0; i <= kSamples; ++i) {
+            const double v = v_min + (v_max - v_min) * i / kSamples;
+            const double rate = climb_rate_at(v, atm);
+            if (rate > best_rate) {
+                best_rate = rate;
+                best_climb_speed_ = v;
+            }
+        }
+        best_climb_altitude_ = position_.z;
+    }
+    return std::clamp(best_climb_speed_, v_min, v_max);
 }
 
 double FixedWingAgent::turn_radius(double speed) const {

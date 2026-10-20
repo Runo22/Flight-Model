@@ -162,6 +162,11 @@ fm::ecs::agent(e)->cruise();                     // keep going straight as now
   taşıp oturabilir) ve rüzgârda sürüklenmez.
 * Çizgi düzdür: 200 km sonra gerçek kuzeye göre rota ~1° kayar (büyük daire gibi).
 * Hiç komut yoksa araç düz devam eder (`cruise`); drone durgunsa olduğu yerde bekler.
+* **Tırmanış kipi (sabit kanat):** bazı tırmanışlarda komut edilen hız, istenen tırmanma
+  oranını veremez. Tırmanış 150 m'den büyükse uçak bu durumda tam güçle en iyi tırmanma
+  hızında tırmanır ve hedefe 30 m kala komut edilen hıza döner. `go_to`, rota, `hold` ve
+  `loiter` için geçerlidir. `FixedWingParams::climb_speed` ile sabit bir tırmanma hızı (EAS)
+  verilebilir; `< 0` kipi kapatır.
 
 ## 6. Komutu oyundan bir component ile vermek
 
