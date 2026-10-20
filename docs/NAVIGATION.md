@@ -212,7 +212,7 @@ entity.set<game::FlyTo>({41.0910, 29.0910, 200.0, true});
 | `go_to` | Noktaya uçar; varınca düz devam ya da tur (`Land` için pist gerekir, yoksa tur atar) | Noktaya uçar; varınca düz devam, üstünde bekleme (yavaşlayıp durur) ya da iniş |
 | `loiter(merkez, r)` | `r` yarıçaplı tur (0 = performanstan) | `r` yarıçaplı tur; `r = 0` üstünde bekleme |
 | `hover()` | Bulunduğu yerin etrafında tur | Bulunduğu yerde bekleme |
-| `follow_route` | Fly-by / fly-over, waypoint hızları | Aynısı, ayrıca `hold_time` ve keskin köşelerde yavaşlama |
+| `follow_route` | Fly-by / fly-over, waypoint hızları | Aynısı, ayrıca `hold_time`. Drone keskin köşede yavaşlar; helikopter köşeyi hızını koruyarak yatışlı bir yayla alır |
 | `takeoff` | Pistten: koşu, rotasyon, tırmanış | Dikey kalkış |
 | `land(runway)` | Pist yaklaşması, flare, frenleme | Pist başına uçup dikey iniş |
 | `land()` | Pist olmadan inemez (`false`) | Bulunduğu yere dikey iniş |

@@ -9,8 +9,14 @@ agent contains its own autopilot.
 
 | Vehicle class | Model | Presets |
 |---|---|---|
-| Fixed-wing | Point-mass (3-DOF) flight dynamics with lift/drag polar, jet or propeller thrust, ISA atmosphere, load-factor/stall/bank limits; attitude derived from angle of attack and bank | `fast_jet`, `airliner_jet`, `regional_turboprop`, `light_propeller`, `fixed_wing_uav` |
+| Fixed-wing | Point-mass (3-DOF) flight dynamics with lift/drag polar, jet (afterburner, ram effect) or propeller thrust, thrust lapse with altitude, ISA atmosphere, load-factor/stall/bank limits; attitude derived from angle of attack and bank | `single_engine_fighter` (F-16C class), `twin_engine_fighter` (F-15C class), `turboprop_trainer` (Hürkuş class), `jet_uav` (Kızılelma class); generic: `fast_jet`, `airliner_jet`, `regional_turboprop`, `light_propeller`, `fixed_wing_uav` |
+| Helicopter | Thrust-vector dynamics with power-limited performance (momentum theory, ground effect, profile and parasite power, engine and transmission limits), banked turns, sideways/rearward limits | `attack_helicopter` (T129 ATAK class), `heavy_attack_helicopter` (AH-64D class), `transport_helicopter` (CH-47F class) |
 | Multirotor | Thrust-vector dynamics: tilts to accelerate, quadratic drag sets top speed | `multirotor` |
+
+The reference-class presets are fitted to published performance and verified by flying them
+through the agents: top speed, climb, ceilings, stall, takeoff and landing distances,
+helicopter hover ceilings. Measured values against the references, sources and a tuning
+guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 
 ## Behaviours
 
@@ -51,6 +57,7 @@ examples/                   headless CSV scenarios, Flecs integration example
 docs/ROADMAP.md             roadmap (Turkish)
 docs/EXTENDING.md           adding a new vehicle type (Turkish)
 docs/NAVIGATION.md          go to / loiter / routes / takeoff and landing examples (Turkish)
+docs/PRESETS.md             presets: references, measured performance, tuning (Turkish)
 ```
 
 Every agent runs the same pipeline each step:
@@ -290,7 +297,8 @@ handedness.
 ## Switching models
 
 * **Aircraft type**: a different parameter set (`presets::*` or your own
-  `FixedWingParams` / `RotorcraftParams`), no code change.
+  `FixedWingParams` / `RotorcraftParams`), no code change. `fm_performance_report` measures
+  any parameter set (see [`docs/PRESETS.md`](docs/PRESETS.md)).
 * **Model at runtime** (e.g. level of detail): `FlightAgent::snapshot()` returns initial
   conditions reproducing the current state; build the new agent from it and re-issue the
   command.

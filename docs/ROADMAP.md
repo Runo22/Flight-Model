@@ -50,7 +50,15 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   eder (`FlightAgent::relocate`, Flecs'te otomatik algılama, `bind_geo_transform`).
   Küçük düzeltmeler görevi bozmaz; büyük sıçramalarda rota bacağı, düz uçuş hattı,
   yaklaşma yeni konumdan yeniden kurulur; yer/hava geçişleri ve saçma değerler ele alınır.
-- **Testler:** 51 çekirdek + 19 Flecs + 2 plugin testi; AddressSanitizer/UBSan temiz.
+- **Referans sınıfı presetler:** F-16C, F-15C, Hürkuş, Kızılelma, T129 ATAK, AH-64D,
+  CH-47F sınıflarında, yayımlanmış performansa uydurulup araç uçurularak ölçülen modeller
+  (`docs/PRESETS.md`, `fm_performance_report`).
+- **Helikopter kipi:** güce dayalı performans (momentum teorisi, yer etkisi, profil ve parazit
+  güç, motor ve şanzıman sınırı), yatışlı dönüşler, köşelerde yay, yana/geri hız sınırı.
+- **Motor ve atmosfer:** tropopoz üstünde itki/güç yoğunlukla orantılı, jet ram etkisi,
+  ISA 32 km'ye kadar.
+- **Testler:** 61 çekirdek + 19 Flecs + navigasyon örneği + 2 plugin testi;
+  AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
 
