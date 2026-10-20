@@ -14,19 +14,25 @@ constexpr double kP0 = 101325.0;
 constexpr double kLapse = 0.0065;    // K/m
 constexpr double kTropopause = 11000.0;
 constexpr double kT11 = kT0 - kLapse * kTropopause;
+constexpr double kStratosphere2 = 20000.0;  // temperature rises 1 K/km from here to 32 km
+constexpr double kLapse2 = -0.001;          // K/m
 }  // namespace
 
 AtmosphereSample isa(double altitude_m, double temperature_offset) {
-    const double h = std::clamp(altitude_m, -500.0, 20000.0);
+    const double h = std::clamp(altitude_m, -500.0, 32000.0);
     double t_isa = 0.0;
     double p = 0.0;
+    const double p11 = kP0 * std::pow(kT11 / kT0, kG0 / (kLapse * kR));
     if (h <= kTropopause) {
         t_isa = kT0 - kLapse * h;
         p = kP0 * std::pow(t_isa / kT0, kG0 / (kLapse * kR));
-    } else {
+    } else if (h <= kStratosphere2) {
         t_isa = kT11;
-        const double p11 = kP0 * std::pow(kT11 / kT0, kG0 / (kLapse * kR));
         p = p11 * std::exp(-kG0 / (kR * kT11) * (h - kTropopause));
+    } else {
+        const double p20 = p11 * std::exp(-kG0 / (kR * kT11) * (kStratosphere2 - kTropopause));
+        t_isa = kT11 - kLapse2 * (h - kStratosphere2);
+        p = p20 * std::pow(t_isa / kT11, kG0 / (kLapse2 * kR));
     }
     const double t = t_isa + temperature_offset;
     const double rho = p / (kR * t);

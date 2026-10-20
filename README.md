@@ -311,4 +311,4 @@ handedness.
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md). Notably: no taxiing, no sideslip (coordinated
 flight, the aircraft crabs into crosswind until touchdown), wind is ignored on the ground,
-ISA atmosphere up to 20 km.
+ISA atmosphere up to 32 km.

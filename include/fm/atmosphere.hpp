@@ -1,4 +1,4 @@
-// International Standard Atmosphere (troposphere + lower stratosphere, 0..20 km).
+// International Standard Atmosphere (troposphere and stratosphere, -0.5..32 km).
 #pragma once
 
 namespace fm {

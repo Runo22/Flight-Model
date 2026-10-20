@@ -21,6 +21,7 @@ constexpr double kL1TurnFactor = 0.6;      // L1 distance >= 0.6 * K * turn radi
 constexpr double kLeaderTimeout = 2.0;     // s without leader updates before giving up
 constexpr double kFormationSpeedTau = 3.0; // s, speed response while station keeping
 constexpr double kFormationAlongGain = 0.1;  // 1/s, along-track error to speed
+constexpr double kTropopauseSigma = 0.2971;  // ISA density ratio at 11 km
 }  // namespace
 
 FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& ic)
@@ -946,10 +947,15 @@ double FixedWingAgent::altitude_target_now(double lookahead) const {
 
 double FixedWingAgent::thrust_available(double tas, const AtmosphereSample& atm) const {
     const EngineParams& e = p_.engine;
-    const double lapse = std::pow(atm.sigma, e.density_exponent);
+    // sigma^n in the troposphere; above the tropopause (constant temperature) thrust and
+    // power fall in proportion to the density.
+    const double lapse = atm.sigma >= kTropopauseSigma
+                             ? std::pow(atm.sigma, e.density_exponent)
+                             : std::pow(kTropopauseSigma, e.density_exponent) * atm.sigma /
+                                   kTropopauseSigma;
     if (e.type == EngineType::Jet) {
         const double mach = tas / atm.speed_of_sound;
-        return e.max_thrust * lapse * std::clamp(1.0 - e.mach_lapse * mach, 0.2, 1.5);
+        return e.max_thrust * lapse * std::clamp(1.0 - e.mach_lapse * mach, 0.2, 2.0);
     }
     const double power_thrust = e.prop_efficiency * e.max_power * lapse / std::max(tas, 1.0);
     return std::min(e.static_thrust * lapse, power_thrust);

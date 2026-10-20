@@ -121,6 +121,6 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - Taksi yok; pistten çıkış/park yeri yok (Faz 1).
 - Yan kayma (sideslip) yok; uçuş her zaman koordineli.
 - Yerdeyken rüzgâr yok sayılır.
-- Atmosfer modeli 20 km'ye kadar (ISA).
+- Atmosfer modeli 32 km'ye kadar (ISA).
 - Arazi öngörüsü geçmiş örneklere dayanır; ani dik yamaçlarda (ör. uçurum) koruma sınırlıdır.
   Oyun ileride ileriye dönük arazi sorgusu sağlarsa `TerrainMonitor` buna genişletilebilir.

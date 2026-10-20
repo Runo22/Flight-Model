@@ -19,8 +19,8 @@ struct EngineParams {
     double max_power = 0.0;         // W, sea level shaft power (propeller), all engines
     double static_thrust = 0.0;     // N, propeller thrust at zero airspeed
     double prop_efficiency = 0.8;   // propeller efficiency in cruise
-    double density_exponent = 0.75; // thrust/power scale with sigma^exponent
-    double mach_lapse = 0.0;        // jet thrust *= (1 - mach_lapse * M)
+    double density_exponent = 0.75; // thrust/power ~ sigma^exponent below 11 km, ~ sigma above
+    double mach_lapse = 0.0;        // jet thrust *= clamp(1 - mach_lapse * M, 0.2, 2); < 0: ram gain
     double spool_time = 2.0;        // s, throttle response time constant
     double idle_throttle = 0.05;    // throttle fraction at idle
 };
