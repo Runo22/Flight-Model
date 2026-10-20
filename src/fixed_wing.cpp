@@ -641,7 +641,10 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
         (flaps_ ? kFlapsStallMargin : kStallMargin) * stall_speed(atm.density, flaps_);
     const double v_max = std::max(v_min, std::min(p_.max_speed / std::sqrt(atm.sigma),
                                                   p_.mach_max * atm.speed_of_sound));
-    const double v_cmd = std::clamp(cmd.speed, v_min, v_max);
+    double v_cmd = std::clamp(cmd.speed, v_min, v_max);
+    // Below the terrain floor: slow down towards the best climb angle speed and put the
+    // energy into climbing, like a pilot clearing rising ground.
+    if (cmd.terrain_alert) v_cmd = std::min(v_cmd, std::max(v_min, min_drag_speed(atm.density)));
 
     // Lateral: bank from lateral acceleration or heading error, limited by stall margin.
     const double qs = 0.5 * atm.density * v * v * p_.wing_area;
@@ -983,6 +986,11 @@ double FixedWingAgent::cd0() const { return p_.cd0 + (flaps_ ? p_.flaps_dcd0 : 0
 
 double FixedWingAgent::stall_speed(double density, bool flaps) const {
     const double cl = p_.cl_max + (flaps ? p_.flaps_dcl_max : 0.0);
+    return std::sqrt(2.0 * p_.mass * kGravity / (density * p_.wing_area * cl));
+}
+
+double FixedWingAgent::min_drag_speed(double density) const {
+    const double cl = std::sqrt(cd0() / std::max(p_.induced_drag_k, 1e-6));
     return std::sqrt(2.0 * p_.mass * kGravity / (density * p_.wing_area * cl));
 }
 

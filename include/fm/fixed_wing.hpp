@@ -124,6 +124,7 @@ private:
     double cd0() const;
     double loiter_radius_default() const;
     double approach_speed(double density) const;
+    double min_drag_speed(double density) const;  // best climb angle, roughly
     Vec3 aim_point() const;  // glide path touchdown aim point on the runway
 
     FixedWingParams p_;
