@@ -6,6 +6,14 @@ if(TARGET fm::flecs)
   add_executable(fm_flecs_integration flecs_integration.cpp)
   target_link_libraries(fm_flecs_integration PRIVATE fm::flecs)
   target_compile_options(fm_flecs_integration PRIVATE ${FM_WARNINGS})
+
+  # The snippets of docs/NAVIGATION.md; checks its own results.
+  add_executable(fm_navigation navigation.cpp)
+  target_link_libraries(fm_navigation PRIVATE fm::flecs)
+  target_compile_options(fm_navigation PRIVATE ${FM_WARNINGS})
+  if(FM_BUILD_TESTS)
+    add_test(NAME fm_navigation_example COMMAND fm_navigation)
+  endif()
 endif()
 
 # The plugin example needs Flecs as a shared library (configure with FM_FLECS_SHARED=ON or

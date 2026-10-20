@@ -50,6 +50,7 @@ tests/                      core and Flecs tests (no external test framework)
 examples/                   headless CSV scenarios, Flecs integration example
 docs/ROADMAP.md             roadmap (Turkish)
 docs/EXTENDING.md           adding a new vehicle type (Turkish)
+docs/NAVIGATION.md          go to / loiter / routes / takeoff and landing examples (Turkish)
 ```
 
 Every agent runs the same pipeline each step:
@@ -111,6 +112,11 @@ fm::ecs::agent(plane)->follow_route(route);            // a parked aircraft take
 // or an fm::ecs::TrackedPose can be followed).
 fm::ecs::follow(wingman, plane, fm::formation::echelon_right(0, 60.0));
 ```
+
+More command examples (go to a point, loiter, hover, routes with fly-over / speeds /
+terrain following / patrol loops / waypoint holds, runway takeoff and landing, commands as
+game components): [`docs/NAVIGATION.md`](docs/NAVIGATION.md), all taken from the
+self-checking [`examples/navigation.cpp`](examples/navigation.cpp).
 
 Per frame:
 
@@ -298,6 +304,7 @@ handedness.
 ```sh
 ./build/examples/fm_scenarios takeoff_route > takeoff.csv   # also: formation, drone_survey
 ./build/examples/fm_flecs_integration
+./build/examples/fm_navigation                            # docs/NAVIGATION.md, self-checking
 ```
 
 ## Limitations
