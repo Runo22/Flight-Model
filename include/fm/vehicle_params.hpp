@@ -117,6 +117,28 @@ struct RotorcraftParams {
     double terrain_lookahead = 4.0;    // s
     double takeoff_height = 10.0;      // m AGL
     double formation_min_separation = 3.0;  // m
+
+    // --- Helicopter (all optional; the defaults keep the multirotor behaviour) -------
+    // Power-limited performance from momentum theory when engine_power and
+    // rotor_disc_area are set: induced (with ground effect), profile and parasite power
+    // against the engine and transmission limits. Maximum speed, climb rate over speed and
+    // the hover and service ceilings follow from it, and change with altitude.
+    double engine_power = 0.0;           // W, total engine shaft power at sea level (0 = off)
+    double transmission_limit = 0.0;     // W, drive system limit (0 = engines only)
+    double power_lapse_exponent = 0.8;   // engine power ~ sigma^x
+    double power_efficiency = 0.85;      // share of the power reaching the main rotor(s)
+    double rotor_disc_area = 0.0;        // m^2, total effective main rotor disc area
+    double induced_power_factor = 1.15;  // non-ideal induced losses
+    double profile_power = 0.0;          // W, blade profile power in hover at sea level
+    double tip_speed = 220.0;            // m/s, main rotor tip speed
+    // Parasite drag area f: drag = 0.5 rho f V^2, which also sets the nose-down attitude in
+    // fast flight. 0 = drag sized so that max_tilt holds max_speed.
+    double flat_plate_area = 0.0;        // m^2
+    // Banked, coordinated turns above ~15 m/s and fly-by corners on routes (0 = turn on
+    // the spot like a multirotor). With it, max_acceleration only limits speed changes.
+    double bank_max = 0.0;               // rad
+    double max_sideways_speed = 0.0;     // m/s relative to the nose (0 = unlimited)
+    double max_rearward_speed = 0.0;     // m/s (0 = unlimited)
 };
 
 // Every vehicle type: one params struct here, one agent class (see docs/EXTENDING.md).

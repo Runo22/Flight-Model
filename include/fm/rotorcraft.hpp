@@ -2,6 +2,7 @@
 // sets the top speed) with velocity-based guidance for hover, routes, landing and formation.
 #pragma once
 
+#include <array>
 #include <optional>
 
 #include "fm/atmosphere.hpp"
@@ -73,6 +74,18 @@ private:
     void update_output(const AtmosphereSample& atm, const Vec3& wind);
 
     Vec2 position_hold_velocity(const Vec2& target, double max_speed) const;
+    double lateral_acceleration_max() const;
+    void limit_turn(Vec2& v_h) const;
+    void limit_sideways(Vec2& v_h) const;
+
+    // Helicopter power (engine_power and rotor_disc_area set).
+    bool helicopter() const { return p_.engine_power > 0.0 && p_.rotor_disc_area > 0.0; }
+    double power_available(double density) const;
+    double power_required(double airspeed, double climb, double density) const;
+    double ground_effect(double airspeed, double density) const;  // induced power factor
+    void update_power_curve(double density);
+    double max_climb_rate(double airspeed) const;  // m/s, negative = cannot hold altitude
+    void limit_by_power(Vec2& v_h, double& vz) const;
     // Position error -> velocity gain giving a critically damped stop with the velocity loop.
     double position_gain() const { return 1.0 / (4.0 * p_.velocity_time_constant); }
     double vertical_speed_to(double altitude) const;
@@ -117,6 +130,16 @@ private:
     LeaderTracker leader_tracker_;
     double leader_age_ = 0.0;
     double frame_time_ = 0.0;
+
+    // Climb rate over airspeed at the current altitude, refreshed every step.
+    struct PowerCurve {
+        static constexpr int kSamples = 32;
+        double speed_step = 1.0;                  // m/s between samples
+        std::array<double, kSamples + 1> climb{};  // m/s, best steady climb rate per airspeed
+        double best_speed = 0.0;                  // m/s, speed of the best climb rate
+        double max_speed = 1e9;                   // m/s, fastest level flight
+    };
+    PowerCurve power_{};
 
     TerrainMonitor terrain_;
     Vec3 wind_{};                          // last wind, for outputs between steps

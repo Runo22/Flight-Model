@@ -19,6 +19,7 @@ constexpr double kAttitudeRateMax = 6.0;  // rad/s, roll/pitch rate limit
 constexpr double kYawTau = 0.5;           // s
 constexpr double kLeaderTimeout = 2.0;    // s
 constexpr double kHardImpactSpeed = 3.0;  // m/s, faster ground contact counts as a crash
+constexpr double kTurnSpeed = 15.0;       // m/s, banked turns above this speed (helicopters)
 }  // namespace
 
 RotorcraftAgent::RotorcraftAgent(RotorcraftParams params, const InitialConditions& ic)
@@ -264,6 +265,8 @@ void RotorcraftAgent::step(double dt, const Environment& input) {
         settle_relocation(r);
     }
 
+    if (helicopter()) update_power_curve(isa(position_.z, env.temperature_offset).density);
+
     SlotReference slot_ref{};
     if (mode_ == FlightMode::Formation) {
         leader_age_ += dt;
@@ -331,9 +334,9 @@ RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
             const double d = std::max(r.length(), 1e-6);
             const Vec2 ur = r / d;
             const Vec2 tangent = loiter_clockwise_ ? right_of(ur) : -right_of(ur);
-            // Limit the orbit speed to what the acceleration limit can turn.
+            // Limit the orbit speed to what the acceleration (or bank) limit can turn.
             const double speed = std::min(speed_target_,
-                                          0.9 * std::sqrt(p_.max_acceleration * loiter_radius_));
+                                          0.9 * std::sqrt(lateral_acceleration_max() * loiter_radius_));
             v_h = tangent * speed +
                   ur * std::clamp(position_gain() * (loiter_radius_ - d), -speed, speed);
             break;
@@ -365,7 +368,9 @@ RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
             }
             face_motion = false;
             const Vec3 err = ref.position - position_;
-            v_h = ref.velocity.xy() + err.xy() * kFormationGain;
+            // Damping ~0.7 with the velocity response (slow, heavy vehicles get a lower gain).
+            const double gain = std::min(kFormationGain, 0.5 / p_.velocity_time_constant);
+            v_h = ref.velocity.xy() + err.xy() * gain;
             altitude = ref.position.z;
             cmd.yaw = ref.heading;
             // Push away from the leader when closer than the minimum separation.
@@ -388,6 +393,11 @@ RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
     // Limit the horizontal speed.
     const double vh_len = v_h.length();
     if (vh_len > p_.max_speed) v_h = v_h * (p_.max_speed / vh_len);
+    // En route a change of direction is a banked turn; keeping a position (formation
+    // slot, hover, landing) is done by decelerating instead.
+    const bool en_route = mode_ == FlightMode::Cruise || mode_ == FlightMode::GoTo ||
+                          mode_ == FlightMode::Route || mode_ == FlightMode::Loiter;
+    if (p_.bank_max > 0.0 && en_route) limit_turn(v_h);
 
     if (terrain_floor && terrain_.valid()) {
         const double lookahead = std::max(velocity_.xy().length(), 1.0) * p_.terrain_lookahead;
@@ -399,6 +409,8 @@ RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
 
     if (face_motion && v_h.length() > 2.0) yaw_target_ = heading_of(v_h);
     if (mode_ != FlightMode::Formation) cmd.yaw = yaw_target_;
+    limit_sideways(v_h);  // after the yaw target: the nose turns first
+    if (helicopter()) limit_by_power(v_h, vz);
     cmd.velocity = {v_h.x, v_h.y, vz};
     return cmd;
 }
@@ -423,17 +435,42 @@ void RotorcraftAgent::guide_route(Command& cmd) {
         resolved_altitude_target_ =
             RouteTracker::resolve_altitude(wp, terrain_, 0.0, resolved_altitude_target_);
     };
+    // Turn at the end of the current leg (rad), 0 at the end of the route.
+    auto corner_turn = [&]() {
+        const Waypoint* next = route_.next();
+        if (!next) return 0.0;
+        const Vec2 next_dir = (next->position.xy() - route_.target().position.xy()).normalized();
+        return std::abs(angle_right(lp.direction, next_dir));
+    };
+    // Banked fly-by turn: the corner is cut along an arc instead of stopping at it.
+    auto banked_corner = [&]() {
+        const Waypoint& wp = route_.target();
+        return p_.bank_max > 0.0 && !wp.fly_over && wp.hold_time <= 0.0 && route_.next();
+    };
     // Speed at which the current leg ends: stop for holds and route ends, slow down for
-    // sharp corners.
+    // sharp corners (banked turns only for very sharp ones).
     auto end_speed_of_leg = [&]() {
         const Waypoint& wp = route_.target();
         if (wp.hold_time > 0.0) return 0.0;
-        if (const Waypoint* next = route_.next()) {
-            const Vec2 next_dir = (next->position.xy() - wp.position.xy()).normalized();
-            const double turn = std::abs(angle_right(lp.direction, next_dir));
+        if (route_.next()) {
+            const double turn = corner_turn();
+            if (banked_corner())
+                return speed_target_ * std::clamp(1.5 * std::cos(0.5 * turn), 0.4, 1.0);
             return speed_target_ * std::clamp(std::cos(turn), 0.15, 1.0);
         }
         return end == EndBehavior::ContinueStraight ? speed_target_ : 0.0;
+    };
+    // Distance before the waypoint where the next leg starts.
+    auto switch_distance = [&]() {
+        double d = std::max(1.0, end_speed_of_leg());
+        if (banked_corner()) {
+            const double v = std::max(end_speed_of_leg(), velocity_.xy().length());
+            const double radius = 1.2 * v * v / lateral_acceleration_max();  // roll-in lag
+            const Vec2 next_leg = route_.next()->position.xy() - route_.target().position.xy();
+            d = std::max(d, std::min({radius * std::tan(0.5 * std::min(corner_turn(), deg2rad(150.0))),
+                                      0.5 * lp.length, 0.5 * next_leg.length()}));
+        }
+        return d;
     };
 
     if (waiting_) {
@@ -441,7 +478,7 @@ void RotorcraftAgent::guide_route(Command& cmd) {
         if (hold_timer_ > 0.0) return;
         waiting_ = false;
         if (!advance()) return;
-    } else if (lp.remaining() <= std::max(1.0, end_speed_of_leg())) {
+    } else if (lp.remaining() <= switch_distance()) {
         if (route_.target().hold_time > 0.0) {
             waiting_ = true;
             hold_timer_ = route_.target().hold_time;
@@ -460,7 +497,10 @@ void RotorcraftAgent::guide_route(Command& cmd) {
                   end_speed + position_gain() * remaining});
     const double correction = std::clamp(-kCrossTrackGain * lp.crosstrack, -0.5 * speed_target_,
                                          0.5 * speed_target_);
-    const Vec2 v = lp.direction * along_speed + right_of(lp.direction) * correction;
+    Vec2 v = lp.direction * along_speed + right_of(lp.direction) * correction;
+    // Helicopters correct the track by turning, not by flying faster.
+    if (p_.bank_max > 0.0 && v.length() > along_speed && along_speed > kTurnSpeed)
+        v = v * (along_speed / v.length());
     cmd.velocity = {v.x, v.y, 0.0};
     const double lookahead = std::max(velocity_.xy().length(), 1.0) * 2.0;
     resolved_altitude_target_ =
@@ -558,7 +598,6 @@ void RotorcraftAgent::settle_relocation(const Relocation& r) {
 
 void RotorcraftAgent::integrate(const Command& cmd, const AtmosphereSample& atm, const Vec3& wind,
                                 double dt) {
-    (void)atm;
     const double m = p_.mass;
     const double g = kGravity;
     const double weight = m * g;
@@ -573,15 +612,28 @@ void RotorcraftAgent::integrate(const Command& cmd, const AtmosphereSample& atm,
         return;
     }
 
-    // Quadratic drag sized so that max tilt holds exactly max_speed in still air.
-    const double drag_coeff = weight * std::tan(p_.max_tilt) / (p_.max_speed * p_.max_speed);
+    // Quadratic drag: from the parasite drag area, or sized so that max tilt holds exactly
+    // max_speed in still air.
+    const double drag_coeff = p_.flat_plate_area > 0.0
+                                  ? 0.5 * atm.density * p_.flat_plate_area
+                                  : weight * std::tan(p_.max_tilt) / (p_.max_speed * p_.max_speed);
     const Vec3 v_air = velocity_ - wind;
     const Vec3 drag = v_air * (-drag_coeff * v_air.length());
 
     // Desired acceleration from the velocity command.
     Vec2 a_h = (cmd.velocity.xy() - velocity_.xy()) / p_.velocity_time_constant;
-    const double a_len = a_h.length();
-    if (a_len > p_.max_acceleration) a_h = a_h * (p_.max_acceleration / a_len);
+    const double speed = velocity_.xy().length();
+    if (p_.bank_max > 0.0 && speed > 1.0) {
+        // Speed changes up to max_acceleration, turns up to the bank limit.
+        const Vec2 u = velocity_.xy() / speed;
+        const double along = std::clamp(dot(a_h, u), -p_.max_acceleration, p_.max_acceleration);
+        const double lateral = lateral_acceleration_max();
+        const double side = std::clamp(dot(a_h, right_of(u)), -lateral, lateral);
+        a_h = u * along + right_of(u) * side;
+    } else {
+        const double a_len = a_h.length();
+        if (a_len > p_.max_acceleration) a_h = a_h * (p_.max_acceleration / a_len);
+    }
     const double t_max = p_.thrust_to_weight * weight;
     const double a_z = std::clamp((cmd.velocity.z - velocity_.z) / kVerticalTau, -0.6 * g,
                                   0.8 * (p_.thrust_to_weight - 1.0) * g);
@@ -680,6 +732,160 @@ double RotorcraftAgent::vertical_speed_to(double altitude) const {
 
 double RotorcraftAgent::ground_elevation() const {
     return terrain_.valid() ? terrain_.current() : ground_reference_;
+}
+
+double RotorcraftAgent::lateral_acceleration_max() const {
+    return p_.bank_max > 0.0 ? kGravity * std::tan(p_.bank_max) : p_.max_acceleration;
+}
+
+void RotorcraftAgent::limit_turn(Vec2& v_h) const {
+    // In forward flight a large change of direction is flown as a banked turn that keeps
+    // the speed (an arc instead of stopping to turn): the command keeps the commanded speed
+    // along the current track and asks for up to 1.5x the bank limit sideways; integrate()
+    // limits the lateral acceleration to bank_max.
+    const Vec2 v_now = velocity_.xy();
+    const double speed_now = v_now.length();
+    const double speed_cmd = v_h.length();
+    if (speed_now < kTurnSpeed || speed_cmd < 1e-3) return;
+    const double turn = wrap_pi(heading_of(v_h) - heading_of(v_now));
+    const double lateral = lateral_acceleration_max();
+    const double max_turn = lateral / speed_now * p_.velocity_time_constant;
+    if (std::abs(turn) <= max_turn) return;
+    const Vec2 track = v_now / speed_now;
+    const double side = lateral * p_.velocity_time_constant * std::min(1.5, std::abs(turn) / max_turn);
+    v_h = track * speed_cmd + right_of(track) * std::copysign(side, turn);
+}
+
+void RotorcraftAgent::limit_sideways(Vec2& v_h) const {
+    if (p_.max_sideways_speed <= 0.0 && p_.max_rearward_speed <= 0.0) return;
+    const Vec2 forward = heading_vector(attitude_.heading);
+    const Vec2 right = right_of(forward);
+    double along = dot(v_h, forward);
+    double side = dot(v_h, right);
+    if (p_.max_rearward_speed > 0.0) along = std::max(along, -p_.max_rearward_speed);
+    if (p_.max_sideways_speed > 0.0)
+        side = std::clamp(side, -p_.max_sideways_speed, p_.max_sideways_speed);
+    v_h = forward * along + right * side;
+}
+
+// --- Helicopter power ---------------------------------------------------------------------
+
+double RotorcraftAgent::power_available(double density) const {
+    double engines = p_.engine_power * std::pow(density / kSeaLevelDensity, p_.power_lapse_exponent);
+    if (p_.transmission_limit > 0.0) engines = std::min(engines, p_.transmission_limit);
+    return p_.power_efficiency * engines;
+}
+
+double RotorcraftAgent::ground_effect(double airspeed, double density) const {
+    // Cheeseman-Bennett: less induced power close to the ground, fading out with speed.
+    const double ground = ground_elevation();
+    if (ground <= kNoGround) return 1.0;
+    const double radius = std::sqrt(p_.rotor_disc_area / kPi);
+    const double rotor_height = std::max(position_.z - p_.gear_height - ground, 0.0) + 0.5 * radius;
+    const double r = radius / (4.0 * rotor_height);
+    const double vh = std::sqrt(p_.mass * kGravity / (2.0 * density * p_.rotor_disc_area));
+    return 1.0 - (1.0 - std::max(1.0 - r * r, 0.5)) * std::exp(-airspeed / (2.0 * vh));
+}
+
+double RotorcraftAgent::power_required(double airspeed, double climb, double density) const {
+    // Momentum theory: induced velocity from vi * sqrt(V^2 + (Vc + vi)^2) = vh^2.
+    const double thrust = p_.mass * kGravity;
+    const double vh2 = thrust / (2.0 * density * p_.rotor_disc_area);
+    double vi = std::sqrt(vh2);  // above the root: Newton converges monotonically
+    for (int i = 0; i < 30; ++i) {
+        const double r = std::sqrt(airspeed * airspeed + (climb + vi) * (climb + vi));
+        const double next = std::max(1e-6, vi - (vi * r - vh2) / (r + vi * (climb + vi) / r));
+        const bool done = std::abs(next - vi) < 1e-6;
+        vi = next;
+        if (done) break;
+    }
+    const double mu = airspeed / p_.tip_speed;  // advance ratio
+    return thrust * (climb + p_.induced_power_factor * ground_effect(airspeed, density) * vi) +
+           p_.profile_power * (density / kSeaLevelDensity) * (1.0 + 4.65 * mu * mu) +
+           0.5 * density * p_.flat_plate_area * airspeed * airspeed * airspeed;
+}
+
+void RotorcraftAgent::update_power_curve(double density) {
+    const double available = power_available(density);
+    const double thrust = p_.mass * kGravity;
+    PowerCurve& c = power_;
+    c.speed_step = std::max(p_.max_speed, 1.0) / PowerCurve::kSamples;
+    double best = -1e18;
+    for (int i = 0; i <= PowerCurve::kSamples; ++i) {
+        const double v = c.speed_step * i;
+        double climb = 0.0;
+        const double level = power_required(v, 0.0, density);
+        if (level >= available) {
+            climb = -(level - available) / thrust;  // sinks
+        } else {
+            double lo = 0.0;
+            double hi = 60.0;
+            for (int k = 0; k < 30; ++k) {
+                const double mid = 0.5 * (lo + hi);
+                (power_required(v, mid, density) <= available ? lo : hi) = mid;
+            }
+            climb = lo;
+        }
+        c.climb[i] = climb;
+        if (climb > best) {
+            best = climb;
+            c.best_speed = v;
+        }
+    }
+    // Highest speed with level flight (power curve crossing on the fast side).
+    c.max_speed = c.best_speed;
+    for (int i = PowerCurve::kSamples; i > 0; --i) {
+        if (c.climb[i] >= 0.0) {
+            c.max_speed = c.speed_step * i;
+            break;
+        }
+        if (c.climb[i - 1] >= 0.0) {
+            double lo = c.speed_step * (i - 1);
+            double hi = c.speed_step * i;
+            for (int k = 0; k < 30; ++k) {
+                const double mid = 0.5 * (lo + hi);
+                (power_required(mid, 0.0, density) <= available ? lo : hi) = mid;
+            }
+            c.max_speed = lo;
+            break;
+        }
+    }
+}
+
+double RotorcraftAgent::max_climb_rate(double airspeed) const {
+    const PowerCurve& c = power_;
+    const double x = std::clamp(airspeed / c.speed_step, 0.0, double(PowerCurve::kSamples));
+    const int i = std::min(static_cast<int>(x), PowerCurve::kSamples - 1);
+    return lerp(c.climb[i], c.climb[i + 1], x - i);
+}
+
+void RotorcraftAgent::limit_by_power(Vec2& v_h, double& vz) const {
+    // Power depends on the airspeed: work on the air-relative velocity.
+    const Vec2 wind = wind_.xy();
+    Vec2 air = v_h - wind;
+    double airspeed = air.length();
+    auto set_airspeed = [&](double v) {
+        if (airspeed > 1e-6) air = air * (v / airspeed);
+        airspeed = v;
+        v_h = air + wind;
+    };
+    // No faster than level flight allows.
+    if (airspeed > power_.max_speed) set_airspeed(power_.max_speed);
+    // Climbing faster than the power allows at this speed: slow down towards the best
+    // climb speed, like a pilot trading speed for climb.
+    if (vz > max_climb_rate(airspeed) && airspeed > power_.best_speed) {
+        // The fastest speed (down to the best climb speed) that still gives `vz`.
+        double lo = power_.best_speed;
+        double hi = airspeed;
+        if (max_climb_rate(lo) > vz) {
+            for (int i = 0; i < 20; ++i) {
+                const double mid = 0.5 * (lo + hi);
+                (max_climb_rate(mid) >= vz ? lo : hi) = mid;
+            }
+        }
+        set_airspeed(lo);
+    }
+    vz = std::min(vz, max_climb_rate(airspeed));
 }
 
 double RotorcraftAgent::altitude_target_now() const {
