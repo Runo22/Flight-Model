@@ -32,7 +32,7 @@ guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 | `takeoff(plan)` | runway takeoff: roll, rotation, lift-off, flap retraction, climb-out | vertical takeoff |
 | `land(runway)` | approach to the runway: positioning on the extended centerline, 3 deg glide path, flaps/gear, flare, touchdown, braking; go-around and a new attempt when unstable | fly to the runway point and land vertically (`land()` lands where it is) |
 | route `on_end = Land` | lands on `route.runway` | lands at the last waypoint |
-| `join_formation(slot)` + `set_leader_state()` | formation flight / follow another entity | same |
+| `join_formation(slot)` + `set_leader_state()` | formation flight / follow another entity; the leader limits its bank and speed so its widest follower can keep up (`set_formation_lead`, automatic with `fm::ecs::follow`) | same |
 | `land_on(spot)` + `set_leader_state()` | — (not yet) | land on a moving ship deck, ride on it, `takeoff()` from it (`fm::ecs::land_on`) |
 
 Ships take the same commands on the sea surface (altitudes are ignored): `go_to` / routes

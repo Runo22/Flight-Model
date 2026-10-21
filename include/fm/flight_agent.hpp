@@ -126,6 +126,10 @@ public:
     void set_leader_state(const LeaderState& leader);
     // Whether the model uses set_leader_state() now (formation, deck operations).
     bool tracks_leader() const;
+    // Leading a formation whose widest follower is `lateral_extent` m to the side: fixed-wing
+    // leaders limit their bank and speed so the followers can stay in their slots. Call
+    // every step (fm::ecs::follow does it); expires after 2 s. 0 = not leading.
+    void set_formation_lead(double lateral_extent);
 
     // The host moved the vehicle (teleport, respawn, editor move): continue from `position`
     // and `heading` (rad, NaN = keep) instead of jumping back. Speed is kept.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 namespace fm::ecs {
 
@@ -231,6 +232,8 @@ FlightModule::FlightModule(flecs::world& world) {
             }
             const FrameConfig& cfg = config_of(stage);
             const double dt = std::min<double>(it.delta_time(), settings.max_step);
+            // Widest follower offset per formation leader.
+            std::vector<std::pair<flecs::entity, double>> leads;
             while (it.next()) {
                 auto follow = it.field<FollowLeader>(0);
                 auto controller = it.field<FlightController>(1);
@@ -246,7 +249,22 @@ FlightModule::FlightModule(flecs::world& world) {
                     if (!fc.agent || !fc.agent->tracks_leader()) continue;
                     if (auto leader = leader_state(cfg, follow[i], dt))
                         fc.agent->set_leader_state(*leader);
+                    if (fc.agent->mode() != FlightMode::Formation) continue;
+                    const double extent = std::abs(follow[i].slot.offset.x);
+                    auto lead = std::find_if(leads.begin(), leads.end(), [&](const auto& l) {
+                        return l.first == follow[i].leader;
+                    });
+                    if (lead == leads.end()) {
+                        leads.emplace_back(follow[i].leader, extent);
+                    } else {
+                        lead->second = std::max(lead->second, extent);
+                    }
                 }
+            }
+            // Leaders bank only as far as their followers can follow.
+            for (const auto& [leader, extent] : leads) {
+                if (auto* fc = compat::try_get_mut<FlightController>(leader); fc && fc->agent)
+                    fc->agent->set_formation_lead(extent);
             }
         });
 

@@ -71,6 +71,9 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   kütle, yakıt bitince motor durması ve en iyi süzülme hızında süzülme, ikmal (`set_fuel`).
   Yatay uçuşta hızlanmada itki fazlasının tamamı kullanılır (savaş uçağı tam afterburner
   ile ivmelenir).
+- **Kol lideri:** takipçisi olan sabit kanatlı lider yatışını ve hızını takipçilerin
+  izleyebileceği kadar sınırlar: dıştaki takipçi için hız ve yatış sınırı, içteki için
+  minimum hız. Flecs bunu `follow` ilişkilerinden otomatik yapar.
 - **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
   itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
   otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra
@@ -79,7 +82,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   arkadan yaklaşma, gemiyle aynı hıza gelip spotun üstünde alçalma, güvertede gemiyle
   birlikte hareket, hareketli güverteden kalkış. Taşıyıcı simüle edilen bir gemi ya da
   oyunun hareket ettirdiği herhangi bir entity olabilir (`fm::ecs::land_on`).
-- **Testler:** 86 çekirdek + 23 Flecs + navigasyon örneği + 2 plugin testi;
+- **Testler:** 87 çekirdek + 24 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -113,7 +116,6 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 ### Faz 5 — Çoklu ajan davranışları
 - Ajanlar arası çarpışma önleme (ayrılma kuralları).
 - Formasyon değişimi (dizilim geçişleri), lider değişimi, slot yeniden atama.
-- Takipçisi olan liderin dönüşlerde yatışı sınırlaması (dış taraftaki uçaklar dağılmasın).
 - Çok geniş haritalar (> 500 km) için ajan başına projeksiyon merkezini kaydırma.
 - Kalkış/iniş sıralaması (aynı pistte birden fazla uçak).
 

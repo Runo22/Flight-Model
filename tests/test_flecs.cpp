@@ -109,6 +109,30 @@ TEST_CASE("flecs: formation flight with follow()") {
     CHECK(ecs::agent(wing[0])->mode() == FlightMode::Cruise);
 }
 
+TEST_CASE("flecs: formation leaders bank for their widest follower") {
+    flecs::world world = make_world(WorldFrame::enu());
+    const FixedWingParams p = presets::single_engine_fighter();
+    flecs::entity lead = world.entity("lead");
+    flecs::entity wing = world.entity("wing");
+    ecs::attach(lead, p, {{0, 0, 3000}, 0.0, p.cruise_speed, false});
+    ecs::attach(wing, p, {{300, -100, 3000}, 0.0, p.cruise_speed, false});
+    CHECK(ecs::follow(wing, lead, FormationSlot{{300.0, -100.0, 0.0}}));
+    run(world, 30.0);
+    ecs::agent(lead)->hold(deg2rad(180.0), 3000.0, p.cruise_speed);  // wingman outside
+    double worst = 0.0;
+    double max_bank = 0.0;
+    for (int i = 0; i < static_cast<int>(120.0 / kDt); ++i) {
+        world.progress(kDt);
+        const FlightState& l = ecs::agent(lead)->state();
+        const Vec2 fwd = heading_vector(l.attitude.heading);
+        const Vec2 at = l.position.xy() + right_of(fwd) * 300.0 - fwd * 100.0;
+        worst = std::max(worst, (ecs::agent(wing)->state().position.xy() - at).length());
+        max_bank = std::max(max_bank, std::abs(l.attitude.roll));
+    }
+    CHECK(worst < 150.0);
+    CHECK(max_bank < p.bank_max - deg2rad(2.0));  // the leader banked less than it could
+}
+
 TEST_CASE("flecs: drone follows an entity that only has a TrackedPose") {
     flecs::world world = make_world(WorldFrame::enu());
     flecs::entity car = world.entity("car").set<ecs::TrackedPose>({{0, 0, 0}});

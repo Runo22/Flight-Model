@@ -25,6 +25,10 @@ constexpr double kTropopauseSigma = 0.2971;  // ISA density ratio at 11 km
 constexpr double kClimbModeEnter = 150.0;  // m below the target altitude
 constexpr double kClimbModeExit = 30.0;    // m
 constexpr double kClimbSpeedRefresh = 150.0;  // m of altitude change before recomputing Vy
+// Formation lead: share of the sustained speed the leader flies at most, and the most an
+// outside follower is asked for in a turn.
+constexpr double kLeadSpeedShare = 0.88;
+constexpr double kFollowerSpeedShare = 0.92;
 
 // Thrust / power lapse at the density ratio sigma: sigma^n in the troposphere; above the
 // tropopause (constant temperature) in proportion to the density.
@@ -207,6 +211,11 @@ void FixedWingAgent::join_formation(const FormationSlot& slot) {
     leader_age_ = 0.0;
 }
 
+void FixedWingAgent::set_formation_lead(double lateral_extent) {
+    lead_extent_ = std::isfinite(lateral_extent) ? std::max(lateral_extent, 0.0) : 0.0;
+    lead_age_ = 0.0;
+}
+
 void FixedWingAgent::set_leader_state(const LeaderState& leader) {
     leader_ = leader;
     leader_age_ = 0.0;
@@ -284,6 +293,9 @@ void FixedWingAgent::step(double dt, const Environment& input) {
         const double ahead = position_.z + out_.vertical_speed * p_.speed_time_constant;
         speed_target_ = true_airspeed(speed_command_, speed_ref_, isa(ahead, temperature_offset_));
     }
+
+    lead_age_ += dt;
+    if (lead_age_ > kLeaderTimeout) lead_extent_ = 0.0;  // no followers reported any more
 
     SlotReference slot_ref{};
     if (mode_ == FlightMode::Formation) {
@@ -684,6 +696,9 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const double v_max = std::max(v_min, std::min(p_.max_speed / std::sqrt(atm.sigma),
                                                   p_.mach_max * atm.speed_of_sound));
     double v_cmd = std::clamp(cmd.speed, v_min, v_max);
+    // Leading a formation: keep a speed margin the followers can use to catch up.
+    if (lead_extent_ > 0.0)
+        v_cmd = std::min(v_cmd, std::max(v_min, kLeadSpeedShare * sustained_speed(atm, v_min, v_max)));
     // Below the terrain floor: slow down towards the best climb angle speed and put the
     // energy into climbing, like a pilot clearing rising ground.
     if (cmd.terrain_alert) v_cmd = std::min(v_cmd, std::max(v_min, min_drag_speed(atm.density)));
@@ -705,8 +720,9 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const double qs = 0.5 * atm.density * v * v * p_.wing_area;
     const double n_stall = qs * cl_max() / (m * g);
     const double n_turn = std::min(p_.load_factor_max, n_stall / kTurnStallMargin);
-    const double bank_limit =
+    double bank_limit =
         std::min(cmd.bank_limit, n_turn > 1.0 ? std::acos(1.0 / n_turn) : deg2rad(5.0));
+    if (lead_extent_ > 0.0) bank_limit = std::min(bank_limit, lead_bank_limit(atm, v_min, v_max));
     double bank_cmd = 0.0;
     if (cmd.use_accel) {
         bank_cmd = std::atan(cmd.lateral_accel / g);
@@ -1085,6 +1101,40 @@ void FixedWingAgent::burn_fuel(double tas, const AtmosphereSample& atm, double d
                                             phase_ == FlightPhase::TerrainContact);
     fuel_flow_ = engines_off ? 0.0 : fuel_flow(tas, atm);
     if (fuel_flow_ > 0.0) set_fuel(fuel_ - fuel_flow_ * dt);
+}
+
+double FixedWingAgent::sustained_speed(const AtmosphereSample& atm, double v_min, double v_max) {
+    if (std::abs(position_.z - sustained_altitude_) > kClimbSpeedRefresh) {
+        auto excess = [&](double v) { return thrust_available(v, atm) - drag(v, 1.0, atm, false); };
+        double lo = std::max(v_min, min_drag_speed(atm.density));
+        double hi = std::max(lo, v_max);
+        if (excess(hi) >= 0.0) {
+            lo = hi;
+        } else if (excess(lo) > 0.0) {
+            for (int i = 0; i < 30; ++i) {
+                const double mid = 0.5 * (lo + hi);
+                (excess(mid) > 0.0 ? lo : hi) = mid;
+            }
+        }
+        sustained_speed_ = lo;
+        sustained_altitude_ = position_.z;
+    }
+    return std::clamp(sustained_speed_, v_min, v_max);
+}
+
+double FixedWingAgent::lead_bank_limit(const AtmosphereSample& atm, double v_min, double v_max) {
+    // In a turn of radius R a follower d to the outside flies (1 + d/R) times faster at the
+    // same turn rate, one to the inside (1 - d/R) times slower; d/R = d g tan(bank) / v^2.
+    const double v = std::max(tas_, v_min);
+    const double a = lead_extent_ * kGravity / (v * v);  // d/R per unit tan(bank)
+    const double fast = std::min(kFollowerSpeedShare * sustained_speed(atm, v_min, v_max) / v - 1.0,
+                                 1.0 - 1.1 * v_min / v);
+    double tan_bank = std::max(fast, 0.0) / a;
+    // The outside follower turns at the leader's rate with at most its own bank limit:
+    // tan(bank) (1 + a tan(bank)) <= tan(bank_max).
+    const double tan_max = 0.9 * std::tan(p_.bank_max);
+    tan_bank = std::min(tan_bank, (std::sqrt(1.0 + 4.0 * a * tan_max) - 1.0) / (2.0 * a));
+    return std::clamp(std::atan(tan_bank), deg2rad(5.0), p_.bank_max);
 }
 
 double FixedWingAgent::climb_rate_at(double tas, const AtmosphereSample& atm) const {

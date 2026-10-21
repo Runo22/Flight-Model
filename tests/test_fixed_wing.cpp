@@ -246,6 +246,35 @@ TEST_CASE("fixed-wing: formation flight keeps the slot through a turn") {
     CHECK(wingman.mode() == FlightMode::Formation);
 }
 
+TEST_CASE("fixed-wing: a formation leader banks only as far as a wide wingman can follow") {
+    // F-16 class pair 300 m apart; the leader reverses course to the left (the wingman is on
+    // the outside), then to the right (inside).
+    auto worst_error = [](bool lead_limit) {
+        const FixedWingParams p = presets::single_engine_fighter();
+        FixedWingAgent lead(p, airborne({0, 0, 3000}, 0.0, p.cruise_speed));
+        FixedWingAgent wing(p, airborne({300, -100, 3000}, 0.0, p.cruise_speed));
+        const FormationSlot slot{{300.0, -100.0, 0.0}};
+        wing.join_formation(slot);
+        double worst = 0.0;
+        const double dt = 1.0 / 60.0;
+        for (int i = 0; i < static_cast<int>(300.0 / dt); ++i) {
+            if (i == static_cast<int>(60.0 / dt)) lead.hold(deg2rad(180.0), 3000.0, p.cruise_speed);
+            if (i == static_cast<int>(160.0 / dt)) lead.hold(0.0, 3000.0, p.cruise_speed);
+            if (lead_limit) lead.set_formation_lead(300.0);
+            lead.step(dt, {});
+            const FlightState& l = lead.state();
+            wing.set_leader_state({l.position, l.velocity, l.attitude.heading, true});
+            wing.step(dt, {});
+            const Vec2 fwd = heading_vector(l.attitude.heading);
+            const Vec2 at = l.position.xy() + right_of(fwd) * 300.0 - fwd * 100.0;
+            worst = std::max(worst, (wing.state().position.xy() - at).length());
+        }
+        return worst;
+    };
+    CHECK(worst_error(false) > 1000.0);  // the outside wingman cannot keep up
+    CHECK(worst_error(true) < 150.0);
+}
+
 TEST_CASE("fixed-wing: losing the leader falls back to straight flight") {
     const FixedWingParams p = presets::propeller_uav();
     FixedWingAgent a(p, airborne({0, 0, 300}, 0.0, p.cruise_speed));

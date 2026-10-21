@@ -56,6 +56,11 @@ public:
     // Keep `slot` relative to a leader. Feed the leader with set_leader_state() every
     // step; without updates for a few seconds the aircraft falls back to cruise().
     void join_formation(const FormationSlot& slot);
+    // Leading a formation whose widest follower is `lateral_extent` m to the side: banks
+    // only as far as the followers can follow (outside: speed and bank limit, inside:
+    // minimum speed) and keeps a speed margin. Refreshed every step by the host (the Flecs
+    // module does it); expires after 2 s without a refresh. 0 = not leading.
+    void set_formation_lead(double lateral_extent);
     void set_leader_state(const LeaderState& leader);
     // The host moved the aircraft: continue from `position` / `heading` (NaN = keep), see
     // FlightAgent::relocate. Speed, flight path and the current task are kept.
@@ -135,6 +140,9 @@ private:
     double min_drag_speed(double density) const;  // best climb angle, roughly
     double climb_speed(const AtmosphereSample& atm, double v_min, double v_max);
     double climb_rate_at(double tas, const AtmosphereSample& atm) const;  // m/s, full power
+    // Fastest steady level flight within the operating limits (cached per altitude band).
+    double sustained_speed(const AtmosphereSample& atm, double v_min, double v_max);
+    double lead_bank_limit(const AtmosphereSample& atm, double v_min, double v_max);
     bool fuel_modelled() const { return p_.fuel_capacity > 0.0; }
     double fuel_flow(double tas, const AtmosphereSample& atm) const;  // kg/s at throttle_
     void burn_fuel(double tas, const AtmosphereSample& atm, double dt);
@@ -143,6 +151,10 @@ private:
     FixedWingParams p_;
     double rated_lapse_ = 1.0;  // engine density lapse at the critical altitude
     MotionTracker motion_;
+    double lead_extent_ = 0.0;  // m, widest follower offset (formation lead)
+    double lead_age_ = 0.0;     // s since the last refresh
+    double sustained_speed_ = 0.0;
+    double sustained_altitude_ = -1e9;
     double fuel_ = 0.0;       // kg
     double mass_ = 0.0;       // kg, with the fuel left
     double fuel_flow_ = 0.0;  // kg/s

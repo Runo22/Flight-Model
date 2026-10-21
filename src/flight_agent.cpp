@@ -134,6 +134,15 @@ void FlightAgent::set_fuel(double fuel) {
         impl_);
 }
 
+void FlightAgent::set_formation_lead(double lateral_extent) {
+    std::visit(
+        [&](auto& m) {
+            if constexpr (requires { m.set_formation_lead(lateral_extent); })
+                m.set_formation_lead(lateral_extent);
+        },
+        impl_);
+}
+
 bool FlightAgent::tracks_leader() const {
     return std::visit(
         [](const auto& m) {
