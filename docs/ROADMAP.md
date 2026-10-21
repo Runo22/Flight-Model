@@ -11,7 +11,7 @@ Bu belge projenin mimari kararlarını, şu an tamamlanmış olanları ve sırad
 | Otopilot | Enerji tabanlı (TECS benzeri), model tersinden gaz hesabı | Her uçak tipi için ayrı PID ayarı gerekmez; parametreler değişince otopilot kendiliğinden uyum sağlar. |
 | Yol takibi | L1 non-lineer guidance (açık kaynak otopilotlarla aynı yöntem) | Rüzgârda sapmasız hat takibi; L1 mesafesi dönüş yarıçapına göre ölçeklenir, büyük uçaklar taşmaz. |
 | Arazi | Sadece entity altındaki yükseklik (HOT) | Oyunun sağladığı veri bu. Geçmiş örneklerden eğim tahmin edilir; minimum irtifa ve AGL (arazi takibi) bunun üzerine kurulu. |
-| ECS | Çekirdek Flecs'ten bağımsız, ince Flecs modülü | Flecs güncellemesi çekirdeği etkilemez; sürüm farkları tek dosyada (`compat.hpp`). |
+| ECS | Çekirdek Flecs'ten bağımsız, ince Flecs modülü | Flecs güncellemesi çekirdeği etkilemez; modül düz Flecs API'si kullanır (Flecs ≥ 4.1, `try_get`). |
 | Dil | C++20 çekirdek (C++23 ile de derlenir) | GCC/Clang/MSVC'de sorunsuz; modules ve `std::print` gibi henüz oturmamış özelliklerden kaçınıldı. |
 
 Her adımda aynı boru hattı çalışır:
@@ -39,8 +39,10 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - **Geodetik dünya:** WGS-84 enlem/boylam/irtifa; yatayda teğet düzlem projeksiyonu,
   dikeyde doğrudan irtifa; yaw için harita kuzeyi–gerçek kuzey düzeltmesi. Flecs'te
   `GeoPose` çıktısı, `TrackedGeoPose` girdisi, `set_geo_origin` / `attach_geo` / `to_local`.
-- **Flecs modülü:** 4.0.5, 4.1.2 ve 4.1.6 ile derlenip test edildi.
-- **Plugin DLL desteği:** `fm::ecs::load()` (yanlış bağlanmış Flecs kopyasını yakalar),
+- **Flecs modülü:** Flecs ≥ 4.1 (düz API, `try_get`/`try_get_mut`); 4.1.2 ve 4.1.6 ile derlenip
+  test edildi. Çalışma anında sürüm kontrolü yapmaz (host'un sorumluluğu).
+- **Plugin DLL desteği:** `fm::ecs::load()` (örnek plugin, yanlış bağlanmış Flecs kopyasını
+  giriş noktasında yakalar),
   `fm::ecs::unload()` (sistemleri ve component'leri temizler, DLL güvenle boşaltılır),
   `FM_FLECS_TARGET` / `FM_FLECS_SHARED`, gerçek yükle–boşalt–tekrar yükle testi.
 - **İniş:** pist yaklaşması, süzülüş yolu, pas geçme, flare, teker koyma, frenleme.
@@ -166,10 +168,10 @@ Helikopter ve drone için iniş / kalkış hazır (Faz 0). Sıradakiler:
 ## 5. Flecs güncelleme prosedürü
 
 1. `cmake -DFM_FLECS_TAG=vX.Y.Z` ile derle.
-2. Derleme hatası varsa yalnızca `adapters/flecs/include/fm/ecs/compat.hpp` ve gerekirse
-   `adapters/flecs/src/flight_module.cpp` güncellenir.
+2. Derleme hatası varsa yalnızca `adapters/flecs/src/flight_module.cpp` ve
+   `adapters/flecs/include/fm/ecs/flight_module.hpp` güncellenir (çekirdek Flecs görmez).
 3. `fm_flecs_tests` çalıştırılır.
-4. Major sürüm (5.x) için `compat.hpp` içindeki sürüm kontrolü genişletilir.
+4. Çalışma anındaki Flecs sürüm/kopya kontrolü host'ta yapılır; modül yapmaz.
 
 ## 6. Bilinen sınırlamalar
 

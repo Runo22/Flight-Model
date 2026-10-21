@@ -16,7 +16,7 @@ void run(flecs::world& world, double seconds) {
     for (int i = 0; i < static_cast<int>(seconds / kDt); ++i) world.progress(kDt);
 }
 
-const ecs::FlightPose& pose_of(flecs::entity e) { return *ecs::compat::try_get<ecs::FlightPose>(e); }
+const ecs::FlightPose& pose_of(flecs::entity e) { return *e.try_get<ecs::FlightPose>(); }
 
 flecs::world make_world(const WorldFrame& frame) {
     flecs::world world;
@@ -205,7 +205,7 @@ double hot(double lat, double lon) {  // stand-in for the game's height-of-terra
     return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
 }
 
-const ecs::GeoPose& geo_pose_of(flecs::entity e) { return *ecs::compat::try_get<ecs::GeoPose>(e); }
+const ecs::GeoPose& geo_pose_of(flecs::entity e) { return *e.try_get<ecs::GeoPose>(); }
 
 void step_geo(flecs::world& world, flecs::entity e) {
     const ecs::GeoPose& g = geo_pose_of(e);
@@ -295,8 +295,6 @@ TEST_CASE("flecs geo: drone follows a vehicle given in latitude/longitude") {
 // --- Plugin lifecycle -------------------------------------------------------------------
 
 TEST_CASE("flecs: unload removes the module and load works again") {
-    CHECK(ecs::compat::runtime_initialized());
-    CHECK(ecs::compat::runtime_version().matches);
     flecs::world world;
     const flecs::entity module = ecs::load(world);
     CHECK(module.is_valid());
@@ -467,7 +465,7 @@ TEST_CASE("flecs geo: bind_geo_transform takes over moves made by the game") {
     });
     flecs::entity plane = world.entity().set<GameTransform>({41.0, 29.0, 1000.0, 0, 0, 90});
     ecs::attach_geo(plane, presets::light_propeller(), {41.0, 29.0, 1000.0}, 90.0, 50.0, false);
-    const auto transform = [&] { return *ecs::compat::try_get<GameTransform>(plane); };
+    const auto transform = [&] { return *plane.try_get<GameTransform>(); };
 
     for (; frame < 300; ++frame) world.progress(kDt);
     CHECK(transform().lon > 29.002);  // flew east, written to the game's transform
@@ -511,7 +509,7 @@ TEST_CASE("flecs geo: a ship sails a route, stops and is moved by the game") {
     flecs::entity ship = world.entity().set<GameTransform>({40.9, 29.0, 0.0, 0, 0, 90});
     ecs::attach_geo(ship, presets::carrier_ship(), {40.9, 29.0, 0.0}, 90.0, 8.0, false);
     CHECK(ecs::agent(ship)->kind() == VehicleKind::Ship);
-    const auto transform = [&] { return *ecs::compat::try_get<GameTransform>(ship); };
+    const auto transform = [&] { return *ship.try_get<GameTransform>(); };
 
     const GeoPoint stop_at{40.86, 29.06, 0.0};
     Route r;
@@ -622,7 +620,7 @@ TEST_CASE("flecs: a teleported leader does not fling its followers") {
         if (i == static_cast<int>(20.0 / kDt)) car_pos.x += 3000.0;  // the game moves the car
         car.set<ecs::TrackedPose>({car_pos});
         world.progress(kDt);
-        const Vec3 v = ecs::compat::try_get<ecs::FollowLeader>(drone)->velocity;
+        const Vec3 v = drone.try_get<ecs::FollowLeader>()->velocity;
         max_estimate = std::max(max_estimate, v.length());
     }
     CHECK(max_estimate < 6.0);  // the jump is not taken for speed

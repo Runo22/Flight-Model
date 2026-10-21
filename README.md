@@ -61,7 +61,6 @@ include/fm/, src/          Flecs-independent core (C++20, builds as C++23 too)
   frames                    ENU <-> engine world frames (Unity, Unreal, Godot, NED)
   geo                       WGS-84 latitude/longitude/altitude <-> local frame
 adapters/flecs/             Flecs module (the only code that includes flecs.h)
-  include/fm/ecs/compat.hpp all Flecs version differences live here
 tests/                      core and Flecs tests (no external test framework)
 examples/                   headless CSV scenarios, Flecs integration example
 docs/ROADMAP.md             roadmap (Turkish)
@@ -235,10 +234,10 @@ game and rejoins) and a drone following a truck.
 
 ### Flecs upgrades
 
-The core never includes Flecs. The adapter uses a small API surface, and every version
-difference is isolated in [`compat.hpp`](adapters/flecs/include/fm/ecs/compat.hpp) (for
-example `get()` returning a pointer in 4.0 vs. `try_get()` in 4.1). The adapter and its
-tests have been built against Flecs **4.0.5, 4.1.2 and 4.1.6**. To try another version:
+The core never includes Flecs. The adapter uses a small, plain Flecs API surface and
+requires Flecs **4.1 or later** (`try_get()` / `try_get_mut()`); it does not check the
+Flecs version at runtime. The adapter and its tests have been built against Flecs
+**4.1.2 and 4.1.6**. To try another version:
 
 ```sh
 cmake -S . -B build -DFM_FLECS_TAG=v4.x.y
@@ -276,9 +275,10 @@ When the module lives in a plugin that the game loads and unloads:
      INTERFACE_INCLUDE_DIRECTORIES "${GAME_SDK}/include")
    ```
 
-   Do not define `flecs_STATIC` in the plugin. At load time `fm::ecs::load()` refuses (with
-   a message, instead of crashing) when the plugin has its own Flecs copy or was compiled
-   against other Flecs headers than the running library.
+   Do not define `flecs_STATIC` in the plugin. `fm::ecs::load()` does not check the Flecs
+   runtime: check it in the plugin entry point before touching the world (the example
+   plugin refuses to load when `ecs_os_api` is uninitialized, i.e. it has its own Flecs
+   copy), and match the Flecs version on the host side.
 2. **Load** with `fm::ecs::load(world)` instead of `world.import<>()`, and create the
    plugin's own systems in the module scope (`world.set_scope(fm::ecs::module_entity(world))`).
 3. **Unload** with `fm::ecs::unload(world)` before `FreeLibrary` / `dlclose`. It deletes the

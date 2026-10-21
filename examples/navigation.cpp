@@ -101,11 +101,11 @@ fm::Waypoint wp(flecs::world& world, double lat, double lon, double alt,
 }
 
 const game::Transform& transform(flecs::entity e) {
-    return *fm::ecs::compat::try_get<game::Transform>(e);
+    return *e.try_get<game::Transform>();
 }
 
 const fm::ecs::FlightPose& pose(flecs::entity e) {
-    return *fm::ecs::compat::try_get<fm::ecs::FlightPose>(e);
+    return *e.try_get<fm::ecs::FlightPose>();
 }
 
 // Horizontal distance (m) from the entity to a latitude/longitude.

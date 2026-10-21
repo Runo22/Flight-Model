@@ -19,7 +19,8 @@
 #include <limits>
 #include <optional>
 
-#include "fm/ecs/compat.hpp"
+#include <flecs.h>
+
 #include "fm/flight_agent.hpp"
 #include "fm/frames.hpp"
 #include "fm/geo.hpp"
@@ -160,9 +161,8 @@ struct FlightModule {
 // uninitialized runtime: the first allocation (ecs_os_strdup) crashes and component ids get
 // mixed up. Link the plugin against the host's Flecs (see README, "Plugin DLLs").
 
-// Imports FlightModule after checking the Flecs runtime. Returns the module entity, or an
-// empty entity (reason printed to stderr) when this binary has its own uninitialized copy
-// of Flecs. Use it instead of world.import<FlightModule>() in plugins.
+// Imports FlightModule and returns the module entity. Checking that the plugin runs on the
+// host's Flecs runtime (and the same version) is up to the caller. Pair it with unload().
 flecs::entity load(flecs::world& world);
 // Removes everything the module added so the binary can be unloaded: systems, components
 // (removed from all entities, destructors run in this binary), the frame singleton and

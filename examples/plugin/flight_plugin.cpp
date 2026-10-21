@@ -84,7 +84,7 @@ void register_systems(flecs::world& world) {
 
 FLIGHT_PLUGIN_API bool flight_plugin_load(ecs_world_t* raw_world) {
     // Check before touching the world: with a private copy of Flecs every call would crash.
-    if (!fm::ecs::compat::runtime_initialized()) {
+    if (ecs_os_api.malloc_ == nullptr || ecs_os_api.strdup_ == nullptr) {
         std::fprintf(stderr, "flight plugin: linked against a different Flecs than the host, "
                              "refusing to load\n");
         return false;

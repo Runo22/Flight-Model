@@ -103,7 +103,7 @@ fm::Waypoint waypoint(flecs::world& world, double lat, double lon, double alt,
 void print(flecs::world& world, int seconds) {
     std::printf("--- t = %d s\n", seconds);
     world.each([](flecs::entity e, const game::Transform& t) {
-        const auto* pose = fm::ecs::compat::try_get<fm::ecs::FlightPose>(e);
+        const auto* pose = e.try_get<fm::ecs::FlightPose>();
         std::printf("%-10s lat %9.5f lon %9.5f alt %7.1f m | roll %6.1f pitch %5.1f yaw %6.1f | %s\n",
                     e.name().c_str(), t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw,
                     pose ? fm::to_string(pose->phase) : "game logic");
@@ -160,14 +160,14 @@ int main() {
         const int seconds = frame / 60;
         // At t = 60 s the lead turns to true course 180 at 2500 m; the wingmen follow.
         if (frame == 60 * 60) {
-            const game::Transform& t = *fm::ecs::compat::try_get<game::Transform>(lead);
+            const game::Transform& t = *lead.try_get<game::Transform>();
             const double course = fm::ecs::local_heading(world, 180.0, {t.lat, t.lon, t.alt});
             fm::ecs::agent(lead)->hold(course, 2500.0, 220.0);
         }
         // At t = 200 s the game teleports Wing2 (e.g. a respawn) just by writing its
         // Transform: it continues from there and rejoins the formation.
         if (frame == 60 * 200) {
-            const game::Transform& t = *fm::ecs::compat::try_get<game::Transform>(lead);
+            const game::Transform& t = *lead.try_get<game::Transform>();
             wing2.set<game::Transform>({t.lat + 0.1, t.lon - 0.1, 3500.0, 0.0, 0.0, 180.0});
         }
         world.progress(1.0f / 60.0f);

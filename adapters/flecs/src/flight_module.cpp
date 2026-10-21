@@ -21,11 +21,11 @@ const FrameConfig& config_or_default(const FrameConfig* config) {
 }
 
 const FrameConfig& config_of(const flecs::world& world) {
-    return config_or_default(compat::try_get_singleton<FrameConfig>(world));
+    return config_or_default(world.try_get<FrameConfig>());
 }
 
 FlightSettings settings_of(const flecs::world& world) {
-    const FlightSettings* s = compat::try_get_singleton<FlightSettings>(world);
+    const FlightSettings* s = world.try_get<FlightSettings>();
     return s ? *s : FlightSettings{};
 }
 
@@ -153,20 +153,20 @@ Vec3 estimate_velocity(FollowLeader& follow, const Vec3& position, double dt) {
 std::optional<LeaderState> leader_state(const FrameConfig& cfg, FollowLeader& follow, double dt) {
     const flecs::entity leader = follow.leader;
     if (!leader.is_alive()) return std::nullopt;
-    if (const auto* fc = compat::try_get<FlightController>(leader); fc && fc->agent) {
+    if (const auto* fc = leader.try_get<FlightController>(); fc && fc->agent) {
         LeaderState state = fc->agent->as_leader();
         // A paused leader stands still; followers must not chase its last velocity.
         if (leader.has<Paused>() || settings_of(leader.world()).paused) state.velocity = {};
         return state;
     }
-    if (const auto* geo_pose = compat::try_get<TrackedGeoPose>(leader); geo_pose && cfg.geo) {
+    if (const auto* geo_pose = leader.try_get<TrackedGeoPose>(); geo_pose && cfg.geo) {
         const Vec3 position = cfg.geo->to_local(geo_pose->position);
         const double heading = std::isnan(geo_pose->yaw)
                                    ? kUnknown
                                    : cfg.geo->grid_heading(deg2rad(geo_pose->yaw), position);
         return LeaderState{position, estimate_velocity(follow, position, dt), heading, true};
     }
-    if (const auto* pose = compat::try_get<TrackedPose>(leader)) {
+    if (const auto* pose = leader.try_get<TrackedPose>()) {
         const Vec3 position = cfg.frame.to_enu(pose->position);
         return LeaderState{position, estimate_velocity(follow, position, dt), pose->heading, true};
     }
@@ -197,7 +197,7 @@ void attach_agent(flecs::entity e, FlightAgent agent, const std::optional<GeoPro
 
 template <typename... T>
 void reset_cached_ids() {
-    (compat::reset_cached_id<T>(), ...);
+    (flecs::_::type<T>::reset(), ...);
 }
 
 }  // namespace
@@ -219,8 +219,8 @@ FlightModule::FlightModule(flecs::world& world) {
     world.component<FlightSettings>();
     world.component<Paused>();
 
-    if (!compat::try_get_singleton<FrameConfig>(world)) world.set<FrameConfig>({});
-    if (!compat::try_get_singleton<FlightSettings>(world)) world.set<FlightSettings>({});
+    if (!world.try_get<FrameConfig>()) world.set<FrameConfig>({});
+    if (!world.try_get<FlightSettings>()) world.set<FlightSettings>({});
 
     // Reads other entities (the leaders), so it must stay single threaded.
     world.system<FollowLeader, FlightController>("FollowSystem")
@@ -266,7 +266,7 @@ FlightModule::FlightModule(flecs::world& world) {
             }
             // Leaders bank only as far as their followers can follow.
             for (const auto& [leader, extent] : leads) {
-                if (auto* fc = compat::try_get_mut<FlightController>(leader); fc && fc->agent)
+                if (auto* fc = leader.try_get_mut<FlightController>(); fc && fc->agent)
                     fc->agent->set_formation_lead(extent);
             }
         });
@@ -298,7 +298,7 @@ FlightModule::FlightModule(flecs::world& world) {
                     if (s.on_ground) continue;
                     const flecs::entity e = it.entity(i);
                     flecs::entity leader;
-                    if (const auto* f = compat::try_get<FollowLeader>(e);
+                    if (const auto* f = e.try_get<FollowLeader>();
                         f && fc.agent->mode() == FlightMode::Formation)
                         leader = f->leader;
                     entries.push_back({e, &*fc.agent, {s.position, s.velocity}, leader});
@@ -389,25 +389,7 @@ FlightModule::FlightModule(flecs::world& world) {
         });
 }
 
-flecs::entity load(flecs::world& world) {
-    if (!compat::runtime_initialized()) {
-        std::fprintf(stderr,
-                     "fm::ecs::load: this binary has its own, uninitialized copy of Flecs. "
-                     "Link it against the Flecs library the host uses (e.g. flecs.dll) "
-                     "instead of a static Flecs; see README, \"Plugin DLLs\".\n");
-        return flecs::entity();
-    }
-    const compat::RuntimeVersion v = compat::runtime_version();
-    if (!v.matches) {
-        std::fprintf(stderr,
-                     "fm::ecs::load: compiled against Flecs %d.%d.%d but the runtime is "
-                     "%d.%d.%d; rebuild against the host's Flecs headers and library.\n",
-                     FLECS_VERSION_MAJOR, FLECS_VERSION_MINOR, FLECS_VERSION_PATCH, v.major,
-                     v.minor, v.patch);
-        return flecs::entity();
-    }
-    return world.import<FlightModule>();
-}
+flecs::entity load(flecs::world& world) { return world.import<FlightModule>(); }
 
 void unload(flecs::world& world) {
     // Deleting the module entity deletes its children: the systems, everything created in
@@ -490,7 +472,7 @@ void set_geo_origin(flecs::world& world, double latitude, double longitude) {
 }
 
 const GeoProjection* geo(const flecs::world& world) {
-    const FrameConfig* cfg = compat::try_get_singleton<FrameConfig>(world);
+    const FrameConfig* cfg = world.try_get<FrameConfig>();
     return cfg && cfg->geo ? &*cfg->geo : nullptr;
 }
 
@@ -518,7 +500,7 @@ void attach_geo(flecs::entity e, const VehicleParams& params, const GeoPoint& at
 }
 
 FlightAgent* agent(flecs::entity e) {
-    auto* fc = compat::try_get_mut<FlightController>(e);
+    auto* fc = e.try_get_mut<FlightController>();
     return fc && fc->agent ? &*fc->agent : nullptr;
 }
 
@@ -530,7 +512,7 @@ bool follow(flecs::entity follower, flecs::entity leader, const FormationSlot& s
     FollowLeader relation;
     relation.leader = leader;
     relation.slot = slot;
-    if (const auto* fc = compat::try_get<FlightController>(leader); fc && fc->agent)
+    if (const auto* fc = leader.try_get<FlightController>(); fc && fc->agent)
         a->set_leader_state(fc->agent->as_leader());
     follower.set<FollowLeader>(relation);
     return true;
@@ -547,7 +529,7 @@ bool land_on(flecs::entity e, flecs::entity carrier, const DeckSpot& spot) {
     FollowLeader relation;
     relation.leader = carrier;
     relation.slot = FormationSlot{spot.offset};
-    if (const auto* fc = compat::try_get<FlightController>(carrier); fc && fc->agent)
+    if (const auto* fc = carrier.try_get<FlightController>(); fc && fc->agent)
         a->set_leader_state(fc->agent->as_leader());
     e.set<FollowLeader>(relation);
     return true;
