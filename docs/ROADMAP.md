@@ -88,7 +88,11 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   arkadan yaklaşma, gemiyle aynı hıza gelip spotun üstünde alçalma, güvertede gemiyle
   birlikte hareket, hareketli güverteden kalkış. Taşıyıcı simüle edilen bir gemi ya da
   oyunun hareket ettirdiği herhangi bir entity olabilir (`fm::ecs::land_on`).
-- **Testler:** 90 çekirdek + 25 Flecs + navigasyon örneği + 2 plugin testi;
+- **Yerde taksi (sabit kanat):** hangardan taksi yolu boyunca piste gelme, pist eksenine
+  hizalanma (`LineUp`) ve kalkış (`TakeoffPlan::taxi`, `TakeoffPlan::heading`); inişten sonra
+  park yerine taksi (`taxi(yol, son_yon)`). Pure pursuit yol takibi, köşe öncesi frenleme,
+  burun tekeri dönüş yarıçapı, son noktada istenen yönde durma.
+- **Testler:** 99 çekirdek + 25 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -99,7 +103,9 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - [x] Karar yüksekliğinde stabilite kontrolü, pas geçme ve otomatik yeni deneme.
 - [x] Gecikme telafili flare, yumuşak teker koyma (0.4–1.0 m/s), frenleme, park durumu.
 - [x] Rota sonunda iniş (`Route::runway` + `EndBehavior::Land`), inişten sonra tekrar kalkış.
-- [ ] Yerde taksi: taksi yolu (waypoint listesi) üzerinde düşük hızlı hareket ve dönüş.
+- [x] Yerde taksi: taksi yolu (waypoint listesi) üzerinde düşük hızlı hareket ve dönüş,
+  pist eksenine hizalanma, yön ile kalkış, inişten sonra park yerine taksi.
+- [ ] Geri itme (pushback) ve yerde çarpışma önleme (taksi yolunda sıra bekleme).
 - [ ] Yerdeyken rüzgâr etkisi, yan rüzgârda teker koymadan önce crab'dan çıkma (decrab).
 - [ ] Pist uzunluğu ve pist sonu kontrolü (kısa pistte pas geçme / kalkış iptali).
 
@@ -175,7 +181,7 @@ Helikopter ve drone için iniş / kalkış hazır (Faz 0). Sıradakiler:
 
 ## 6. Bilinen sınırlamalar
 
-- Taksi yok; pistten çıkış/park yeri yok (Faz 1).
+- Yerde geri itme (pushback) ve yerde çarpışma önleme yok; uçak yerinde dönemez (Faz 1).
 - Yan kayma (sideslip) yok; uçuş her zaman koordineli.
 - Yerdeyken rüzgâr yok sayılır.
 - Atmosfer modeli 32 km'ye kadar (ISA).

@@ -7,6 +7,7 @@
 // and is run as a test (fm_navigation_example).
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "fm/ecs/flight_module.hpp"
 #include "fm/presets.hpp"
@@ -213,6 +214,13 @@ int main() {
         plan.then = r;
         fm::ecs::agent(shuttle)->takeoff(plan);
     }
+    // Points around the runway: `along` the centerline from the threshold, `right` of it.
+    const fm::Vec3 runway_start = fm::ecs::to_local(world, threshold);
+    const auto airfield = [&](double along, double right) {
+        const fm::Vec2 dir = fm::heading_vector(runway_heading);
+        const fm::Vec2 p = runway_start.xy() + dir * along + fm::right_of(dir) * right;
+        return fm::Vec3{p.x, p.y, 0.0};  // z is ignored on the ground
+    };
 
     // 8) Straight and level on a true course, altitude and speed.
     flecs::entity cruiser = spawn(world, "Cruiser", fm::presets::airliner_jet(),
@@ -248,10 +256,26 @@ int main() {
     const fm::DeckSpot spot = fm::ecs::agent(carrier)->ship()->params().deck_spots[1];
     fm::ecs::land_on(seahawk, carrier, spot);
 
+    // 12) A fighter taxis out of its hangar along the taxiway, lines up on the runway once
+    //     the shuttle has left and takes off.
+    const fm::GeoPoint hangar = fm::ecs::geo(world)->to_geo(airfield(-80.0, 150.0));
+    flecs::entity viper = spawn(world, "Viper", fm::presets::single_engine_fighter(),
+                                {hangar.latitude, hangar.longitude, 0.0, 0, 0, 0.0}, 0.0, true);
+    {
+        fm::TakeoffPlan plan;
+        plan.taxi = {airfield(-80.0, 60.0), airfield(0.0, 60.0)};  // out, along the taxiway
+        plan.runway = fm::Runway{runway_start, runway_heading};     // then lined up from here
+        plan.climb_height = 600.0;
+        fm::ecs::agent(viper)->takeoff(plan);
+    }
+
     // Progress can be followed through the mode, the phase and the route index.
     int patrol_laps = 0;
     std::size_t last_index = 0;
     bool shuttle_flew = false;
+    bool shuttle_taxi = false;
+    bool viper_lined_up = false;
+    bool viper_flew = false;
     double cruiser_yaw_settled = 0.0;
     for (int second = 0; second < 900; ++second) {
         run(world, 1.0);
@@ -260,6 +284,13 @@ int main() {
         if (index == 0 && last_index != 0) ++patrol_laps;
         last_index = index;
         shuttle_flew = shuttle_flew || height_above_terrain(shuttle) > 250.0;
+        // 7) After the landing roll the shuttle taxis to its parking spot, nose south.
+        if (shuttle_flew && !shuttle_taxi && pose(shuttle).phase == fm::FlightPhase::Landed) {
+            const std::vector<fm::Vec3> to_apron{airfield(150.0, 60.0), airfield(150.0, 100.0)};
+            shuttle_taxi = fm::ecs::agent(shuttle)->taxi(to_apron, runway_heading + fm::kPi / 2.0);
+        }
+        viper_lined_up = viper_lined_up || pose(viper).phase == fm::FlightPhase::LineUp;
+        viper_flew = viper_flew || height_above_terrain(viper) > 300.0;
         if (second % 150 == 0) {
             std::printf("t=%3d s  Turboprop %-7s | Jet %-6s wp %zu | Shuttle %-7s %-12s\n",
                         second, fm::to_string(pose(turboprop).mode), fm::to_string(pose(jet).mode),
@@ -288,9 +319,10 @@ int main() {
           "5  survey drone landed at the last waypoint");
     check(pose(light).mode == fm::FlightMode::Loiter && !pose(light).on_ground,
           "6  parked aircraft took off and orbits the point");
-    check(shuttle_flew && pose(shuttle).phase == fm::FlightPhase::Landed &&
-              distance(world, shuttle, threshold.latitude, threshold.longitude) < 1500.0,
-          "7  takeoff, route and landing back on the runway");
+    const fm::GeoPoint apron = fm::ecs::geo(world)->to_geo(airfield(150.0, 100.0));
+    check(shuttle_flew && shuttle_taxi && pose(shuttle).phase == fm::FlightPhase::Parked &&
+              distance(world, shuttle, apron.latitude, apron.longitude) < 3.0,
+          "7  takeoff, route, landing back on the runway and taxi to the apron");
     // hold() intercepts the line through the point where it was given, then flies it
     // straight: 200 km later the true course has turned by ~1 deg (like a great circle).
     check(std::abs(transform(cruiser).alt - 7000.0) < 20.0 &&
@@ -308,6 +340,7 @@ int main() {
               std::abs(transform(seahawk).alt - spot.offset.z -
                        fm::presets::attack_helicopter().gear_height) < 0.1,
           "11 helicopter landed on the carrier's deck");
+    check(viper_lined_up && viper_flew, "12 fighter taxied out of the hangar, lined up, took off");
     std::printf("\n%s\n", failures == 0 ? "all examples OK" : "SOME EXAMPLES FAILED");
     return failures == 0 ? 0 : 1;
 }

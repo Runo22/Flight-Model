@@ -145,6 +145,54 @@ fm::ecs::agent(e)->takeoff(plan);
 ```
 
 * `takeoff({})`: bulunduğu yerden, burnunun baktığı yöne kalkar.
+* `Runway` verildiğinde kalkış pist ekseninde yapılır: uçak pistin üzerindeyse (eksene 30 m'den
+  yakın) bulunduğu yerden eksene hizalanıp koşuya başlar; değilse önce `start` noktasına
+  taksi yapar.
+
+### Hangardan taksi ve yön ile kalkış
+
+Uçak hangardan taksi yolu boyunca piste gelir, pist eksenine hizalanır (`LineUp`) ve kalkar.
+Taksi noktalarının `z` değeri kullanılmaz; uçak HOT ile yerde kalır:
+
+```cpp
+// Points around the runway: `along` the centerline from the threshold, `right` of it.
+const auto airfield = [&](double along, double right) { /* runway_start + ... */ };
+
+fm::TakeoffPlan plan;
+plan.taxi = {airfield(-80.0, 60.0), airfield(0.0, 60.0)};  // out, along the taxiway
+plan.runway = fm::Runway{runway_start, runway_heading};     // then lined up from here
+plan.climb_height = 600.0;
+fm::ecs::agent(viper)->takeoff(plan);
+```
+
+* **Yalnızca yön:** `plan.heading = yon;` (pist yok). Uçak bulunduğu yerden o yöne döner,
+  hizalanır ve kalkar. Yön de verilmezse son taksi bölümünün yönü, o da yoksa burnun yönü.
+* **Hizalanma:** Burun yönü 3°'den, eksenden uzaklık 3 m'den fazlaysa uçak önce taksi hızında
+  döner ve eksene oturur; tam güç ondan sonra verilir. Zaten hizalıysa koşu hemen başlar.
+* **Taksi:** Düzde `taxi_speed`, keskin köşelerden önce frenleyip yavaşlar (yanal ivme
+  ~1.5 m/s²), burun tekerleği `taxi_turn_radius`'tan dar dönemez; uçak yerinde dönemez.
+  Geri itme (pushback) yok: hangardan burnu dışarı bakarak çıkar.
+* Taksi sırasında `mode` = `Takeoff`, `phase` = `Taxi`, piste dönerken `LineUp`.
+
+### İnişten sonra park yerine taksi
+
+```cpp
+// After the landing roll the shuttle taxis to its parking spot, nose south.
+if (pose(shuttle).phase == fm::FlightPhase::Landed) {
+    const std::vector<fm::Vec3> to_apron{airfield(150.0, 60.0), airfield(150.0, 100.0)};
+    fm::ecs::agent(shuttle)->taxi(to_apron, runway_heading + fm::kPi / 2.0);
+}
+```
+
+* `taxi(yol, son_yon)` yerdeki her uçakta çalışır (park hâlinde, iniş koşusunda ya da kalkış
+  koşusunu iptal edip). Son noktada durur (`phase` = `Parked`, `mode` = `Cruise`).
+* `son_yon` verilirse uçak son noktaya bu yönde gelir: son bölüm bu yöne bakmıyorsa önüne
+  `6 x taxi_turn_radius` uzunluğunda düz bir giriş eklenir (hangara burun önde girmek için).
+* Yolda oyun uçağı taşırsa (teleport), en yakın bölümden devam eder.
+* **Henüz yok:** Yerde çarpışma önleme (uçaklar taksi yolunda birbirini beklemez).
+
+### İniş
+
 * Doğrudan iniş: `agent->land(fm::Runway{baslangic, yon})`. Uçak piste eksen uzantısından
   yaklaşır, 3° süzülüş yolunu izler, flare yapar, frenler; dengesiz yaklaşmada pas geçip
   yeniden dener. Drone `land()` ile bulunduğu yere iner.
@@ -288,7 +336,7 @@ fm::ecs::land_on(seahawk, carrier, spot);
 | Ne | Nereden |
 |---|---|
 | Ne yapıyor | `agent->mode()` ya da `FlightPose::mode`: `GoTo`/`Route` varınca `Loiter`, `Hover`, `Cruise` ya da `Land` olur |
-| Kalkış/iniş aşaması | `FlightPose::phase`: `TakeoffRoll`, `InitialClimb`, `Approach`, `Flare`, `Rollout`, `Landed` ... Gemide `Underway` (seyirde), `Parked` (durdu), `TerrainContact` (karaya oturdu) |
+| Kalkış/iniş aşaması | `FlightPose::phase`: `Taxi`, `LineUp`, `TakeoffRoll`, `InitialClimb`, `Approach`, `Flare`, `Rollout`, `Landed`, `Parked` ... Gemide `Underway` (seyirde), `Parked` (durdu), `TerrainContact` (karaya oturdu) |
 | Yerde mi | `FlightPose::on_ground` |
 | Rotada kaçıncı waypoint | `agent->fixed_wing()->route().index()` / `agent->rotorcraft()->route().index()` / `agent->ship()->route().index()` |
 | Araziden yükseklik | `agent->state().height_above_terrain` |
@@ -304,7 +352,8 @@ fm::ecs::land_on(seahawk, carrier, spot);
 | `loiter(merkez, r)` | `r` yarıçaplı tur (0 = performanstan) | `r` yarıçaplı tur; `r = 0` üstünde bekleme | `r` yarıçaplı tur (en az dönüş yarıçapı); `r = 0` orada istasyon tutma |
 | `hover()` | Bulunduğu yerin etrafında tur | Bulunduğu yerde bekleme | Durur, bulunduğu yerde istasyon tutar |
 | `follow_route` | Fly-by / fly-over, waypoint hızları | Aynısı, ayrıca `hold_time`. Drone keskin köşede yavaşlar; helikopter köşeyi hızını koruyarak yatışlı bir yayla alır | Fly-by, waypoint hızları; dümen gecikmesi için dönüşe erken başlar (`hold_time` yok) |
-| `takeoff` | Pistten: koşu, rotasyon, tırmanış | Dikey kalkış | Yok (`false`) |
+| `takeoff` | Gerekirse taksi ve hizalanma, sonra pistten koşu, rotasyon, tırmanış | Dikey kalkış | Yok (`false`) |
+| `taxi(yol, yon)` | Yerde taksi, son noktada durur | Yok (`false`) | Yok (`false`) |
 | `land(runway)` | Pist yaklaşması, flare, frenleme | Pist başına uçup dikey iniş | Yok (`false`) |
 | `land()` | Pist olmadan inemez (`false`) | Bulunduğu yere dikey iniş | Yok (`false`); durmak için `hover()` |
 | `land_on(spot)` | Henüz yok (`false`) | Hareketli güverteye iniş, güvertede gemiyle hareket; `takeoff()` güverteden kalkar | Yok (`false`); iniş noktalarını sağlar (`deck_spots`) |

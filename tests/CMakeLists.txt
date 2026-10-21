@@ -10,6 +10,7 @@ add_executable(fm_tests
   test_robustness.cpp
   test_rotorcraft.cpp
   test_ship.cpp
+  test_taxi.cpp
   test_traffic.cpp
 )
 target_link_libraries(fm_tests PRIVATE fm::core)

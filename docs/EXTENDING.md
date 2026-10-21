@@ -441,6 +441,7 @@ ile algılar), yoksa varsayılan davranış uygulanır:
 | Üye | Anlamı | Yoksa |
 |---|---|---|
 | `bool land_on(const DeckSpot&)` | Hareketli bir güverte spotuna iniş (`RotorcraftAgent`'ta var) | `FlightAgent::land_on` `false` döner |
+| `bool taxi(std::span<const Vec3>, double)` | Yerde taksi ve park (`FixedWingAgent`'ta var) | `FlightAgent::taxi` `false` döner |
 | `bool deck_operation() const` | Güverte işi sürüyor: lider (gemi) durumu her adım gerekli | `tracks_leader()` yalnızca `Formation` modunda `true` |
 | `set_speed(double, SpeedRef)` | CAS / Mach hedefini kendisi tutar | `FlightAgent` o anki irtifada TAS'a çevirip `set_speed(double)` çağırır |
 | `set_fuel(double)` | Yakıt / ikmal | Yok sayılır |

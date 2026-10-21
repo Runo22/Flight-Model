@@ -398,6 +398,7 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Stall / yaklaşma hızı | `cl_max`, `flaps_dcl_max`, `approach_speed_factor` | — |
 | Kalkış | `rotate_speed`, `rotation_pitch`, `cl_alpha`, `cl0` + `flaps_dcl0` | yer etkisi, güç fazlası |
 | İniş mesafesi | `touchdown_distance`, `brake_deceleration`, `approach_speed_factor` | — |
+| Taksi | `taxi_speed` (düz taksi yolu), `taxi_turn_radius` (burun tekeri; köşe hızı √(1.5·r)) | — |
 | Seyirde burun açısı | `cl0`, `cl_alpha` | `flat_plate_area` |
 | Dönüş | AI: `bank_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |
 | İvmelenme | itki | `max_acceleration` (yalnız hız değişimi), `velocity_time_constant` |

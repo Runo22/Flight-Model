@@ -1,5 +1,6 @@
 #include "fm/flight_agent.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -42,9 +43,13 @@ void set_speed_in(M& m, double speed, SpeedRef ref) {
     }
 }
 
+bool usable(std::span<const Vec3> path) {
+    return std::all_of(path.begin(), path.end(), [](const Vec3& p) { return is_finite(p.xy()); });
+}
+
 bool usable(const TakeoffPlan& p) {
-    return !std::isinf(p.climb_height) && (!p.runway || usable(*p.runway)) &&
-           (!p.then || usable(*p.then));
+    return !std::isinf(p.climb_height) && !std::isinf(p.heading) &&
+           (!p.runway || usable(*p.runway)) && usable(p.taxi) && (!p.then || usable(*p.then));
 }
 }  // namespace
 
@@ -98,6 +103,18 @@ void FlightAgent::loiter(const Vec3& center, double radius, bool clockwise,
 bool FlightAgent::takeoff(const TakeoffPlan& plan) {
     if (!usable(plan)) return false;
     return std::visit([&](auto& m) { return m.takeoff(plan); }, impl_);
+}
+
+bool FlightAgent::taxi(std::span<const Vec3> path, double final_heading) {
+    if (!usable(path) || std::isinf(final_heading)) return false;
+    return std::visit(
+        [&](auto& m) {
+            if constexpr (requires { { m.taxi(path, final_heading) } -> std::same_as<bool>; })
+                return m.taxi(path, final_heading);
+            else
+                return false;  // the model does not taxi
+        },
+        impl_);
 }
 
 void FlightAgent::hover() {

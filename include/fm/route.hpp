@@ -62,11 +62,19 @@ struct GoToOptions {
 };
 
 struct TakeoffPlan {
-    // Fixed-wing: runway direction. The run starts where the aircraft stands; empty = take
-    // off straight ahead along the current heading. Ignored by rotorcraft.
+    // Fixed-wing: the runway (centerline through `start` along `heading`). Standing on it,
+    // the aircraft lines up and starts the run where it is; otherwise (or with `taxi`
+    // points) it taxis to `start` first. Empty = take off along `heading`. Ignored by
+    // rotorcraft.
     std::optional<Runway> runway;
     double climb_height = 0.0;             // m AGL where takeoff ends; 0 = vehicle default
     std::optional<Route> then;             // route to fly afterwards; empty = continue straight
+    // Fixed-wing without a runway: takeoff direction (rad); NaN = the current heading, or
+    // the direction of the last taxi segment.
+    double heading = kUnknown;
+    // Fixed-wing: ground path to the runway, e.g. out of a hangar along the taxiways
+    // (z ignored, the aircraft stays on the ground).
+    std::vector<Vec3> taxi;
 };
 
 }  // namespace fm

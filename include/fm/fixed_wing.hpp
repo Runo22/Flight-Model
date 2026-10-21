@@ -14,6 +14,7 @@
 #include "fm/relocation.hpp"
 #include "fm/route.hpp"
 #include "fm/route_tracker.hpp"
+#include "fm/taxi_path.hpp"
 #include "fm/terrain.hpp"
 #include "fm/traffic.hpp"
 #include "fm/vehicle_params.hpp"
@@ -44,9 +45,14 @@ public:
     // radius 0 = derived from turn performance.
     void loiter(const Vec3& center, double radius = 0.0, bool clockwise = true,
                 AltitudeRef altitude_ref = AltitudeRef::Absolute);
-    // Runway takeoff from the current position along plan.runway (default: current heading).
-    // Only valid while on the ground; returns false otherwise.
+    // Runway takeoff along plan.runway or plan.heading (default: current heading), taxiing
+    // along plan.taxi and lining up first when needed (see TakeoffPlan). Only valid while
+    // on the ground; returns false otherwise.
     bool takeoff(const TakeoffPlan& plan);
+    // Taxi on the ground through `path` (z ignored) and stop at its last point, arriving
+    // along `final_heading` (rad) when given, e.g. into a hangar or parking spot after
+    // landing. Ends parked. Only valid on the ground; returns false otherwise.
+    bool taxi(std::span<const Vec3> path, double final_heading = kUnknown);
     // Approach and landing on `runway` (start = threshold, heading = landing direction):
     // positioning to the extended centerline, 3 deg glide path, flare, touchdown and
     // braking. Unstable approaches go around and try again. Returns false on the ground.
@@ -104,6 +110,8 @@ private:
         double vertical_speed_ff = 0.0;   // m/s, feedforward added to the altitude loop
         bool idle_thrust = false;         // flare: idle, flight path from vertical speed only
         double gamma_time_constant = 0.0; // s, 0 = params default (flare uses a quicker one)
+        bool taxi = false;                // ground: taxi_accel with thrust and wheel brakes
+        double taxi_accel = 0.0;          // m/s^2
     };
     struct Control {
         double bank = 0.0;
@@ -113,12 +121,17 @@ private:
         double gamma_time_constant = 0.0;  // s, 0 = params default
         bool rotate = false;
         bool speed_brake = false;
+        bool taxi = false;
+        double brake = 0.0;  // m/s^2, wheel brake deceleration while taxiing
     };
 
     Command guidance(const AtmosphereSample& atm, const Vec3& wind, const SlotReference& slot_ref);
     void guide_route(Command& cmd, const Vec2& ground_velocity, double lookahead);
     void finish_route(EndBehavior behavior);
     void guide_takeoff(Command& cmd, const AtmosphereSample& atm);
+    void guide_taxi(Command& cmd);
+    void taxi_controls(double accel, const AtmosphereSample& atm, Control& c) const;
+    TaxiPath::Settings taxi_settings() const;
     void guide_formation(Command& cmd, const Vec2& ground_velocity, const SlotReference& ref);
     void guide_landing(Command& cmd, const AtmosphereSample& atm, const Vec2& ground_velocity);
     Control autopilot(const Command& cmd, const AtmosphereSample& atm);
@@ -209,8 +222,10 @@ private:
     bool loiter_here_ = false;  // orbit from hover(): moves along when relocated
 
     TakeoffPlan takeoff_{};
-    Vec2 takeoff_origin_{};
+    Vec2 takeoff_origin_{};      // a point on the centerline
     double takeoff_heading_ = 0.0;
+    bool lining_up_ = false;     // taxiing to the runway / lining up before the run
+    TaxiPath taxi_;              // taxi and line-up path
 
     enum class LandingStage { Positioning, Final, Flare, GoAround, Rollout };
     Runway runway_{};

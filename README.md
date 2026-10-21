@@ -29,7 +29,8 @@ guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 | `go_to(point)` | fly to a point (then continue straight, loiter, ...) | fly to a point and stop |
 | `follow_route(route)` | fly-by/fly-over waypoints, linear altitude profile, loops | same, plus waypoint hold times |
 | `loiter(center, radius)` | orbit | orbit, or hover when radius is 0 |
-| `takeoff(plan)` | runway takeoff: roll, rotation, lift-off, flap retraction, climb-out | vertical takeoff |
+| `takeoff(plan)` | runway takeoff: taxi out (`plan.taxi`, e.g. from a hangar), line up on the runway or `plan.heading`, roll, rotation, lift-off, flap retraction, climb-out | vertical takeoff |
+| `taxi(path, final_heading)` | taxi on the ground and park, e.g. to the apron after landing: pure pursuit, slows for corners, stops on the point facing `final_heading` | — (`false`) |
 | `land(runway)` | approach to the runway: positioning on the extended centerline, 3 deg glide path, flaps/gear, flare, touchdown, braking; go-around and a new attempt when unstable | fly to the runway point and land vertically (`land()` lands where it is) |
 | route `on_end = Land` | lands on `route.runway` | lands at the last waypoint |
 | `join_formation(slot)` + `set_leader_state()` | formation flight / follow another entity; the leader limits its bank and speed so its widest follower can keep up (`set_formation_lead`, automatic with `fm::ecs::follow`) | same |

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace fm {
 
@@ -33,6 +34,21 @@ constexpr double kAvoidMargin = 30.0;      // m beyond the protected height
 constexpr double kAvoidClearTime = 3.0;    // s without a conflict before the resolution ends
 constexpr double kAvoidLevel = 10.0;       // m: closer vertically counts as co-altitude
 constexpr double kFollowerSpeedShare = 0.92;
+// Taxi and line-up.
+constexpr double kLineUpHeading = deg2rad(3.0);  // lined up: heading within this ...
+constexpr double kLineUpOffset = 3.0;            // ... and this close to the centerline (m)
+constexpr double kOnRunwayOffset = 30.0;         // m from the centerline: on the runway
+constexpr double kCenterlineLength = 1.0e4;      // m, line followed while lining up
+constexpr double kRollLookahead = 30.0;          // m, centerline tracking on the takeoff run
+constexpr double kTaxiDeceleration = 1.0;        // m/s^2, planned slowing
+constexpr double kTaxiTurnAccel = 1.5;           // m/s^2, lateral, sets the corner speed
+constexpr double kTaxiMaxAccel = 0.6;            // m/s^2
+constexpr double kTaxiMaxBrake = 3.0;            // m/s^2
+constexpr double kTaxiMaxThrottle = 0.6;
+constexpr double kTaxiStopSpeed = 0.01;          // m/s
+constexpr double kTaxiStopDistance = 1.5;        // m short of the end: arrived
+constexpr double kGroundLateralAccel = 3.0;      // m/s^2, steering limit at speed
+constexpr double kSteerRateAtSpeed = deg2rad(5.0);  // rad/s, allowed at any speed
 
 // Thrust / power lapse at the density ratio sigma: sigma^n in the troposphere; above the
 // tropopause (constant temperature) in proportion to the density.
@@ -178,14 +194,73 @@ void FixedWingAgent::loiter(const Vec3& center, double radius, bool clockwise,
 bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
     if (!on_ground_ || phase_ == FlightPhase::TerrainContact) return false;
     takeoff_ = plan;
-    takeoff_origin_ = position_.xy();
     mode_ = FlightMode::Takeoff;
     route_.clear();
-    takeoff_heading_ = plan.runway ? wrap_2pi(plan.runway->heading) : heading_;
+    // Ground path: taxi points, then the runway start and its centerline.
+    const Vec2 here = position_.xy();
+    std::vector<Vec2> path{here};
+    for (const Vec3& p : plan.taxi) path.push_back(p.xy());
+    double heading = heading_;
+    Vec2 origin = path.back();
+    if (plan.runway) {
+        heading = plan.runway->heading;
+        const Vec2 start = plan.runway->start.xy();
+        const Vec2 dir = heading_vector(heading);
+        if (plan.taxi.empty() && std::abs(dot(here - start, right_of(dir))) <= kOnRunwayOffset) {
+            // On the runway: the run starts abeam the current position.
+            origin = start + dir * dot(here - start, dir);
+            path = {origin};
+        } else {
+            path.push_back(start);
+            origin = start;
+        }
+    } else if (std::isfinite(plan.heading)) {
+        heading = plan.heading;
+    } else {
+        // Straight on from the last taxi segment.
+        for (std::size_t i = path.size() - 1; i > 0; --i) {
+            if ((path[i] - path[i - 1]).length() > 1.0) {
+                heading = heading_of(path[i] - path[i - 1]);
+                break;
+            }
+        }
+    }
+    takeoff_heading_ = wrap_2pi(heading);
     course_target_ = takeoff_heading_;
+    takeoff_origin_ = origin;
+    const Vec2 dir = heading_vector(takeoff_heading_);
+    path.push_back(origin + dir * kCenterlineLength);
+    taxi_.start(std::move(path), false);
+    lining_up_ = taxi_.points().size() > 2 ||
+                 std::abs(wrap_pi(heading_ - takeoff_heading_)) > kLineUpHeading ||
+                 std::abs(dot(here - origin, right_of(dir))) > kLineUpOffset;
+    if (!lining_up_) taxi_.clear();
     runway_elevation_ = ground_elevation();
     flaps_ = true;
-    phase_ = FlightPhase::TakeoffRoll;
+    phase_ = lining_up_ ? FlightPhase::Taxi : FlightPhase::TakeoffRoll;
+    out_.phase = phase_;
+    return true;
+}
+
+bool FixedWingAgent::taxi(std::span<const Vec3> path, double final_heading) {
+    if (!on_ground_ || phase_ == FlightPhase::TerrainContact) return false;
+    std::vector<Vec2> points{position_.xy()};
+    for (const Vec3& p : path) points.push_back(p.xy());
+    if (std::isfinite(final_heading) && points.size() >= 2) {
+        // Arrive along the final heading: a straight last stretch, long enough to line up.
+        const Vec2 end = points.back();
+        const Vec2 dir = heading_vector(final_heading);
+        const Vec2 last_leg = end - points[points.size() - 2];
+        if (dot(last_leg.normalized(), dir) < std::cos(deg2rad(5.0)))
+            points.insert(points.end() - 1, end - dir * (6.0 * taxi_settings().turn_radius));
+    }
+    mode_ = FlightMode::Taxi;
+    route_.clear();
+    flaps_ = false;
+    speed_brake_ = false;
+    taxi_.start(std::move(points), true);
+    phase_ = FlightPhase::Taxi;
+    out_.phase = phase_;
     return true;
 }
 
@@ -307,9 +382,16 @@ bool FixedWingAgent::relocate(const Vec3& position, double heading) {
                 }
                 break;
             case FlightMode::Takeoff:
-                takeoff_origin_ = here;
-                takeoff_heading_ = wrap_2pi(takeoff_heading_ + r.turn);
-                course_target_ = takeoff_heading_;
+                if (lining_up_) {
+                    taxi_.rejoin(here);
+                } else {
+                    takeoff_origin_ = here;
+                    takeoff_heading_ = wrap_2pi(takeoff_heading_ + r.turn);
+                    course_target_ = takeoff_heading_;
+                }
+                break;
+            case FlightMode::Taxi:
+                taxi_.rejoin(here);
                 break;
             case FlightMode::Land:
                 if (landing_stage_ == LandingStage::Rollout) {
@@ -396,7 +478,7 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
     const double gs = std::max(vg.length(), 1.0);
     const double lookahead = gs * p_.altitude_time_constant;
 
-    if (on_ground_ && mode_ != FlightMode::Takeoff) {
+    if (on_ground_ && mode_ != FlightMode::Takeoff && mode_ != FlightMode::Taxi) {
         // Landing roll, parked or crashed: idle and brake (on the centerline after landing).
         cmd.heading = mode_ == FlightMode::Land ? runway_.heading : heading_;
         cmd.altitude = position_.z;
@@ -427,6 +509,9 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
         case FlightMode::Takeoff:
             guide_takeoff(cmd, atm);
             break;
+        case FlightMode::Taxi:
+            guide_taxi(cmd);
+            break;
         case FlightMode::Land:
             guide_landing(cmd, atm, vg);
             break;
@@ -444,7 +529,7 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
             break;
     }
     const bool own_speed = mode_ == FlightMode::Takeoff || mode_ == FlightMode::Formation ||
-                           mode_ == FlightMode::Land;
+                           mode_ == FlightMode::Land || mode_ == FlightMode::Taxi;
     if (!own_speed) cmd.speed = speed_target_;
     resolved_altitude_target_ = cmd.altitude;
     // Collision avoidance overrides the task's altitude until the conflict is clear.
@@ -531,8 +616,29 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
     const double vs_clean = stall_speed(atm.density, false);
 
     if (on_ground_) {
-        cmd.full_thrust = true;
         cmd.bank_limit = 0.0;
+        if (lining_up_) {
+            const TaxiPath::Steering st =
+                taxi_.update(position_.xy(), heading_, tas_, taxi_settings());
+            phase_ = st.last_segment ? FlightPhase::LineUp : FlightPhase::Taxi;
+            const bool lined_up = st.last_segment && std::abs(st.cross_track) <= kLineUpOffset &&
+                                  std::abs(wrap_pi(heading_ - takeoff_heading_)) <= kLineUpHeading;
+            if (!lined_up) {
+                cmd.heading = st.heading;
+                cmd.taxi = true;
+                cmd.taxi_accel = st.acceleration;
+                return;
+            }
+            lining_up_ = false;
+            taxi_.clear();
+            runway_elevation_ = ground_elevation();
+        }
+        // Takeoff run along the centerline.
+        const Vec2 dir = heading_vector(takeoff_heading_);
+        const double along = dot(position_.xy() - takeoff_origin_, dir);
+        const Vec2 aim = takeoff_origin_ + dir * (along + std::max(kRollLookahead, 3.0 * tas_));
+        cmd.heading = heading_of(aim - position_.xy());
+        cmd.full_thrust = true;
         cmd.rotate = tas_ >= rotate_speed(atm.density);
         phase_ = cmd.rotate ? FlightPhase::Rotation : FlightPhase::TakeoffRoll;
         return;
@@ -558,6 +664,34 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
         // Never back down when placed above the climb height (relocation).
         finish_takeoff(std::max(runway_elevation_ + climb_height, position_.z));
     }
+}
+
+void FixedWingAgent::guide_taxi(Command& cmd) {
+    cmd.altitude = position_.z;
+    cmd.bank_limit = 0.0;
+    cmd.heading = heading_;
+    const TaxiPath::Steering st = taxi_.update(position_.xy(), heading_, tas_, taxi_settings());
+    if (!taxi_.active() || (st.remaining < kTaxiStopDistance && tas_ < kTaxiStopSpeed)) {
+        // Arrived: parked, brakes set.
+        taxi_.clear();
+        mode_ = FlightMode::Cruise;
+        course_target_ = heading_;
+        phase_ = FlightPhase::Parked;
+        return;
+    }
+    phase_ = FlightPhase::Taxi;
+    cmd.heading = st.heading;
+    cmd.taxi = true;
+    cmd.taxi_accel = st.acceleration;
+}
+
+TaxiPath::Settings FixedWingAgent::taxi_settings() const {
+    TaxiPath::Settings s;
+    s.speed = std::max(p_.taxi_speed, 0.5);
+    s.turn_radius = std::max(p_.taxi_turn_radius, 1.0);
+    s.turn_speed = std::min(s.speed, std::sqrt(kTaxiTurnAccel * s.turn_radius));
+    s.deceleration = kTaxiDeceleration;
+    return s;
 }
 
 void FixedWingAgent::finish_takeoff(double altitude) {
@@ -745,6 +879,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     if (on_ground_) {
         c.throttle = cmd.full_thrust ? 1.0 : p_.engine.idle_throttle;
         c.steer_heading = cmd.heading;
+        if (cmd.taxi) taxi_controls(cmd.taxi_accel, atm, c);
         return c;
     }
 
@@ -848,6 +983,22 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     return c;
 }
 
+// Thrust and wheel brakes for the commanded acceleration while taxiing.
+void FixedWingAgent::taxi_controls(double accel, const AtmosphereSample& atm, Control& c) const {
+    const double m = mass_;
+    const double w = m * kGravity;
+    const double slope = terrain_.valid() ? std::atan(terrain_.slope()) : 0.0;
+    const double resistance = p_.rolling_friction * w * std::cos(slope) + w * std::sin(slope);
+    const double a = std::clamp(accel, -kTaxiMaxBrake, kTaxiMaxAccel);
+    const double t_max = thrust_available(tas_, atm);
+    c.taxi = true;
+    c.throttle = std::clamp((m * a + resistance) / std::max(t_max, 1e-6), p_.engine.idle_throttle,
+                            std::max(kTaxiMaxThrottle, p_.engine.idle_throttle));
+    // The brakes take what the engines (idle thrust, spooling down) give too much.
+    const double surplus = (throttle_ * t_max - resistance) / m - a;
+    c.brake = std::clamp(surplus, 0.0, kTaxiMaxBrake);
+}
+
 void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, const Vec3& wind,
                                double dt) {
     throttle_ = lag(throttle_, c.throttle, p_.engine.spool_time, dt);
@@ -924,9 +1075,13 @@ void FixedWingAgent::integrate_ground(const Control& c, const AtmosphereSample& 
     const double w = m * kGravity;
     const double v = tas_;
 
-    // Nose wheel steering towards the commanded heading.
+    // Nose wheel steering towards the commanded heading: no tighter than the taxi turn
+    // radius (no turning on the spot), gently at speed.
+    const double steer_rate =
+        std::min(v / std::max(p_.taxi_turn_radius, 1.0),
+                 std::max(kGroundLateralAccel / std::max(v, 0.1), kSteerRateAtSpeed));
     heading_ = wrap_2pi(heading_ + std::clamp(wrap_pi(c.steer_heading - heading_),
-                                              -deg2rad(5.0) * dt, deg2rad(5.0) * dt));
+                                              -steer_rate * dt, steer_rate * dt));
     double rotation_pitch = p_.rotation_pitch;
     if (rotation_pitch <= 0.0) {
         const double cl_liftoff = cl_max() / 1.3225;  // lift-off near 1.15 Vs
@@ -946,7 +1101,9 @@ void FixedWingAgent::integrate_ground(const Control& c, const AtmosphereSample& 
     const double slope = terrain_.valid() ? std::atan(terrain_.slope()) : 0.0;
     const double normal = std::max(w * std::cos(slope) - lift, 0.0);
     double friction = kWheelBrakeFriction * normal;  // parked: brakes hold the aircraft
-    if (mode_ == FlightMode::Takeoff) {
+    if (c.taxi) {
+        friction = p_.rolling_friction * normal + std::min(c.brake * m, 0.4 * normal);
+    } else if (mode_ == FlightMode::Takeoff) {
         friction = p_.rolling_friction * normal;
     } else if (mode_ == FlightMode::Land) {
         // Landing roll: brakes as configured, limited by the weight on the wheels.
@@ -1046,6 +1203,8 @@ void FixedWingAgent::settle_relocation(const Relocation& r) {
 
 void FixedWingAgent::start_flying_here() {
     on_ground_ = false;
+    lining_up_ = false;
+    taxi_.clear();
     tas_ = std::max(tas_, p_.cruise_speed);
     ground_pitch_ = 0.0;
     flaps_ = false;

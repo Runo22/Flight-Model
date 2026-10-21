@@ -89,6 +89,8 @@ struct FixedWingParams {
     double rotation_rate = 0.05;       // rad/s
     double rolling_friction = 0.03;
     double gear_height = 1.5;          // m, reference point above ground when on wheels
+    double taxi_speed = 8.0;           // m/s on straight taxiways
+    double taxi_turn_radius = 15.0;    // m, tightest turn on the ground (nose wheel steering)
 
     // Response time constants (s)
     double roll_time_constant = 0.6;

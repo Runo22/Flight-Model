@@ -44,6 +44,8 @@ FixedWingParams fast_jet() {
     p.rotation_rate = deg2rad(6.0);
     p.rolling_friction = 0.03;
     p.gear_height = 1.8;
+    p.taxi_speed = 10.0;
+    p.taxi_turn_radius = 8.0;
     p.roll_time_constant = 0.25;
     p.gamma_time_constant = 0.8;
     p.heading_time_constant = 1.5;
@@ -106,6 +108,8 @@ FixedWingParams airliner_jet() {
     p.rotation_rate = deg2rad(3.0);
     p.rolling_friction = 0.02;
     p.gear_height = 3.5;
+    p.taxi_speed = 10.0;
+    p.taxi_turn_radius = 18.0;
     p.roll_time_constant = 1.0;
     p.gamma_time_constant = 2.5;
     p.heading_time_constant = 4.0;
@@ -168,6 +172,8 @@ FixedWingParams regional_turboprop() {
     p.rotation_rate = deg2rad(3.0);
     p.rolling_friction = 0.025;
     p.gear_height = 2.0;
+    p.taxi_speed = 8.0;
+    p.taxi_turn_radius = 13.0;
     p.roll_time_constant = 0.9;
     p.gamma_time_constant = 2.0;
     p.heading_time_constant = 3.5;
@@ -230,6 +236,8 @@ FixedWingParams light_propeller() {
     p.rotation_rate = deg2rad(4.0);
     p.rolling_friction = 0.04;
     p.gear_height = 1.2;
+    p.taxi_speed = 5.0;
+    p.taxi_turn_radius = 5.0;
     p.roll_time_constant = 0.5;
     p.gamma_time_constant = 1.2;
     p.heading_time_constant = 2.5;
@@ -324,6 +332,8 @@ FixedWingParams single_engine_fighter() {
     p.rotation_rate = deg2rad(8.0);
     p.rolling_friction = 0.025;
     p.gear_height = 1.9;
+    p.taxi_speed = 10.0;
+    p.taxi_turn_radius = 7.0;
     p.roll_time_constant = 0.2;
     p.gamma_time_constant = 0.8;
     p.heading_time_constant = 1.5;
@@ -390,6 +400,8 @@ FixedWingParams twin_engine_fighter() {
     p.rotation_rate = deg2rad(8.0);
     p.rolling_friction = 0.025;
     p.gear_height = 2.2;
+    p.taxi_speed = 10.0;
+    p.taxi_turn_radius = 10.0;
     p.roll_time_constant = 0.25;
     p.gamma_time_constant = 0.9;
     p.heading_time_constant = 1.6;
@@ -453,6 +465,8 @@ FixedWingParams turboprop_trainer() {
     p.rotation_rate = deg2rad(5.0);
     p.rolling_friction = 0.03;
     p.gear_height = 1.5;
+    p.taxi_speed = 7.0;
+    p.taxi_turn_radius = 6.0;
     p.roll_time_constant = 0.35;
     p.gamma_time_constant = 1.0;
     p.heading_time_constant = 2.0;
@@ -517,6 +531,8 @@ FixedWingParams jet_uav() {
     p.rotation_rate = deg2rad(4.0);
     p.rolling_friction = 0.025;
     p.gear_height = 1.5;
+    p.taxi_speed = 8.0;
+    p.taxi_turn_radius = 8.0;
     p.roll_time_constant = 0.4;
     p.gamma_time_constant = 1.2;
     p.heading_time_constant = 2.0;
@@ -574,6 +590,8 @@ FixedWingParams male_uav_common() {
     p.mach_max = 0.3;
     p.rotation_rate = deg2rad(4.0);
     p.rolling_friction = 0.03;
+    p.taxi_speed = 7.0;
+    p.taxi_turn_radius = 9.0;
     p.roll_time_constant = 0.8;
     p.gamma_time_constant = 2.0;
     p.heading_time_constant = 4.0;
@@ -628,6 +646,7 @@ FixedWingParams twin_propeller_uav() {
     p.cruise_speed = 50.0;             // 180 km/h (97 kt)
     p.max_speed = 69.4;                // 250 km/h (135 kt), EAS
     p.gear_height = 1.5;
+    p.taxi_turn_radius = 11.0;
     p.formation_min_separation = 80.0;
     return p;
 }

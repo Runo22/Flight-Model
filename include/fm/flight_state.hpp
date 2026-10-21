@@ -33,7 +33,9 @@ enum class FlightMode {
     GoTo,     // fly to a point
     Route,    // follow a waypoint route / trajectory
     Loiter,   // orbit a point
-    Takeoff,  // takeoff run / vertical takeoff and initial climb
+    Takeoff,  // takeoff run / vertical takeoff and initial climb (fixed-wing: taxi and
+              // line-up first when needed)
+    Taxi,     // fixed-wing: taxiing on the ground to a parking position
     Land,      // rotorcraft vertical landing
     Hover,     // rotorcraft position hold; ship: station keeping
     Formation, // keep a slot relative to a leader entity
@@ -41,6 +43,8 @@ enum class FlightMode {
 
 enum class FlightPhase {
     Parked,
+    Taxi,            // fixed-wing: moving on the ground under its own power
+    LineUp,          // fixed-wing: turning onto the runway centerline before the run
     TakeoffRoll,
     Rotation,
     InitialClimb,
@@ -62,6 +66,7 @@ constexpr const char* to_string(FlightMode m) {
         case FlightMode::Route: return "Route";
         case FlightMode::Loiter: return "Loiter";
         case FlightMode::Takeoff: return "Takeoff";
+        case FlightMode::Taxi: return "Taxi";
         case FlightMode::Land: return "Land";
         case FlightMode::Hover: return "Hover";
         case FlightMode::Formation: return "Formation";
@@ -72,6 +77,8 @@ constexpr const char* to_string(FlightMode m) {
 constexpr const char* to_string(FlightPhase p) {
     switch (p) {
         case FlightPhase::Parked: return "Parked";
+        case FlightPhase::Taxi: return "Taxi";
+        case FlightPhase::LineUp: return "LineUp";
         case FlightPhase::TakeoffRoll: return "TakeoffRoll";
         case FlightPhase::Rotation: return "Rotation";
         case FlightPhase::InitialClimb: return "InitialClimb";

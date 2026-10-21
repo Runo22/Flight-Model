@@ -108,7 +108,12 @@ public:
     void follow_route(Route route);
     void loiter(const Vec3& center, double radius = 0.0, bool clockwise = true,
                 AltitudeRef altitude_ref = AltitudeRef::Absolute);
+    // Fixed-wing: taxi along plan.taxi, line up on plan.runway / plan.heading and take off.
     bool takeoff(const TakeoffPlan& plan = {});
+    // Fixed-wing on the ground: taxi through `path` (z ignored) and stop at its last point,
+    // arriving along `final_heading` (rad, NaN = any), e.g. into a hangar after landing.
+    // Others, or non-finite points: false.
+    bool taxi(std::span<const Vec3> path, double final_heading = kUnknown);
     // Rotorcraft holds position; fixed-wing aircraft orbit the current position; ships stop
     // and keep station.
     void hover();
