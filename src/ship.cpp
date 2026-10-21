@@ -403,6 +403,7 @@ void ShipAgent::integrate(const Command& cmd, double dt) {
 void ShipAgent::update_output() {
     const double track = heading_ - drift_;
     out_.position = position_;
+    out_.mass = p_.displacement;
     out_.velocity = Vec3{std::sin(track), std::cos(track), 0.0} * speed_;
     out_.attitude.heading = heading_;
     out_.attitude.roll = heel_;

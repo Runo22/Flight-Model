@@ -29,11 +29,22 @@ struct EngineParams {
     double mach_lapse = 0.0;        // jet thrust *= clamp(1 - mach_lapse * M, 0.2, 2); < 0: ram gain
     double spool_time = 2.0;        // s, throttle response time constant
     double idle_throttle = 0.05;    // throttle fraction at idle
+    // Fuel use (with FixedWingParams::fuel_capacity). Jet: thrust specific fuel consumption,
+    // kg/s per N of thrust. Propeller: brake specific fuel consumption, kg/s per W of shaft
+    // power.
+    double fuel_consumption = 0.0;
+    // Jets with an afterburner: share of max_thrust that is dry thrust, and the thrust
+    // specific fuel consumption at full afterburner (kg/s per N of the total thrust).
+    double dry_thrust_fraction = 1.0;
+    double afterburner_consumption = 0.0;
 };
 
 struct FixedWingParams {
     std::string name = "fixed-wing";
-    double mass = 1000.0;           // kg
+    double mass = 1000.0;           // kg, with full tanks
+    // Fuel carried (0 = not modelled). Burning it makes the aircraft lighter; with empty
+    // tanks the engines stop.
+    double fuel_capacity = 0.0;     // kg
     double wing_area = 16.0;        // m^2
 
     // Aerodynamics (clean configuration)

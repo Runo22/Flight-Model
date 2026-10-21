@@ -59,6 +59,7 @@ TEST_CASE("flecs: the pose carries air data, g and angles") {
     run(world, 10.0);
     CHECK(pose_of(jet).turn_rate > 0.5);   // deg/s, turning right
     CHECK(pose_of(jet).g_force.z > 1.05);  // banked turn
+    CHECK(pose_of(jet).fuel < p.fuel_capacity);  // burning fuel
 }
 
 TEST_CASE("flecs: terrain height input keeps clearance") {

@@ -22,6 +22,10 @@ FixedWingParams fast_jet() {
     p.speedbrake_dcd0 = 0.04;
     p.engine.type = EngineType::Jet;
     p.engine.max_thrust = 110000.0;
+    p.engine.fuel_consumption = 2.27e-5;         // TSFC 0.8 lb/lbf/h dry
+    p.engine.dry_thrust_fraction = 0.6;
+    p.engine.afterburner_consumption = 5.67e-5;  // 2.0 lb/lbf/h
+    p.fuel_capacity = 3000.0;
     p.engine.density_exponent = 0.75;
     p.engine.mach_lapse = -0.15;  // ram effect: thrust grows with Mach
     p.engine.spool_time = 1.0;
@@ -82,6 +86,8 @@ FixedWingParams airliner_jet() {
     p.speedbrake_dcd0 = 0.02;
     p.engine.type = EngineType::Jet;
     p.engine.max_thrust = 220000.0;
+    p.engine.fuel_consumption = 1.64e-5;  // TSFC 0.58 lb/lbf/h (cruise)
+    p.fuel_capacity = 18000.0;
     p.engine.density_exponent = 0.9;
     p.engine.mach_lapse = 0.3;  // high bypass: thrust drops with speed
     p.engine.spool_time = 4.0;
@@ -141,6 +147,8 @@ FixedWingParams regional_turboprop() {
     p.flaps_dcd0 = 0.02;
     p.engine.type = EngineType::Propeller;
     p.engine.max_power = 3.7e6;
+    p.engine.fuel_consumption = 1.01e-7;  // BSFC 0.6 lb/shp/h
+    p.fuel_capacity = 5000.0;
     p.engine.static_thrust = 50000.0;
     p.engine.prop_efficiency = 0.85;
     p.engine.density_exponent = 0.75;
@@ -201,6 +209,8 @@ FixedWingParams light_propeller() {
     p.flaps_dcd0 = 0.02;
     p.engine.type = EngineType::Propeller;
     p.engine.max_power = 120000.0;
+    p.engine.fuel_consumption = 7.6e-8;   // BSFC 0.45 lb/hp/h
+    p.fuel_capacity = 110.0;
     p.engine.static_thrust = 2600.0;
     p.engine.prop_efficiency = 0.8;
     p.engine.density_exponent = 1.0;
@@ -290,6 +300,10 @@ FixedWingParams single_engine_fighter() {
     p.speedbrake_dcd0 = 0.04;
     p.engine.type = EngineType::Jet;
     p.engine.max_thrust = 129400.0;    // F110-GE-129, afterburner
+    p.engine.fuel_consumption = 2.15e-5;         // TSFC 0.76 lb/lbf/h, military power
+    p.engine.dry_thrust_fraction = 0.59;         // 76.3 kN dry
+    p.engine.afterburner_consumption = 5.52e-5;  // 1.95 lb/lbf/h
+    p.fuel_capacity = 3175.0;          // 7,000 lb internal
     p.engine.density_exponent = 0.69;
     p.engine.mach_lapse = -0.015;
     p.engine.spool_time = 1.2;
@@ -352,6 +366,10 @@ FixedWingParams twin_engine_fighter() {
     p.speedbrake_dcd0 = 0.05;          // large dorsal speed brake
     p.engine.type = EngineType::Jet;
     p.engine.max_thrust = 211400.0;    // 2x F100-PW-220, afterburner
+    p.engine.fuel_consumption = 2.07e-5;         // TSFC 0.73 lb/lbf/h, military power
+    p.engine.dry_thrust_fraction = 0.614;        // 2x 64.9 kN dry
+    p.engine.afterburner_consumption = 5.95e-5;  // 2.1 lb/lbf/h
+    p.fuel_capacity = 6100.0;          // 13,455 lb internal
     p.engine.density_exponent = 0.5;
     p.engine.mach_lapse = -0.18;
     p.engine.spool_time = 1.3;
@@ -414,6 +432,8 @@ FixedWingParams turboprop_trainer() {
     p.speedbrake_dcd0 = 0.0;
     p.engine.type = EngineType::Propeller;
     p.engine.max_power = 1.193e6;      // PT6A-68T, 1600 shp
+    p.engine.fuel_consumption = 1.21e-7;  // BSFC 0.72 lb/shp/h, fitted to 4.25 h at 15,000 ft
+    p.fuel_capacity = 544.0;           // 680 l usable
     p.engine.static_thrust = 14000.0;
     p.engine.prop_efficiency = 0.75;
     p.engine.density_exponent = 0.84;
@@ -475,6 +495,8 @@ FixedWingParams jet_uav() {
     p.speedbrake_dcd0 = 0.0;
     p.engine.type = EngineType::Jet;
     p.engine.max_thrust = 26700.0;     // TF6000 class turbofan, dry
+    p.engine.fuel_consumption = 1.98e-5;  // TSFC ~0.7 lb/lbf/h (small turbofan, estimate)
+    p.fuel_capacity = 1850.0;          // estimate, fitted to ~5 h at Mach 0.6
     p.engine.density_exponent = 1.1;
     p.engine.mach_lapse = -0.02;
     p.engine.spool_time = 2.0;
@@ -540,6 +562,7 @@ FixedWingParams male_uav_common() {
     p.engine.critical_altitude = 6096.0;  // 20,000 ft
     p.engine.spool_time = 1.0;
     p.engine.idle_throttle = 0.05;
+    p.engine.fuel_consumption = 5.75e-8;  // BSFC 207 g/kWh
     p.load_factor_max = 2.5;
     p.load_factor_min = 0.0;
     p.bank_max = deg2rad(30.0);
@@ -584,6 +607,7 @@ FixedWingParams propeller_uav() {
     p.cd0 = 0.040;                     // with the sensor turret and SATCOM radome
     p.induced_drag_k = 0.021;          // e ~0.8
     p.engine.max_power = 126.8e3;      // 1x PD170, 170 hp
+    p.fuel_capacity = 385.0;           // estimate, fitted to 30 h
     p.engine.static_thrust = 3000.0;
     p.cruise_speed = 46.3;             // 90 kt (sources: 75-110 kt)
     p.max_speed = 60.3;                // 217 km/h (117 kt), EAS
@@ -599,6 +623,7 @@ FixedWingParams twin_propeller_uav() {
     p.cd0 = 0.031;
     p.induced_drag_k = 0.0197;         // e ~0.8
     p.engine.max_power = 253.6e3;      // 2x PD170, 170 hp each
+    p.fuel_capacity = 690.0;           // estimate, fitted to 40-49 h with a light payload
     p.engine.static_thrust = 6000.0;
     p.cruise_speed = 50.0;             // 180 km/h (97 kt)
     p.max_speed = 69.4;                // 250 km/h (135 kt), EAS

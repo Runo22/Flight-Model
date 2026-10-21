@@ -5,6 +5,7 @@
 #include "fm/flight_agent.hpp"
 #include "fm/presets.hpp"
 #include "harness.hpp"
+#include "performance.hpp"
 #include "sim.hpp"
 
 using namespace fm;
@@ -164,4 +165,68 @@ TEST_CASE("speeds: CAS and Mach targets are held through altitude changes") {
     heli.hold(0.0, 3000.0, knots(100.0), AltitudeRef::Absolute, SpeedRef::Calibrated);
     simulate(heli, 120.0);
     CHECK_NEAR(heli.state().calibrated_airspeed, knots(100.0), knots(3.0));
+}
+
+TEST_CASE("fuel: burns with the thrust, lightens the aircraft, stops the engine when empty") {
+    const FixedWingParams p = presets::single_engine_fighter();
+    FlightAgent a(p, airborne({0, 0, 9144}, 0.0, 240.0));
+    CHECK_NEAR(a.state().fuel, p.fuel_capacity, 1e-9);
+    CHECK_NEAR(a.state().mass, p.mass, 1e-9);
+    simulate(a, 60.0);
+    const FlightState cruise = a.state();
+    CHECK(cruise.fuel < p.fuel_capacity);
+    CHECK_NEAR(cruise.mass, p.mass - (p.fuel_capacity - cruise.fuel), 1e-6);
+    CHECK(cruise.throttle < p.engine.dry_thrust_fraction);  // cruise on dry thrust
+    // Accelerating on afterburner burns several times more.
+    a.hold(0.0, 9144.0, 600.0);
+    double max_flow = 0.0;
+    double max_throttle = 0.0;
+    simulate(a, 20.0, {}, {}, [&](const FlightState& s, double) {
+        max_flow = std::max(max_flow, s.fuel_flow);
+        max_throttle = std::max(max_throttle, s.throttle);
+    });
+    CHECK(max_throttle > p.engine.dry_thrust_fraction + 0.1);
+    CHECK(max_flow > 3.0 * cruise.fuel_flow);
+
+    // Empty tanks: no thrust, the aircraft glides down; refuelled it climbs back.
+    a.hold(0.0, 9144.0, 240.0);
+    a.set_fuel(1.0);
+    simulate(a, 120.0);
+    CHECK(a.state().fuel == 0.0);
+    CHECK(a.state().fuel_flow == 0.0);
+    CHECK(a.state().position.z < 9000.0);
+    a.set_fuel(2000.0);
+    CHECK_NEAR(a.state().mass, p.mass - (p.fuel_capacity - 2000.0), 1e-6);
+    simulate(a, 240.0);
+    CHECK_NEAR(a.state().position.z, 9144.0, 20.0);
+    // Snapshots carry the fuel.
+    CHECK_NEAR(a.snapshot().fuel, a.state().fuel, 1e-9);
+}
+
+TEST_CASE("fuel: parked aircraft do not burn; presets without fuel data are unchanged") {
+    InitialConditions ic;
+    ic.on_ground = true;
+    ic.fuel = 50.0;
+    FlightAgent parked(presets::light_propeller(), ic);
+    simulate(parked, 600.0, [](double, double) { return 0.0; });
+    CHECK_NEAR(parked.state().fuel, 50.0, 1e-9);
+    FixedWingParams p = presets::light_propeller();
+    p.fuel_capacity = 0.0;
+    FlightAgent no_fuel(p, airborne({0, 0, 1000}, 0.0, p.cruise_speed));
+    simulate(no_fuel, 60.0);
+    CHECK(std::isnan(no_fuel.state().fuel));
+    CHECK(no_fuel.state().fuel_flow == 0.0);
+    CHECK_NEAR(no_fuel.state().mass, p.mass, 1e-9);
+}
+
+TEST_CASE("fuel: preset endurance against published figures") {
+    using fmperf::endurance;
+    CHECK(std::abs(endurance(presets::propeller_uav(), feet(20000.0)).hours - 30.0) < 3.0);
+    FixedWingParams light = presets::twin_propeller_uav();
+    light.mass = 2700.0;  // 150 kg payload
+    const double aksungur = endurance(light, feet(20000.0)).hours;
+    CHECK(aksungur > 40.0 && aksungur < 49.0);
+    CHECK(std::abs(endurance(presets::turboprop_trainer(), feet(15000.0), knots(188.0)).hours -
+                   4.25) < 0.3);
+    CHECK(std::abs(endurance(presets::jet_uav(), feet(30000.0), 182.0).hours - 5.0) < 0.5);
 }

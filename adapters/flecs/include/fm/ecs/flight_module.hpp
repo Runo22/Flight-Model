@@ -106,6 +106,7 @@ struct FlightPose {
     double angle_of_attack = 0.0; // deg
     double sideslip_angle = 0.0;  // deg, positive = relative wind from the right
     double turn_rate = 0.0;       // deg/s, positive = right
+    double fuel = std::numeric_limits<double>::quiet_NaN();  // kg left, NaN = not modelled
     // Everything else (accelerations, rates, EAS, dynamic pressure ...): agent(e)->state().
     FlightMode mode = FlightMode::Cruise;
     FlightPhase phase = FlightPhase::Airborne;

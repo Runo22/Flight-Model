@@ -113,6 +113,9 @@ struct FlightState {
     double roll_rate = 0.0;        // rad/s, roll angle change, positive = right wing down
     double throttle = 0.0;         // 0..1
     double mach = 0.0;
+    double mass = 0.0;             // kg, now
+    double fuel = kUnknown;        // kg left (NaN = fuel not modelled)
+    double fuel_flow = 0.0;        // kg/s
     double height_above_terrain = kUnknown;  // m
     bool on_ground = false;
     bool speed_brake = false;
@@ -129,6 +132,7 @@ struct InitialConditions {
     double heading = 0.0;   // rad
     double speed = 0.0;     // m/s true airspeed (0 with on_ground = parked)
     bool on_ground = false;
+    double fuel = kUnknown; // kg on board (NaN = full tanks); models with fuel only
 };
 
 }  // namespace fm

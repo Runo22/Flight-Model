@@ -37,6 +37,8 @@ double density_lapse(double sigma, double exponent) {
 
 FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& ic)
     : p_(std::move(params)), terrain_(std::max(1.0, p_.cruise_speed * 0.25)) {
+    mass_ = p_.mass;
+    if (fuel_modelled()) set_fuel(std::isnan(ic.fuel) ? p_.fuel_capacity : ic.fuel);
     if (p_.engine.critical_altitude > 0.0) {
         rated_lapse_ = density_lapse(isa(p_.engine.critical_altitude).sigma,
                                      p_.engine.density_exponent);
@@ -99,6 +101,14 @@ void FixedWingAgent::set_speed(double speed, SpeedRef ref) {
     speed_ref_ = ref;
     speed_command_ = speed;
     speed_target_ = true_airspeed(speed, ref, isa(position_.z, temperature_offset_));
+}
+
+void FixedWingAgent::set_fuel(double fuel) {
+    if (!fuel_modelled() || !std::isfinite(fuel)) return;
+    fuel_ = std::clamp(fuel, 0.0, p_.fuel_capacity);
+    mass_ = p_.mass - (p_.fuel_capacity - fuel_);
+    out_.fuel = fuel_;
+    out_.mass = mass_;
 }
 
 void FixedWingAgent::go_to(const Vec3& point, const GoToOptions& options) {
@@ -297,6 +307,7 @@ void FixedWingAgent::step(double dt, const Environment& input) {
         const Command cmd = guidance(atm, env.wind, ref);
         const Control c = autopilot(cmd, atm);
         integrate(c, atm, env.wind, h);
+        burn_fuel(tas_, atm, h);
     }
     update_output(atm, env.wind);
     motion_.update(out_, dt);
@@ -664,7 +675,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     }
 
     const double g = kGravity;
-    const double m = p_.mass;
+    const double m = mass_;
     const double v = std::max(tas_, kMinAirspeed);
 
     // Speed envelope
@@ -721,6 +732,9 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const bool has_brake = p_.speedbrake_dcd0 > 0.0;
     const double n_now = std::cos(gamma_) / std::max(std::cos(bank_), 0.2);
     const double t_max = thrust_available(v, atm);
+    // Engine out (no fuel): glide at the best glide speed instead of holding the altitude.
+    const bool engine_out = t_max <= 0.0;
+    if (engine_out) v_cmd = std::clamp(min_drag_speed(atm.density), v_min, v_max);
     const double t_idle = p_.engine.idle_throttle * t_max;
     const double excess = (t_max - drag(v, n_now, atm, false)) / m;
     const double idle_accel = (t_idle - drag(v, n_now, atm, has_brake)) / m;
@@ -743,7 +757,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const double gamma_lo =
         std::min(std::asin(std::clamp((idle_accel - vdot_cmd) / g, -0.9, 0.9)), 0.0);
     double gamma_hi = std::asin(std::clamp((excess - vdot_cmd) / g, -0.9, 0.9));
-    if (v >= v_min) gamma_hi = std::max(gamma_hi, std::min(gamma_cmd, 0.0));
+    if (v >= v_min && !engine_out) gamma_hi = std::max(gamma_hi, std::min(gamma_cmd, 0.0));
     gamma_cmd = std::clamp(gamma_cmd, gamma_lo, std::max(gamma_lo, gamma_hi));
     c.gamma = gamma_cmd;
 
@@ -764,7 +778,7 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
         return;
     }
     const double g = kGravity;
-    const double m = p_.mass;
+    const double m = mass_;
     const double w = m * g;
     speed_brake_ = c.speed_brake;
 
@@ -828,7 +842,7 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
 }
 
 void FixedWingAgent::integrate_ground(const Control& c, const AtmosphereSample& atm, double dt) {
-    const double m = p_.mass;
+    const double m = mass_;
     const double w = m * kGravity;
     const double v = tas_;
 
@@ -898,6 +912,9 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
     out_.attitude.pitch = on_ground_ ? gamma_ + ground_pitch_ : gamma_ + alpha_ * std::cos(bank_);
     out_.airspeed = tas_;
     set_air_data(out_, atm);
+    out_.mass = mass_;
+    out_.fuel = fuel_modelled() ? fuel_ : kUnknown;
+    out_.fuel_flow = fuel_flow_;
     out_.ground_speed = out_.velocity.xy().length();
     out_.vertical_speed = out_.velocity.z;
     out_.track = out_.ground_speed > 0.1 ? heading_of(out_.velocity.xy()) : heading_;
@@ -975,7 +992,7 @@ void FixedWingAgent::trim_level(const AtmosphereSample& atm) {
     throttle_ = std::clamp(t_req / std::max(thrust_available(tas_, atm), 1e-6),
                            p_.engine.idle_throttle, 1.0);
     const double qs = 0.5 * atm.density * tas_ * tas_ * p_.wing_area;
-    alpha_ = (p_.mass * kGravity / qs - cl0()) / p_.cl_alpha;
+    alpha_ = (mass_ * kGravity / qs - cl0()) / p_.cl_alpha;
 }
 
 L1Settings FixedWingAgent::l1_settings(double ground_speed) const {
@@ -995,11 +1012,17 @@ double FixedWingAgent::altitude_target_now(double lookahead) const {
     return ground + altitude_target_;
 }
 
+double FixedWingAgent::engine_lapse(const AtmosphereSample& atm) const {
+    double lapse = density_lapse(atm.sigma, p_.engine.density_exponent);
+    // Turbocharged / flat-rated: the rating holds up to the critical altitude.
+    if (p_.engine.critical_altitude > 0.0) lapse = std::min(1.0, lapse / rated_lapse_);
+    return lapse;
+}
+
 double FixedWingAgent::thrust_available(double tas, const AtmosphereSample& atm) const {
     const EngineParams& e = p_.engine;
-    double lapse = density_lapse(atm.sigma, e.density_exponent);
-    // Turbocharged / flat-rated: the rating holds up to the critical altitude.
-    if (e.critical_altitude > 0.0) lapse = std::min(1.0, lapse / rated_lapse_);
+    if (fuel_modelled() && fuel_ <= 0.0) return 0.0;  // out of fuel
+    const double lapse = engine_lapse(atm);
     if (e.type == EngineType::Jet) {
         const double mach = tas / atm.speed_of_sound;
         return e.max_thrust * lapse * std::clamp(1.0 - e.mach_lapse * mach, 0.2, 2.0);
@@ -1012,7 +1035,7 @@ double FixedWingAgent::drag(double tas, double load_factor, const AtmosphereSamp
                             bool brake) const {
     const double qs = 0.5 * atm.density * tas * tas * p_.wing_area;
     if (qs < 1e-6) return 0.0;
-    const double cl = std::min(load_factor * p_.mass * kGravity / qs, 1.2 * cl_max());
+    const double cl = std::min(load_factor * mass_ * kGravity / qs, 1.2 * cl_max());
     double cd = cd0() + p_.induced_drag_k * cl * cl;
     if (p_.wave_drag > 0.0 && p_.mach_critical < 1.0) {
         const double x = std::clamp((tas / atm.speed_of_sound - p_.mach_critical) /
@@ -1030,17 +1053,43 @@ double FixedWingAgent::cd0() const { return p_.cd0 + (flaps_ ? p_.flaps_dcd0 : 0
 
 double FixedWingAgent::stall_speed(double density, bool flaps) const {
     const double cl = p_.cl_max + (flaps ? p_.flaps_dcl_max : 0.0);
-    return std::sqrt(2.0 * p_.mass * kGravity / (density * p_.wing_area * cl));
+    return std::sqrt(2.0 * mass_ * kGravity / (density * p_.wing_area * cl));
 }
 
 double FixedWingAgent::min_drag_speed(double density) const {
     const double cl = std::sqrt(cd0() / std::max(p_.induced_drag_k, 1e-6));
-    return std::sqrt(2.0 * p_.mass * kGravity / (density * p_.wing_area * cl));
+    return std::sqrt(2.0 * mass_ * kGravity / (density * p_.wing_area * cl));
+}
+
+double FixedWingAgent::fuel_flow(double tas, const AtmosphereSample& atm) const {
+    const EngineParams& e = p_.engine;
+    if (!fuel_modelled() || fuel_ <= 0.0) return 0.0;
+    if (e.type == EngineType::Propeller) {
+        // Shaft power: the throttle share of the power available here.
+        return e.fuel_consumption * throttle_ * e.max_power * engine_lapse(atm);
+    }
+    const double full = thrust_available(tas, atm);
+    const double thrust = throttle_ * full;
+    const double dry = e.dry_thrust_fraction * full;
+    if (thrust <= dry || e.dry_thrust_fraction >= 1.0) return e.fuel_consumption * thrust;
+    // Afterburner: from the dry flow at full dry thrust to the full afterburner flow.
+    const double share = (thrust - dry) / std::max(full - dry, 1e-9);
+    const double dry_flow = e.fuel_consumption * dry;
+    return dry_flow + share * (e.afterburner_consumption * full - dry_flow);
+}
+
+void FixedWingAgent::burn_fuel(double tas, const AtmosphereSample& atm, double dt) {
+    // Parked or stopped after landing: engines off.
+    const bool engines_off = on_ground_ && (phase_ == FlightPhase::Parked ||
+                                            phase_ == FlightPhase::Landed ||
+                                            phase_ == FlightPhase::TerrainContact);
+    fuel_flow_ = engines_off ? 0.0 : fuel_flow(tas, atm);
+    if (fuel_flow_ > 0.0) set_fuel(fuel_ - fuel_flow_ * dt);
 }
 
 double FixedWingAgent::climb_rate_at(double tas, const AtmosphereSample& atm) const {
     const double v = std::max(tas, kMinAirspeed);
-    return (thrust_available(v, atm) - drag(v, 1.0, atm, false)) * v / (p_.mass * kGravity);
+    return (thrust_available(v, atm) - drag(v, 1.0, atm, false)) * v / (mass_ * kGravity);
 }
 
 double FixedWingAgent::climb_speed(const AtmosphereSample& atm, double v_min, double v_max) {

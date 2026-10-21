@@ -34,6 +34,9 @@ public:
     // Speed target in TAS (m/s), CAS (m/s) or Mach. CAS and Mach targets are held while
     // the altitude changes (the true airspeed follows).
     void set_speed(double speed, SpeedRef ref = SpeedRef::True);
+    // Fuel on board (kg, clamped to the capacity): refuelling, or a different load. Empty
+    // tanks stop the engines; fuel restarts them.
+    void set_fuel(double fuel);
     void go_to(const Vec3& point, const GoToOptions& options = {});
     void follow_route(Route route);
     // radius 0 = derived from turn performance.
@@ -121,6 +124,7 @@ private:
     L1Settings l1_settings(double ground_speed) const;
     double ground_elevation() const;
     double altitude_target_now(double lookahead) const;
+    double engine_lapse(const AtmosphereSample& atm) const;  // thrust / power share left
     double thrust_available(double tas, const AtmosphereSample& atm) const;
     double drag(double tas, double load_factor, const AtmosphereSample& atm, bool brake) const;
     double cl0() const;
@@ -131,11 +135,17 @@ private:
     double min_drag_speed(double density) const;  // best climb angle, roughly
     double climb_speed(const AtmosphereSample& atm, double v_min, double v_max);
     double climb_rate_at(double tas, const AtmosphereSample& atm) const;  // m/s, full power
+    bool fuel_modelled() const { return p_.fuel_capacity > 0.0; }
+    double fuel_flow(double tas, const AtmosphereSample& atm) const;  // kg/s at throttle_
+    void burn_fuel(double tas, const AtmosphereSample& atm, double dt);
     Vec3 aim_point() const;  // glide path touchdown aim point on the runway
 
     FixedWingParams p_;
     double rated_lapse_ = 1.0;  // engine density lapse at the critical altitude
     MotionTracker motion_;
+    double fuel_ = 0.0;       // kg
+    double mass_ = 0.0;       // kg, with the fuel left
+    double fuel_flow_ = 0.0;  // kg/s
     SpeedRef speed_ref_ = SpeedRef::True;  // speed_target_ follows speed_command_ in this
     double speed_command_ = 0.0;
     double temperature_offset_ = 0.0;     // K, last ISA deviation

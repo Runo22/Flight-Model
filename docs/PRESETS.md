@@ -62,7 +62,7 @@ Veri: kanat alanı 300 ft² (27,87 m²), hava-hava yüklü kütle 26.463 lb, F11
 
 | | Measured | Reference |
 |---|---|---|
-| Top speed at 40,000 ft | 1124 kt TAS (M1.96) | M2.05 |
+| Top speed at 40,000 ft | 1125 kt TAS (M1.96) | M2.05 |
 | Top speed at sea level (with limits) | 800 kt | 800 KCAS (limit) |
 | Best climb at sea level | 48,015 ft/min at 600 kt | 50,000 ft/min |
 | Service ceiling (100 ft/min) | 58,728 ft | 50,000+ ft |
@@ -70,6 +70,7 @@ Veri: kanat alanı 300 ft² (27,87 m²), hava-hava yüklü kütle 26.463 lb, F11
 | Takeoff: ground roll, lift-off, over 50 ft | 352 m, 162 kt, 505 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 149 kt, 131 kt, 733 m, 1143 m |  |
 | AI turn at cruise speed, 10,000 ft | 6.5 deg/s at 70 deg bank |  |
+| Endurance on 3175 kg of fuel, 30,000 ft | 3 h 30 min at 467 kt, 1054 kg/h full |  |
 
 Tepe hız, gerçekçi sürükleme değerleriyle %4 düşük kaldı. Sürüklemeyi gerçek dışı küçültmek
 yerine bu bırakıldı. Kalkış afterburner'la yapılır.
@@ -91,6 +92,7 @@ bir başlangıç.
 | Takeoff: ground roll, lift-off, over 50 ft | 316 m, 153 kt, 465 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 147 kt, 131 kt, 724 m, 1139 m |  |
 | AI turn at cruise speed, 10,000 ft | 6.2 deg/s at 70 deg bank |  |
+| Endurance on 6100 kg of fuel, 30,000 ft | 4 h 02 min at 486 kt, 1718 kg/h full |  |
 
 Tepe hız %6 düşük; sebep F-16'daki ile aynı.
 
@@ -103,7 +105,7 @@ stall 77 KCAS, 50 ft engeli aşarak kalkış 489 m, 50 ft'ten iniş 593 m, +7 / 
 
 | | Measured | Reference |
 |---|---|---|
-| Top speed at 30,000 ft | 289 kt TAS (M0.49) | 288 KTAS max cruise |
+| Top speed at 30,000 ft | 290 kt TAS (M0.49) | 288 KTAS max cruise |
 | Top speed at sea level (with limits) | 310 kt | 310 KCAS |
 | Best climb at sea level | 4414 ft/min at 127 kt | 4,370 ft/min |
 | Service ceiling (100 ft/min) | 35,852 ft | 34,700-39,270 ft |
@@ -111,6 +113,7 @@ stall 77 KCAS, 50 ft engeli aşarak kalkış 489 m, 50 ft'ten iniş 593 m, +7 / 
 | Takeoff: ground roll, lift-off, over 50 ft | 319 m, 94 kt, 452 m | 489 m over 50 ft |
 | Landing: approach, touchdown, roll, from 50 ft | 99 kt, 91 kt, 377 m, 659 m | 593 m from 50 ft |
 | AI turn at cruise speed, 10,000 ft | 7.6 deg/s at 60 deg bank |  |
+| Endurance on 544 kg of fuel, 15,000 ft | 4 h 16 min at 188 kt, 139 kg/h full | 4 h 15 min at 15,000 ft (798 nm) |
 
 Azami seyir hızı (288 KTAS) uydurmada kullanılmadı. Model 30.000 ft'te 289 kt verdi;
 bu, ayardan bağımsız bir doğrulama.
@@ -133,6 +136,7 @@ belirsizdir.
 | Takeoff: ground roll, lift-off, over 50 ft | 560 m, 128 kt, 685 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt, 642 m, 1047 m |  |
 | AI turn at cruise speed, 10,000 ft | 3.7 deg/s at 50 deg bank |  |
+| Endurance on 1850 kg of fuel, 30,000 ft | 5 h 10 min at 354 kt, 398 kg/h full | ~5 h |
 
 ### `propeller_uav()` — TUSAŞ Anka-S sınıfı, 1.700 kg
 
@@ -147,14 +151,14 @@ irtifaya kadar sabit kalır, üstünde `density_exponent` ile düşer. 6.096 m v
 tablosu birebir çıkar (170 / 130 / 90 hp).
 
 Yayımlanan 117 kt deniz seviyesinde tutturuldu ve AI'nin hız sınırı (EAS) olarak kullanıldı.
-Turbo motor gücünü koruduğu için gerçek hava hızı irtifayla artar: 20.000 ft'te ~144 kt
+Turbo motor gücünü koruduğu için gerçek hava hızı irtifayla artar: 20.000 ft'te ~145 kt
 (turbo-şarjlı pistonlu uçaklarda olduğu gibi). Varsayılan seyir 90 kt; daha hızlı uçması
 için komutta hız verilebilir ya da `cruise_speed` artırılabilir (deniz seviyesinde 110 kt
 gücün çoğunu kullanır, tırmanmaya az güç kalır).
 
 | | Measured | Reference |
 |---|---|---|
-| Top speed at 20,000 ft | 144 kt TAS (M0.23) |  |
+| Top speed at 20,000 ft | 145 kt TAS (M0.24) |  |
 | Top speed at sea level (with limits) | 117 kt | 117 kt (217 km/h) |
 | Best climb at sea level | 683 ft/min at 79 kt |  |
 | Service ceiling (100 ft/min) | 30,085 ft | 30,000 ft |
@@ -162,6 +166,7 @@ gücün çoğunu kullanır, tırmanmaya az güç kalır).
 | Takeoff: ground roll, lift-off, over 50 ft | 449 m, 66 kt, 714 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 75 kt, 70 kt, 286 m, 647 m |  |
 | AI turn at cruise speed, 10,000 ft | 6.8 deg/s at 30 deg bank |  |
+| Endurance on 385 kg of fuel, 20,000 ft | 29 h 44 min at 113 kt, 16 kg/h full | 30 h |
 
 ### `twin_propeller_uav()` — TUSAŞ Aksungur sınıfı, 3.300 kg
 
@@ -189,6 +194,8 @@ bir görev irtifasıdır, servis tavanı değil. Model 3.300 kg'da 33.700 ft'e t
 | Takeoff: ground roll, lift-off, over 50 ft | 454 m, 69 kt, 703 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 78 kt, 73 kt, 317 m, 681 m |  |
 | AI turn at cruise speed, 10,000 ft | 6.4 deg/s at 30 deg bank |  |
+| Endurance on 690 kg of fuel, 20,000 ft | 31 h 32 min at 117 kt, 26 kg/h full | 12 h with 750 kg payload (TAI, a lighter fuel load) |
+| Endurance at 2700 kg, 20,000 ft | 44 h 32 min at 106 kt, 19 kg/h full | 40 h (EO payload), 49 h demonstrated |
 
 İki İHA da kalkış, rota ve piste iniş testinden geçer. Tırmanmaları zayıftır (~700-800 ft/dk).
 Arazi tabanının altına düşen bir uçak artık hızını en iyi tırmanma açısı hızına düşürüp
@@ -340,6 +347,39 @@ Ayarlarken:
 | Dönüşte hız kaybı, yatma, drift | `turn_speed_loss`, `heel_max`, `drift_angle_max` |
 | Yerinde dönüş | `pivot_rate` (baş itici yoksa küçük) |
 | Rota takibinin sıkılığı | `path_lookahead` (çok küçük = zikzak) |
+
+## Yakıt ve kütle
+
+Sabit kanatlılarda `fuel_capacity > 0` ise yakıt modellenir:
+
+* `mass` dolu depolu kütledir; yakıt yandıkça uçak hafifler (tavan ve tırmanma artar).
+* Yakıt bitince motor durur. Uçak en iyi süzülme hızına geçip süzülür. `set_fuel()` ile
+  ikmal edilirse motor yeniden çalışır.
+* Park hâlinde ya da inişten sonra durduğunda yakıt yanmaz.
+* Çıktılar: `fuel` (kg, modellenmiyorsa NaN), `fuel_flow` (kg/s), `mass` (kg).
+* Başlangıç yakıtı `InitialConditions::fuel` ile verilir (NaN = dolu); `snapshot()` onu
+  taşır.
+
+Tüketim modeli:
+
+* **Jet:** `fuel_consumption` = TSFC (kg/s / N), itkiyle orantılı.
+* **Afterburner:** `dry_thrust_fraction` üstündeki itkide, tam afterburner tüketimine
+  (`afterburner_consumption`) doğru doğrusal artar.
+* **Pervaneli:** `fuel_consumption` = BSFC (kg/s / W), şaft gücüyle orantılı.
+
+| Preset | Yakıt | Tüketim | Kaynak / yöntem |
+|---|---|---|---|
+| F-16C sınıfı | 3.175 kg (7.000 lb, iç) | TSFC 0,76 / AB 1,95 lb/lbf/sa | İç yakıt yayımlanmış; TSFC tipik F110 değerleri |
+| F-15C sınıfı | 6.100 kg (13.455 lb, iç) | TSFC 0,73 / AB 2,1 lb/lbf/sa | İç yakıt yayımlanmış; TSFC tipik F100 değerleri |
+| Hürkuş sınıfı | 544 kg (680 l kullanılabilir) | BSFC 0,72 lb/shp/sa | Yakıt EASA tip sertifikasından; BSFC 15.000 ft'te 4 sa 15 dk'ya uyduruldu |
+| Kızılelma sınıfı | 1.850 kg | TSFC 0,7 lb/lbf/sa | İkisi de tahmin; yakıt ~5 saate uyduruldu |
+| Anka-S sınıfı | 385 kg | BSFC 207 g/kWh | BSFC TEI veri sayfasından; yakıt 30 saate uyduruldu (Block-A: 400 l ile 18 sa) |
+| Aksungur sınıfı | 690 kg | BSFC 207 g/kWh | Aynı motor; yakıt 150 kg faydalı yükte 40-49 saate uyduruldu |
+| Genel presetler | sınıf tipik | sınıf tipik | Yolcu jeti FL350'de ~8 sa, hafif pervaneli ~6 sa |
+
+Aksungur için TAI'nin "750 kg faydalı yükle 12 saat" değeri, azami kalkış ağırlığı sınırı
+yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir. Modelde bu,
+`set_fuel` ya da `InitialConditions::fuel` ile daha az yakıtla başlanarak temsil edilir.
 
 ## Kendi uçağını ayarlamak
 

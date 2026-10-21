@@ -146,6 +146,9 @@ public:
     const FlightState& state() const;
     FlightMode mode() const;
 
+    // Fuel on board in kg (refuelling): models with fuel (fixed-wing with fuel_capacity).
+    void set_fuel(double fuel);
+
     // State of this agent as seen by its followers.
     LeaderState as_leader() const;
     // Starting conditions that reproduce the current state; used to switch to another

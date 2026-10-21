@@ -67,6 +67,10 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
     hızları.
   - Açılar: hücum açısı, yan kayma.
   - Hız komutları TAS, CAS ya da Mach olarak verilebilir.
+- **Yakıt ve kütle (sabit kanat):** TSFC / BSFC ile tüketim (afterburner ayrı), hafifleyen
+  kütle, yakıt bitince motor durması ve en iyi süzülme hızında süzülme, ikmal (`set_fuel`).
+  Yatay uçuşta hızlanmada itki fazlasının tamamı kullanılır (savaş uçağı tam afterburner
+  ile ivmelenir).
 - **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
   itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
   otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra
@@ -75,7 +79,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   arkadan yaklaşma, gemiyle aynı hıza gelip spotun üstünde alçalma, güvertede gemiyle
   birlikte hareket, hareketli güverteden kalkış. Taşıyıcı simüle edilen bir gemi ya da
   oyunun hareket ettirdiği herhangi bir entity olabilir (`fm::ecs::land_on`).
-- **Testler:** 83 çekirdek + 23 Flecs + navigasyon örneği + 2 plugin testi;
+- **Testler:** 86 çekirdek + 23 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -93,7 +97,6 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 ### Faz 2 — Veri odaklı parametreler
 - Uçak tiplerini JSON'dan okuma (glaze veya nlohmann/json), hot-reload.
 - Flecs prefab entegrasyonu: tip başına prefab, entity'ler `is_a` ile parametre paylaşır.
-- Yakıt tüketimi ve kütle değişimi.
 
 ### Faz 3 — Gelişmiş trajektori
 - Zaman etiketli (4D) trajektori: belirli bir noktaya belirli bir saatte varma.

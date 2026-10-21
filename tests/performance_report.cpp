@@ -48,7 +48,19 @@ struct FixedWingReference {
     std::string top_speed, sea_level_speed, climb, ceiling, stall, takeoff, landing;
     double light_mass = 0.0;     // kg, also measure the ceiling at this mass (0 = no)
     std::string light_ceiling{};
+    // Endurance (presets with fuel): altitude (0 = high_altitude), speed (0 = the speed of
+    // the lowest fuel flow), reference; and at light_mass.
+    double endurance_altitude = 0.0;
+    double endurance_speed = 0.0;
+    std::string endurance{};
+    std::string light_endurance{};
 };
+
+std::string hours(double h) {
+    const int minutes = static_cast<int>(std::lround(h * 60.0));
+    return std::to_string(minutes / 60) + " h " + (minutes % 60 < 10 ? "0" : "") +
+           std::to_string(minutes % 60) + " min";
+}
 
 void report(const FixedWingParams& p, const std::string& title, const FixedWingReference& ref) {
     const double h = ref.high_altitude;
@@ -85,6 +97,22 @@ void report(const FixedWingParams& p, const std::string& title, const FixedWingR
         rows.insert(rows.begin() + 4, {format("Service ceiling at %.0f kg", ref.light_mass),
                                        format("%.0f ft", ft(service_ceiling(light))),
                                        ref.light_ceiling});
+    }
+    if (p.fuel_capacity > 0.0) {
+        const double alt = ref.endurance_altitude > 0.0 ? ref.endurance_altitude : h;
+        auto row = [&](const FixedWingParams& q, const std::string& what, const std::string& r) {
+            const Endurance e = endurance(q, alt, ref.endurance_speed);
+            rows.push_back({what + format(", %.0f ft", ft(alt)),
+                            hours(e.hours) + format(" at %.0f kt", kt(e.speed)) +
+                                format(", %.0f kg/h full", e.flow_full),
+                            r});
+        };
+        row(p, format("Endurance on %.0f kg of fuel", p.fuel_capacity), ref.endurance);
+        if (ref.light_mass > 0.0) {
+            FixedWingParams light = p;
+            light.mass = ref.light_mass;
+            row(light, format("Endurance at %.0f kg", ref.light_mass), ref.light_endurance);
+        }
     }
     print(title, rows);
 }
@@ -159,32 +187,47 @@ int main(int argc, char** argv) {
     const char* filter = argc > 1 ? argv[1] : nullptr;
 
     if (wanted(filter, "single_engine_fighter")) {
-        report(presets::single_engine_fighter(), "single_engine_fighter: F-16C Block 50 class, 12,000 kg",
-               {12192.0, "M2.05", "800 KCAS (limit)", "50,000 ft/min", "50,000+ ft", "", "", ""});
+        FixedWingReference ref{12192.0, "M2.05", "800 KCAS (limit)", "50,000 ft/min",
+                               "50,000+ ft", "", "", ""};
+        ref.endurance_altitude = feet(30000.0);
+        ref.endurance_speed = 240.0;  // Mach 0.8
+        report(presets::single_engine_fighter(),
+               "single_engine_fighter: F-16C Block 50 class, 12,000 kg", ref);
     }
     if (wanted(filter, "twin_engine_fighter")) {
-        report(presets::twin_engine_fighter(), "twin_engine_fighter: F-15C class, 20,200 kg",
-               {12192.0, "M2.5+", "M1.2 (800 KCAS)", "> 50,000 ft/min", "60,000-65,000 ft", "", "", ""});
+        FixedWingReference ref{12192.0, "M2.5+", "M1.2 (800 KCAS)", "> 50,000 ft/min",
+                               "60,000-65,000 ft", "", "", ""};
+        ref.endurance_altitude = feet(30000.0);
+        ref.endurance_speed = 250.0;
+        report(presets::twin_engine_fighter(), "twin_engine_fighter: F-15C class, 20,200 kg", ref);
     }
     if (wanted(filter, "turboprop_trainer")) {
-        report(presets::turboprop_trainer(), "turboprop_trainer: TAI Hurkus class, 3,300 kg",
-               {feet(30000.0), "288 KTAS max cruise", "310 KCAS", "4,370 ft/min",
-                "34,700-39,270 ft", "77 KCAS landing config", "489 m over 50 ft",
-                "593 m from 50 ft"});
+        FixedWingReference ref{feet(30000.0), "288 KTAS max cruise", "310 KCAS", "4,370 ft/min",
+                               "34,700-39,270 ft", "77 KCAS landing config", "489 m over 50 ft",
+                               "593 m from 50 ft"};
+        ref.endurance_altitude = feet(15000.0);
+        ref.endurance_speed = knots(188.0);  // 798 nm in 4.25 h
+        ref.endurance = "4 h 15 min at 15,000 ft (798 nm)";
+        report(presets::turboprop_trainer(), "turboprop_trainer: TAI Hurkus class, 3,300 kg", ref);
     }
     if (wanted(filter, "jet_uav")) {
-        report(presets::jet_uav(), "jet_uav: Bayraktar Kizilelma class, 6,000 kg",
-               {feet(30000.0), "M0.9", "", "", "12,000-14,000 m", "", "", ""});
+        FixedWingReference ref{feet(30000.0), "M0.9", "", "", "12,000-14,000 m", "", "", ""};
+        ref.endurance_speed = 182.0;  // Mach 0.6
+        ref.endurance = "~5 h";
+        report(presets::jet_uav(), "jet_uav: Bayraktar Kizilelma class, 6,000 kg", ref);
     }
     if (wanted(filter, "propeller_uav")) {
-        report(presets::propeller_uav(), "propeller_uav: TAI Anka-S class, 1,700 kg",
-               {feet(20000.0), "", "117 kt (217 km/h)", "", "30,000 ft", "", "", ""});
+        FixedWingReference ref{feet(20000.0), "", "117 kt (217 km/h)", "", "30,000 ft", "", "", ""};
+        ref.endurance = "30 h";
+        report(presets::propeller_uav(), "propeller_uav: TAI Anka-S class, 1,700 kg", ref);
     }
     if (wanted(filter, "twin_propeller_uav")) {
         FixedWingReference ref{feet(20000.0), "", "135 kt (250 km/h)", "",
                                "25,000 ft operating altitude with 750 kg payload", "", "", ""};
         ref.light_mass = 2700.0;
         ref.light_ceiling = "35,000 ft with 150 kg payload; 40,000 ft maximum";
+        ref.endurance = "12 h with 750 kg payload (TAI, a lighter fuel load)";
+        ref.light_endurance = "40 h (EO payload), 49 h demonstrated";
         report(presets::twin_propeller_uav(), "twin_propeller_uav: TAI Aksungur class, 3,300 kg",
                ref);
     }
@@ -192,6 +235,11 @@ int main(int argc, char** argv) {
                                      presets::regional_turboprop(), presets::light_propeller()}) {
         FixedWingReference none;
         none.high_altitude = 6000.0;
+        none.endurance_speed = p.cruise_speed;
+        none.endurance_altitude = p.name == "airliner_jet"      ? 10668.0  // FL350
+                                  : p.name == "fast_jet"        ? 9144.0
+                                  : p.name == "light_propeller" ? 2000.0
+                                                                : 6000.0;
         if (wanted(filter, p.name)) report(p, p.name + " (generic class preset)", none);
     }
 

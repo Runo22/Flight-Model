@@ -125,6 +125,15 @@ bool FlightAgent::land_on(const DeckSpot& spot) {
         impl_);
 }
 
+void FlightAgent::set_fuel(double fuel) {
+    if (!std::isfinite(fuel)) return;
+    std::visit(
+        [&](auto& m) {
+            if constexpr (requires { m.set_fuel(fuel); }) m.set_fuel(fuel);
+        },
+        impl_);
+}
+
 bool FlightAgent::tracks_leader() const {
     return std::visit(
         [](const auto& m) {
@@ -183,6 +192,7 @@ InitialConditions FlightAgent::snapshot() const {
     ic.heading = s.attitude.heading;
     ic.speed = s.airspeed;
     ic.on_ground = s.on_ground;
+    ic.fuel = s.fuel;
     if (s.on_ground) {
         // On the ground the initial z is the ground elevation.
         ic.position.z -= std::visit([](const auto& m) { return double(m.ground_offset()); }, impl_);

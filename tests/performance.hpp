@@ -62,8 +62,15 @@ inline double highest(double lo, double hi, double tolerance, const std::functio
 
 // --- Fixed-wing --------------------------------------------------------------------------
 
+// Performance is measured at the preset mass: no fuel burn.
+inline FixedWingParams constant_mass(FixedWingParams p) {
+    p.fuel_capacity = 0.0;
+    return p;
+}
+
 // The aircraft without the AI pilot's operating limits: what the airframe and engines can do.
 inline FixedWingParams physical(FixedWingParams p, bool keep_speed_limits = false) {
+    p = constant_mass(std::move(p));
     p.climb_speed = -1.0;  // measure at the given speed
     p.climb_rate_max = 1000.0;
     p.climb_angle_max = deg2rad(80.0);
@@ -154,7 +161,7 @@ struct Takeoff {
 };
 
 inline Takeoff takeoff(const FixedWingParams& p) {
-    FixedWingAgent a(p, parked());
+    FixedWingAgent a(constant_mass(p), parked());
     a.takeoff({});
     Takeoff r;
     bool airborne_now = false;
@@ -185,7 +192,7 @@ struct Landing {
 inline Landing landing(const FixedWingParams& p) {
     const double distance = p.final_approach_distance + 6000.0;
     // Start south of the runway, landing northwards.
-    FixedWingAgent b(p, [&] {
+    FixedWingAgent b(constant_mass(p), [&] {
         InitialConditions ic = airborne(distance * std::tan(p.glide_slope) + 300.0,
                                         1.6 * stall_speed(p, 0.0, false));
         ic.position.y = -distance;
@@ -228,7 +235,7 @@ struct Turn {
 
 // A 180 degree course reversal at `altitude` and `speed` with the AI pilot's limits.
 inline Turn course_reversal(const FixedWingParams& p, double altitude, double speed) {
-    FixedWingAgent a(p, airborne(altitude, speed));
+    FixedWingAgent a(constant_mass(p), airborne(altitude, speed));
     a.hold(deg2rad(179.0), altitude, speed);
     Turn r;
     double last_heading = 0.0;
@@ -240,6 +247,56 @@ inline Turn course_reversal(const FixedWingParams& p, double altitude, double sp
         r.speed_loss = std::max(r.speed_loss, speed - s.airspeed);
         return std::abs(wrap_pi(s.track - deg2rad(179.0))) < deg2rad(2.0);
     });
+    return r;
+}
+
+struct Endurance {
+    double hours = 0.0;     // until the tanks are empty
+    double speed = 0.0;     // m/s TAS flown with full tanks
+    double flow_full = 0.0; // kg/h with full tanks
+};
+
+// Level flight at `altitude` on a full load of fuel, at `speed` (0 = the speed of the
+// lowest fuel flow at each mass), integrated over the falling mass (Simpson).
+inline Endurance endurance(const FixedWingParams& p, double altitude, double speed = 0.0) {
+    if (p.fuel_capacity <= 0.0) return {};
+    auto flow_at = [&](double fuel, double v) {
+        InitialConditions ic = airborne(altitude, v);
+        ic.fuel = fuel;
+        FixedWingAgent a(p, ic);
+        a.hold(0.0, altitude, v);
+        fly(a, 60.0, kUnknown);
+        return a.state().fuel_flow;  // kg/s
+    };
+    auto best = [&](double fuel, double& v_best) {
+        if (speed > 0.0) {
+            v_best = speed;
+            return flow_at(fuel, speed);
+        }
+        FixedWingParams light = p;
+        light.mass = p.mass - (p.fuel_capacity - fuel);
+        const double lo = 1.3 * stall_speed(light, altitude, false);
+        const double hi = std::max(lo + 1.0, 1.3 * p.cruise_speed);
+        double flow = 1e9;
+        for (int i = 0; i <= 16; ++i) {
+            const double v = lo + (hi - lo) * i / 16.0;
+            const double f = flow_at(fuel, v);
+            if (f < flow) {
+                flow = f;
+                v_best = v;
+            }
+        }
+        return flow;
+    };
+    Endurance r;
+    const double full = p.fuel_capacity;
+    double v_half = 0.0;
+    double v_low = 0.0;
+    const double f_full = best(full, r.speed);
+    const double f_half = best(0.5 * full, v_half);
+    const double f_low = best(0.02 * full, v_low);
+    r.flow_full = f_full * 3600.0;
+    r.hours = full / 6.0 * (1.0 / f_full + 4.0 / f_half + 1.0 / f_low) / 3600.0;
     return r;
 }
 

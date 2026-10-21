@@ -273,6 +273,7 @@ fm::ecs::land_on(seahawk, carrier, spot);
 | Rotada kaçıncı waypoint | `agent->fixed_wing()->route().index()` / `agent->rotorcraft()->route().index()` / `agent->ship()->route().index()` |
 | Araziden yükseklik | `agent->state().height_above_terrain` |
 | Hızlar | `FlightPose`: `airspeed` (TAS), `calibrated_airspeed` (IAS/CAS), `mach`, `ground_speed`, `vertical_speed`. `state()` ek olarak `equivalent_airspeed` ve `dynamic_pressure` verir |
+| Yakıt | `FlightPose::fuel` (kg; modellenmiyorsa NaN). `state()` ek olarak `fuel_flow` (kg/s) ve `mass` (kg) verir. İkmal: `agent->set_fuel(kg)` |
 | G ve açılar | `FlightPose`: `g_force` (gövde eksenlerinde hissedilen g: x ileri, y sağ, z yukarı; düz uçuşta ~{0, 0, 1}), `angle_of_attack`, `sideslip_angle`, `turn_rate` (derece). `state()` ek olarak `load_factor`, `acceleration` (m/s², ENU), `pitch_rate` ve `roll_rate` verir |
 
 ## 9. Hangi araç ne yapar

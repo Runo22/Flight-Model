@@ -884,6 +884,7 @@ void RotorcraftAgent::update_output(const AtmosphereSample& atm, const Vec3& win
     out_.attitude = attitude_;
     out_.airspeed = v_air.length();
     set_air_data(out_, atm);
+    out_.mass = p_.mass;
     set_air_angles(out_, v_air, true);
     out_.ground_speed = velocity_.xy().length();
     out_.vertical_speed = velocity_.z;
