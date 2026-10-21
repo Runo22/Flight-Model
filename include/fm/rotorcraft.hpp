@@ -7,6 +7,7 @@
 
 #include "fm/atmosphere.hpp"
 #include "fm/deck.hpp"
+#include "fm/derived_outputs.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/formation.hpp"
 #include "fm/relocation.hpp"
@@ -30,6 +31,8 @@ public:
     void hold(double course, double altitude, double speed,
               AltitudeRef altitude_ref = AltitudeRef::Absolute);
     void set_speed(double speed);
+    // Speed in TAS (m/s), CAS (m/s) or Mach, converted at the current altitude.
+    void set_speed(double speed, SpeedRef ref);
     // Hold the current position.
     void hover();
     void go_to(const Vec3& point, const GoToOptions& options = {});
@@ -124,6 +127,7 @@ private:
 
     RotorcraftParams p_;
     FlightState out_{};
+    MotionTracker motion_;
 
     // Dynamic state
     Vec3 position_{};

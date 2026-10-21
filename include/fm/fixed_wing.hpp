@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "fm/atmosphere.hpp"
+#include "fm/derived_outputs.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/formation.hpp"
 #include "fm/guidance.hpp"
@@ -30,7 +31,9 @@ public:
     // Straight and level on a new course (ground track) starting from here.
     void hold(double course, double altitude, double speed,
               AltitudeRef altitude_ref = AltitudeRef::Absolute);
-    void set_speed(double speed);
+    // Speed target in TAS (m/s), CAS (m/s) or Mach. CAS and Mach targets are held while
+    // the altitude changes (the true airspeed follows).
+    void set_speed(double speed, SpeedRef ref = SpeedRef::True);
     void go_to(const Vec3& point, const GoToOptions& options = {});
     void follow_route(Route route);
     // radius 0 = derived from turn performance.
@@ -132,6 +135,10 @@ private:
 
     FixedWingParams p_;
     double rated_lapse_ = 1.0;  // engine density lapse at the critical altitude
+    MotionTracker motion_;
+    SpeedRef speed_ref_ = SpeedRef::True;  // speed_target_ follows speed_command_ in this
+    double speed_command_ = 0.0;
+    double temperature_offset_ = 0.0;     // K, last ISA deviation
     bool climbing_ = false;     // climb mode: full power at the climb speed
     double best_climb_speed_ = 0.0;              // m/s TAS, cached ...
     double best_climb_altitude_ = -1e9;          // ... for this altitude

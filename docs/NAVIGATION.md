@@ -42,7 +42,8 @@ fm::ecs::agent(e)->go_to(fm::ecs::to_local(world, {41.20, 29.20, 2500.0}), opt);
 |---|---|
 | `on_arrival` | `ContinueStraight` (varsayılan): üstünden geçip düz devam. `Loiter`: uçak noktanın etrafında tur atar, drone üstünde bekler. `Land`: drone oraya iner (uçak pist ister, bkz. [Bölüm 4](#4-kalkış-ve-iniş)). |
 | `altitude_ref` | `Absolute` (varsayılan): deniz seviyesinden metre. `AboveTerrain`: z araziden yükseklik (arazi takibi). `Keep`: şu anki irtifa korunur, z yok sayılır. |
-| `speed` | m/s gerçek hava hızı; NaN (varsayılan) = mevcut hız hedefi |
+| `speed` | Hız; NaN (varsayılan) = mevcut hız hedefi |
+| `speed_ref` | `True` (varsayılan): gerçek hava hızı, m/s. `Calibrated`: kalibre hava hızı (gösterge, IAS/CAS), m/s. `Mach`: Mach sayısı. Sabit kanatlı CAS ve Mach hedeflerini irtifa değişirken korur |
 | `vertical` | `Linear` (varsayılan): irtifa yol boyunca doğrusal değişir. `Immediate`: hemen tırmanır/alçalır. |
 
 Park halindeki bir uçağa `go_to` (ya da rota, loiter) verilirse **önce kendisi kalkar**:
@@ -96,7 +97,7 @@ fm::ecs::agent(jet)->follow_route(r);
 |---|---|
 | `position` | Yerel konum; z `altitude_ref`'e göre okunur |
 | `altitude_ref` | `Absolute`, `AboveTerrain` (araziden yükseklik) ya da `Keep` (irtifayı değiştirme) |
-| `speed` | Bu waypoint'ten itibaren hız (m/s); NaN = değiştirme |
+| `speed`, `speed_ref` | Bu waypoint'ten itibaren hız; NaN = değiştirme. `speed_ref` ile TAS, CAS ya da Mach |
 | `fly_over` | `false` (varsayılan): köşeyi keserek dön (fly-by). `true`: tam üstünden geç |
 | `hold_time` | Drone: burada bu kadar saniye bekle |
 
@@ -162,6 +163,10 @@ fm::ecs::agent(e)->cruise();                     // keep going straight as now
   taşıp oturabilir) ve rüzgârda sürüklenmez.
 * Çizgi düzdür: 200 km sonra gerçek kuzeye göre rota ~1° kayar (büyük daire gibi).
 * Hiç komut yoksa araç düz devam eder (`cruise`); drone durgunsa olduğu yerde bekler.
+* Hız gösterge hızı ya da Mach olarak da verilebilir:
+  `hold(course, 10000.0, 0.78, fm::AltitudeRef::Absolute, fm::SpeedRef::Mach)`,
+  `set_speed(fm::knots(250.0), fm::SpeedRef::Calibrated)`. Sabit kanatlı bu hedefi
+  tırmanırken ve alçalırken de tutar.
 * **Tırmanış kipi (sabit kanat):** bazı tırmanışlarda komut edilen hız, istenen tırmanma
   oranını veremez. Tırmanış 150 m'den büyükse uçak bu durumda tam güçle en iyi tırmanma
   hızında tırmanır ve hedefe 30 m kala komut edilen hıza döner. `go_to`, rota, `hold` ve
@@ -267,6 +272,8 @@ fm::ecs::land_on(seahawk, carrier, spot);
 | Yerde mi | `FlightPose::on_ground` |
 | Rotada kaçıncı waypoint | `agent->fixed_wing()->route().index()` / `agent->rotorcraft()->route().index()` / `agent->ship()->route().index()` |
 | Araziden yükseklik | `agent->state().height_above_terrain` |
+| Hızlar | `FlightPose`: `airspeed` (TAS), `calibrated_airspeed` (IAS/CAS), `mach`, `ground_speed`, `vertical_speed`. `state()` ek olarak `equivalent_airspeed` ve `dynamic_pressure` verir |
+| G ve açılar | `FlightPose`: `g_force` (gövde eksenlerinde hissedilen g: x ileri, y sağ, z yukarı; düz uçuşta ~{0, 0, 1}), `angle_of_attack`, `sideslip_angle`, `turn_rate` (derece). `state()` ek olarak `load_factor`, `acceleration` (m/s², ENU), `pitch_rate` ve `roll_rate` verir |
 
 ## 9. Hangi araç ne yapar
 

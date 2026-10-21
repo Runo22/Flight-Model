@@ -34,9 +34,15 @@ void write_pose(const WorldFrame& f, const FlightAgent& agent, FlightPose& pose)
     pose.pitch = rad2deg(s.attitude.pitch);
     pose.roll = rad2deg(s.attitude.roll);
     pose.airspeed = s.airspeed;
+    pose.calibrated_airspeed = s.calibrated_airspeed;
+    pose.mach = s.mach;
     pose.ground_speed = s.ground_speed;
     pose.vertical_speed = s.vertical_speed;
     pose.throttle = s.throttle;
+    pose.g_force = s.g_force;
+    pose.angle_of_attack = rad2deg(s.angle_of_attack);
+    pose.sideslip_angle = rad2deg(s.sideslip_angle);
+    pose.turn_rate = rad2deg(s.turn_rate);
     pose.mode = agent.mode();
     pose.phase = s.phase;
     pose.on_ground = s.on_ground;

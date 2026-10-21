@@ -93,13 +93,24 @@ struct FlightState {
     Vec3 position{};               // m, ENU (z = altitude above datum)
     Vec3 velocity{};               // m/s, ground-relative, ENU
     Attitude attitude{};           // body orientation (heading/pitch/roll)
-    double airspeed = 0.0;         // m/s, true airspeed
+    double airspeed = 0.0;         // m/s, true airspeed (ship: speed through the water)
+    double calibrated_airspeed = 0.0;   // m/s, CAS: what an airspeed indicator shows (IAS)
+    double equivalent_airspeed = 0.0;   // m/s, EAS
+    double dynamic_pressure = 0.0;      // Pa, 0.5 rho V^2
     double ground_speed = 0.0;     // m/s, horizontal
     double vertical_speed = 0.0;   // m/s
     double track = 0.0;            // rad, ground track
     double flight_path_angle = 0.0;// rad, air-relative
     double angle_of_attack = 0.0;  // rad
-    double load_factor = 1.0;      // g
+    double sideslip_angle = 0.0;   // rad, positive = relative wind from the right
+    double load_factor = 1.0;      // g, normal load factor
+    // Acceleration felt on board in g, body axes: x forward, y right, z up. Level
+    // unaccelerated flight (or standing still): {0, 0, 1}; a 60 deg banked turn: {0, 0, 2}.
+    Vec3 g_force{0.0, 0.0, 1.0};
+    Vec3 acceleration{};           // m/s^2, ground-relative, ENU
+    double turn_rate = 0.0;        // rad/s, heading change, positive = right
+    double pitch_rate = 0.0;       // rad/s, pitch angle change
+    double roll_rate = 0.0;        // rad/s, roll angle change, positive = right wing down
     double throttle = 0.0;         // 0..1
     double mach = 0.0;
     double height_above_terrain = kUnknown;  // m

@@ -96,10 +96,17 @@ struct FlightPose {
     double heading = 0.0;  // deg, clockwise from North
     double pitch = 0.0;    // deg, nose up positive
     double roll = 0.0;     // deg, right wing down positive
-    double airspeed = 0.0;        // m/s
+    double airspeed = 0.0;        // m/s, true airspeed
+    double calibrated_airspeed = 0.0;  // m/s, what the airspeed indicator shows
+    double mach = 0.0;
     double ground_speed = 0.0;    // m/s
     double vertical_speed = 0.0;  // m/s
     double throttle = 0.0;
+    Vec3 g_force{0.0, 0.0, 1.0};  // g felt on board, body axes: x forward, y right, z up
+    double angle_of_attack = 0.0; // deg
+    double sideslip_angle = 0.0;  // deg, positive = relative wind from the right
+    double turn_rate = 0.0;       // deg/s, positive = right
+    // Everything else (accelerations, rates, EAS, dynamic pressure ...): agent(e)->state().
     FlightMode mode = FlightMode::Cruise;
     FlightPhase phase = FlightPhase::Airborne;
     bool on_ground = false;

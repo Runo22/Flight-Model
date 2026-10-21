@@ -30,6 +30,18 @@ bool usable(const Route& r) {
         if (!usable(w)) return false;
     return !std::isinf(r.loiter_radius) && (!r.runway || usable(*r.runway));
 }
+// Speed commands in CAS or Mach: models without their own support get the true airspeed at
+// their current altitude.
+template <typename M>
+void set_speed_in(M& m, double speed, SpeedRef ref) {
+    if constexpr (requires { m.set_speed(speed, ref); }) {
+        m.set_speed(speed, ref);
+    } else {
+        m.set_speed(std::isfinite(speed) ? true_airspeed(speed, ref, isa(m.state().position.z))
+                                         : speed);
+    }
+}
+
 bool usable(const TakeoffPlan& p) {
     return !std::isinf(p.climb_height) && (!p.runway || usable(*p.runway)) &&
            (!p.then || usable(*p.then));
@@ -47,13 +59,23 @@ void FlightAgent::cruise() {
     std::visit([](auto& m) { m.cruise(); }, impl_);
 }
 
-void FlightAgent::hold(double course, double altitude, double speed, AltitudeRef altitude_ref) {
+void FlightAgent::hold(double course, double altitude, double speed, AltitudeRef altitude_ref,
+                       SpeedRef speed_ref) {
     if (!std::isfinite(course) || !usable_altitude(altitude, altitude_ref)) return;
-    std::visit([&](auto& m) { m.hold(course, altitude, speed, altitude_ref); }, impl_);
+    std::visit(
+        [&](auto& m) {
+            if (speed_ref == SpeedRef::True) {
+                m.hold(course, altitude, speed, altitude_ref);
+            } else {
+                m.hold(course, altitude, kUnknown, altitude_ref);  // speed below
+                set_speed_in(m, speed, speed_ref);
+            }
+        },
+        impl_);
 }
 
-void FlightAgent::set_speed(double speed) {
-    std::visit([&](auto& m) { m.set_speed(speed); }, impl_);
+void FlightAgent::set_speed(double speed, SpeedRef speed_ref) {
+    std::visit([&](auto& m) { set_speed_in(m, speed, speed_ref); }, impl_);
 }
 
 void FlightAgent::go_to(const Vec3& point, const GoToOptions& options) {

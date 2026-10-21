@@ -96,9 +96,13 @@ public:
     // return false); NaN speeds keep the current speed. Bad step inputs (NaN wind, infinite
     // terrain, non-finite dt) are ignored too, so host data never poisons the state.
     void cruise();
+    // `speed` in `speed_ref`: TAS (m/s), CAS (m/s, what the airspeed indicator shows) or
+    // Mach. Fixed-wing aircraft hold CAS / Mach targets through altitude changes; other
+    // vehicles convert them once at the current altitude.
     void hold(double course, double altitude, double speed,
-              AltitudeRef altitude_ref = AltitudeRef::Absolute);
-    void set_speed(double speed);
+              AltitudeRef altitude_ref = AltitudeRef::Absolute,
+              SpeedRef speed_ref = SpeedRef::True);
+    void set_speed(double speed, SpeedRef speed_ref = SpeedRef::True);
     void go_to(const Vec3& point, const GoToOptions& options = {});
     void follow_route(Route route);
     void loiter(const Vec3& center, double radius = 0.0, bool clockwise = true,

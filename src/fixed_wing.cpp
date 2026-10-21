@@ -73,7 +73,7 @@ FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& 
 
 void FixedWingAgent::cruise() {
     const double course = out_.ground_speed > 1.0 ? out_.track : heading_;
-    hold_course(course, position_.xy(), resolved_altitude_target_, speed_target_,
+    hold_course(course, position_.xy(), resolved_altitude_target_, kUnknown,  // keep the speed
                 AltitudeRef::Absolute);
 }
 
@@ -94,8 +94,11 @@ void FixedWingAgent::hold_course(double course, const Vec2& anchor, double altit
     set_speed(speed);
 }
 
-void FixedWingAgent::set_speed(double speed) {
-    if (std::isfinite(speed) && speed > 0.0) speed_target_ = speed;
+void FixedWingAgent::set_speed(double speed, SpeedRef ref) {
+    if (!std::isfinite(speed) || speed <= 0.0) return;
+    speed_ref_ = ref;
+    speed_command_ = speed;
+    speed_target_ = true_airspeed(speed, ref, isa(position_.z, temperature_offset_));
 }
 
 void FixedWingAgent::go_to(const Vec3& point, const GoToOptions& options) {
@@ -104,6 +107,7 @@ void FixedWingAgent::go_to(const Vec3& point, const GoToOptions& options) {
     wp.position = point;
     wp.altitude_ref = options.altitude_ref;
     wp.speed = options.speed;
+    wp.speed_ref = options.speed_ref;
     wp.fly_over = true;
     r.waypoints.push_back(wp);
     r.on_end = options.on_arrival;
@@ -200,6 +204,7 @@ void FixedWingAgent::set_leader_state(const LeaderState& leader) {
 
 bool FixedWingAgent::relocate(const Vec3& position, double heading) {
     const Relocation r = classify_relocation(position_, heading_, position, heading);
+    motion_.reset();
     // Samples from far away say nothing about the slope here.
     if ((position - position_).xy().length() > 2.0 * terrain_.spacing()) terrain_.reset();
     position_ = position;
@@ -256,11 +261,18 @@ void FixedWingAgent::step(double dt, const Environment& input) {
     if (!(dt > 0.0) || !std::isfinite(dt)) return;
     const Environment env = sanitized(input);  // bad host data must not poison the state
     wind_ = env.wind;
+    temperature_offset_ = env.temperature_offset;
     terrain_.update(position_.xy(), env.terrain_elevation);
     if (relocation_) {
         const Relocation r = *relocation_;
         relocation_.reset();
         settle_relocation(r);
+    }
+    // CAS and Mach targets: the true airspeed for the altitude reached one speed time
+    // constant ahead, so the speed keeps up while climbing or descending.
+    if (speed_ref_ != SpeedRef::True) {
+        const double ahead = position_.z + out_.vertical_speed * p_.speed_time_constant;
+        speed_target_ = true_airspeed(speed_command_, speed_ref_, isa(ahead, temperature_offset_));
     }
 
     SlotReference slot_ref{};
@@ -287,6 +299,7 @@ void FixedWingAgent::step(double dt, const Environment& input) {
         integrate(c, atm, env.wind, h);
     }
     update_output(atm, env.wind);
+    motion_.update(out_, dt);
 }
 
 FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, const Vec3& wind,
@@ -393,7 +406,7 @@ void FixedWingAgent::guide_route(Command& cmd, const Vec2& vg, double lookahead)
     }
 
     const Waypoint& target = route_.target();
-    set_speed(target.speed);
+    set_speed(target.speed, target.speed_ref);
     cmd.use_accel = true;
     cmd.lateral_accel = l1_leg(route_.leg_start(), route_.leg_end(), pos, vg, l1_settings(gs));
     cmd.altitude = route_.altitude_target(lp, terrain_, lookahead, resolved_altitude_target_);
@@ -413,7 +426,7 @@ void FixedWingAgent::finish_route(EndBehavior behavior) {
     if (behavior == EndBehavior::ContinueStraight) {
         // Continue on the extension of the last leg.
         const double course = leg.length() > 1.0 ? heading_of(leg) : heading_;
-        hold_course(course, last.position.xy(), altitude, speed_target_, ref);
+        hold_course(course, last.position.xy(), altitude, kUnknown, ref);
         return;
     }
     if (behavior == EndBehavior::Land && runway) {
@@ -471,7 +484,7 @@ void FixedWingAgent::finish_takeoff(double altitude) {
         takeoff_.then.reset();
         follow_route(std::move(r));
     } else {
-        hold_course(takeoff_heading_, takeoff_origin_, altitude, speed_target_,
+        hold_course(takeoff_heading_, takeoff_origin_, altitude, kUnknown,
                     AltitudeRef::Absolute);
     }
 }
@@ -673,7 +686,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     } else if (!climbing_ && altitude_error > kClimbModeEnter) {
         const double wanted = std::min(
             p_.climb_rate_max, cmd.vertical_speed_ff + altitude_error / p_.altitude_time_constant);
-        climbing_ = climb_rate_at(v_cmd, atm) < 0.8 * wanted;
+        climbing_ = climb_rate_at(v_cmd, atm) < 0.5 * wanted;
     }
     if (climbing_) v_cmd = std::min(v_cmd, climb_speed(atm, v_min, v_max));
 
@@ -883,11 +896,13 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
     out_.attitude.roll = bank_;
     out_.attitude.pitch = on_ground_ ? gamma_ + ground_pitch_ : gamma_ + alpha_ * std::cos(bank_);
     out_.airspeed = tas_;
+    set_air_data(out_, atm);
     out_.ground_speed = out_.velocity.xy().length();
     out_.vertical_speed = out_.velocity.z;
     out_.track = out_.ground_speed > 0.1 ? heading_of(out_.velocity.xy()) : heading_;
     out_.flight_path_angle = gamma_;
     out_.angle_of_attack = alpha_;
+    set_air_angles(out_, air, false);
     out_.load_factor = load_factor_;
     out_.throttle = throttle_;
     out_.mach = tas_ / atm.speed_of_sound;
@@ -945,7 +960,7 @@ void FixedWingAgent::start_flying_here() {
         takeoff_origin_ = position_.xy();
         finish_takeoff(position_.z);
     } else {
-        hold_course(heading_, position_.xy(), position_.z, speed_target_, AltitudeRef::Absolute);
+        hold_course(heading_, position_.xy(), position_.z, kUnknown, AltitudeRef::Absolute);
     }
 }
 

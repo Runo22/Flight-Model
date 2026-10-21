@@ -4,6 +4,7 @@
 #include <optional>
 #include <vector>
 
+#include "fm/air_data.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/math.hpp"
 
@@ -32,7 +33,8 @@ struct Runway {
 struct Waypoint {
     Vec3 position{};
     AltitudeRef altitude_ref = AltitudeRef::Absolute;
-    double speed = kUnknown;   // m/s true airspeed, NaN = keep the current speed target
+    double speed = kUnknown;   // NaN = keep the current speed target
+    SpeedRef speed_ref = SpeedRef::True;  // `speed` is TAS (m/s), CAS (m/s) or Mach
     bool fly_over = false;     // true: pass over the point; false: cut the corner (fly-by)
     double hold_time = 0.0;    // s, rotorcraft hovers here before continuing
 };
@@ -54,6 +56,7 @@ struct Route {
 struct GoToOptions {
     AltitudeRef altitude_ref = AltitudeRef::Absolute;
     double speed = kUnknown;
+    SpeedRef speed_ref = SpeedRef::True;
     EndBehavior on_arrival = EndBehavior::ContinueStraight;
     VerticalProfile vertical = VerticalProfile::Linear;
 };

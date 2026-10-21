@@ -42,6 +42,25 @@ TEST_CASE("flecs: attached aircraft flies and publishes its pose in world space"
     CHECK(pose.mode == FlightMode::Cruise);
 }
 
+TEST_CASE("flecs: the pose carries air data, g and angles") {
+    flecs::world world = make_world(WorldFrame::enu());
+    flecs::entity jet = world.entity();
+    const FixedWingParams p = presets::airliner_jet();
+    ecs::attach(jet, p, {{0, 0, 10000}, 0.0, 220.0, false});
+    ecs::agent(jet)->set_speed(0.78, SpeedRef::Mach);
+    run(world, 120.0);
+    const ecs::FlightPose& pose = pose_of(jet);
+    CHECK_NEAR(pose.mach, 0.78, 0.005);
+    CHECK(pose.calibrated_airspeed < pose.airspeed);
+    CHECK_NEAR(pose.g_force.z, 1.0, 0.01);
+    CHECK(pose.angle_of_attack > 0.0 && pose.angle_of_attack < 10.0);
+    CHECK(std::abs(pose.sideslip_angle) < 0.1);
+    ecs::agent(jet)->hold(deg2rad(90.0), 10000.0, kUnknown);
+    run(world, 10.0);
+    CHECK(pose_of(jet).turn_rate > 0.5);   // deg/s, turning right
+    CHECK(pose_of(jet).g_force.z > 1.05);  // banked turn
+}
+
 TEST_CASE("flecs: terrain height input keeps clearance") {
     flecs::world world = make_world(WorldFrame::unreal());  // centimeters, Z up
     flecs::entity uav = world.entity();

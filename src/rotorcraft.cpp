@@ -92,6 +92,10 @@ void RotorcraftAgent::set_speed(double speed) {
     if (std::isfinite(speed) && speed > 0.0) speed_target_ = std::min(speed, p_.max_speed);
 }
 
+void RotorcraftAgent::set_speed(double speed, SpeedRef ref) {
+    if (std::isfinite(speed)) set_speed(true_airspeed(speed, ref, isa(position_.z)));
+}
+
 void RotorcraftAgent::hover() {
     if (on_ground_) {
         takeoff({});
@@ -112,6 +116,7 @@ void RotorcraftAgent::go_to(const Vec3& point, const GoToOptions& options) {
     wp.position = point;
     wp.altitude_ref = options.altitude_ref;
     wp.speed = options.speed;
+    wp.speed_ref = options.speed_ref;
     wp.fly_over = true;
     r.waypoints.push_back(wp);
     r.on_end = options.on_arrival;
@@ -230,6 +235,7 @@ void RotorcraftAgent::set_leader_state(const LeaderState& leader) {
 
 bool RotorcraftAgent::relocate(const Vec3& position, double heading) {
     const Relocation r = classify_relocation(position_, attitude_.heading, position, heading);
+    motion_.reset();
     // Samples from far away say nothing about the slope here.
     if ((position - position_).xy().length() > 2.0 * terrain_.spacing()) terrain_.reset();
     position_ = position;
@@ -329,6 +335,7 @@ void RotorcraftAgent::step(double dt, const Environment& input) {
     if (deck_stage_ == DeckStage::OnDeck) {
         ride_deck(slot_ref, dt);
         update_output(isa(position_.z, env.temperature_offset), env.wind);
+        motion_.update(out_, dt);
         return;
     }
 
@@ -346,6 +353,7 @@ void RotorcraftAgent::step(double dt, const Environment& input) {
         hold_timer_ = std::max(0.0, hold_timer_ - h);
     }
     update_output(atm, env.wind);
+    motion_.update(out_, dt);
 }
 
 RotorcraftAgent::Command RotorcraftAgent::guidance(const SlotReference& ref) {
@@ -551,7 +559,7 @@ void RotorcraftAgent::guide_route(Command& cmd) {
         if (!advance()) return;
     }
 
-    set_speed(route_.target().speed);
+    set_speed(route_.target().speed, route_.target().speed_ref);
     const double end_speed = end_speed_of_leg();
     const double brake = 0.5 * p_.max_acceleration;
     const double remaining = std::max(lp.remaining(), 0.0);
@@ -875,11 +883,12 @@ void RotorcraftAgent::update_output(const AtmosphereSample& atm, const Vec3& win
     out_.velocity = velocity_;
     out_.attitude = attitude_;
     out_.airspeed = v_air.length();
+    set_air_data(out_, atm);
+    set_air_angles(out_, v_air, true);
     out_.ground_speed = velocity_.xy().length();
     out_.vertical_speed = velocity_.z;
     out_.track = out_.ground_speed > 0.1 ? heading_of(velocity_.xy()) : attitude_.heading;
     out_.flight_path_angle = std::atan2(velocity_.z, std::max(out_.ground_speed, 1e-6));
-    out_.angle_of_attack = 0.0;
     out_.load_factor = thrust_ / (p_.mass * kGravity);
     out_.throttle = thrust_ / (p_.thrust_to_weight * p_.mass * kGravity);
     out_.mach = out_.airspeed / atm.speed_of_sound;

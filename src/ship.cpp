@@ -129,6 +129,7 @@ void ShipAgent::set_leader_state(const LeaderState& leader) {
 }
 
 bool ShipAgent::relocate(const Vec3& position, double heading) {
+    motion_.reset();
     const Vec3 at{position.x, position.y, p_.water_level};
     const Relocation r = classify_relocation(position_, heading_, at, heading);
     if ((at - position_).xy().length() > 2.0 * terrain_.spacing()) terrain_.reset();
@@ -191,6 +192,7 @@ void ShipAgent::step(double dt, const Environment& input) {
         time_ += h;
         update_output();
     }
+    motion_.update(out_, dt);
 }
 
 ShipAgent::Command ShipAgent::guidance(const SlotReference& slot_ref) {

@@ -4,6 +4,7 @@ add_executable(fm_tests
   test_deck.cpp
   test_fixed_wing.cpp
   test_geo.cpp
+  test_outputs.cpp
   test_presets.cpp
   test_relocation.cpp
   test_robustness.cpp

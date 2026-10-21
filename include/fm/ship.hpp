@@ -4,6 +4,7 @@
 // the water level and only x/y of commanded positions are used.
 #pragma once
 
+#include "fm/derived_outputs.hpp"
 #include "fm/flight_state.hpp"
 #include "fm/formation.hpp"
 #include "fm/guidance.hpp"
@@ -100,6 +101,7 @@ private:
 
     ShipParams p_;
     FlightState out_{};
+    MotionTracker motion_;
 
     // Dynamic state
     Vec3 position_{};

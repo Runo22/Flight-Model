@@ -4,7 +4,8 @@ Generic, game-oriented flight AI for aircraft, drones and ships, with a thin
 [Flecs](https://github.com/SanderMertens/flecs) 4.x integration.
 
 Attach an agent to an entity, give it a command (or none) and read back position,
-velocity, heading/pitch/roll and speeds every frame. No pilot inputs are required: each
+velocity, heading/pitch/roll, speeds (TAS, CAS, Mach), g, accelerations, angle of attack
+and sideslip every frame. Speeds can be commanded as TAS, CAS or Mach. No pilot inputs are required: each
 agent contains its own autopilot.
 
 | Vehicle class | Model | Presets |

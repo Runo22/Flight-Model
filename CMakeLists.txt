@@ -23,7 +23,9 @@ endif()
 
 # --- Core: Flecs independent ----------------------------------------------------------
 add_library(flight_model
+  src/air_data.cpp
   src/atmosphere.cpp
+  src/derived_outputs.cpp
   src/fixed_wing.cpp
   src/flight_agent.cpp
   src/formation.cpp

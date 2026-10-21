@@ -61,6 +61,12 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   enerjiyi tırmanmaya verir (zayıf tırmanan İHA'lar yükselen araziyi aşar).
 - **Tırmanış kipi:** büyük tırmanışlar, komut edilen hız yetmiyorsa tam güçle en iyi
   tırmanma hızında (ya da `climb_speed` ile verilen hızda) uçulur.
+- **Hava verisi ve türev çıktılar:**
+  - Hızlar: CAS/IAS, EAS, Mach (ses üstü pitot formülü dahil), dinamik basınç.
+  - Kuvvetler ve oranlar: ivme, gövde eksenlerinde g kuvveti, dönüş / yunuslama / yatış
+    hızları.
+  - Açılar: hücum açısı, yan kayma.
+  - Hız komutları TAS, CAS ya da Mach olarak verilebilir.
 - **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
   itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
   otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra
@@ -69,7 +75,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   arkadan yaklaşma, gemiyle aynı hıza gelip spotun üstünde alçalma, güvertede gemiyle
   birlikte hareket, hareketli güverteden kalkış. Taşıyıcı simüle edilen bir gemi ya da
   oyunun hareket ettirdiği herhangi bir entity olabilir (`fm::ecs::land_on`).
-- **Testler:** 76 çekirdek + 22 Flecs + navigasyon örneği + 2 plugin testi;
+- **Testler:** 83 çekirdek + 23 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -87,7 +93,6 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 ### Faz 2 — Veri odaklı parametreler
 - Uçak tiplerini JSON'dan okuma (glaze veya nlohmann/json), hot-reload.
 - Flecs prefab entegrasyonu: tip başına prefab, entity'ler `is_a` ile parametre paylaşır.
-- CAS/TAS dönüşümü; hızları gösterge hızı (IAS) olarak verebilme.
 - Yakıt tüketimi ve kütle değişimi.
 
 ### Faz 3 — Gelişmiş trajektori
