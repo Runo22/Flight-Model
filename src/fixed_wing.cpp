@@ -725,9 +725,10 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     const double excess = (t_max - drag(v, n_now, atm, false)) / m;
     const double idle_accel = (t_idle - drag(v, n_now, atm, has_brake)) / m;
 
-    // Half of the excess thrust goes to acceleration when climbing and accelerating at once;
-    // below the minimum speed all of it, and none when the terrain floor is violated.
-    double accel_cap = 0.5 * std::max(excess, 0.0);
+    // Half of the excess thrust goes to acceleration when climbing and accelerating at once,
+    // all of it in level flight or below the minimum speed, and none when the terrain
+    // floor is violated.
+    double accel_cap = (hdot_cmd > 1.0 ? 0.5 : 1.0) * std::max(excess, 0.0);
     if (v < v_min) accel_cap = std::max(excess, 0.0);
     else if (cmd.terrain_alert) accel_cap = 0.0;
     const double decel_cap = std::max(-idle_accel, 0.0);
