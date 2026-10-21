@@ -10,6 +10,7 @@ add_executable(fm_tests
   test_robustness.cpp
   test_rotorcraft.cpp
   test_ship.cpp
+  test_traffic.cpp
 )
 target_link_libraries(fm_tests PRIVATE fm::core)
 target_compile_options(fm_tests PRIVATE ${FM_WARNINGS})

@@ -118,6 +118,7 @@ struct FlightState {
     double fuel_flow = 0.0;        // kg/s
     double height_above_terrain = kUnknown;  // m
     bool on_ground = false;
+    bool avoiding_traffic = false;  // climbing or descending away from a predicted conflict
     bool speed_brake = false;
     bool flaps = false;
     bool gear_down = true;

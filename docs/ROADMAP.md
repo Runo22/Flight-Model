@@ -74,6 +74,10 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - **Kol lideri:** takipçisi olan sabit kanatlı lider yatışını ve hızını takipçilerin
   izleyebileceği kadar sınırlar: dıştaki takipçi için hız ve yatış sınırı, içteki için
   minimum hız. Flecs bunu `follow` ilişkilerinden otomatik yapar.
+- **Çarpışma önleme (sabit kanat):**
+  - TCAS benzeri dikey çözüm: en yakın geçiş tahmini, zıt yönlü tırmanış / alçalış.
+  - Yere yakın ve kalkış/inişte devre dışı; arazi tabanı korunur.
+  - Flecs'te ızgarayla komşu bulan trafik sistemi; kol üyeleri birbirinden kaçmaz.
 - **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
   itki, Nomoto dümen tepkisi, dönüş çemberi, dönüşte hız kaybı / drift / yatma. LOS
   otopilot, istasyon tutma (ileri, tornistan, yerinde dönüş), karaya oturma. Manevra
@@ -82,7 +86,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   arkadan yaklaşma, gemiyle aynı hıza gelip spotun üstünde alçalma, güvertede gemiyle
   birlikte hareket, hareketli güverteden kalkış. Taşıyıcı simüle edilen bir gemi ya da
   oyunun hareket ettirdiği herhangi bir entity olabilir (`fm::ecs::land_on`).
-- **Testler:** 87 çekirdek + 24 Flecs + navigasyon örneği + 2 plugin testi;
+- **Testler:** 90 çekirdek + 25 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -114,7 +118,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - İsteğe bağlı deterministik mod (sabit adım, replay/multiplayer için).
 
 ### Faz 5 — Çoklu ajan davranışları
-- Ajanlar arası çarpışma önleme (ayrılma kuralları).
+- Çarpışma önlemenin devamı: yatay çözüm (sağa dönüş), ajanı olmayan trafik (oyuncu uçağı,
+  `TrackedPose`), helikopterler için kaçınma.
 - Formasyon değişimi (dizilim geçişleri), lider değişimi, slot yeniden atama.
 - Çok geniş haritalar (> 500 km) için ajan başına projeksiyon merkezini kaydırma.
 - Kalkış/iniş sıralaması (aynı pistte birden fazla uçak).

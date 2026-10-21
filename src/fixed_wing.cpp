@@ -28,6 +28,10 @@ constexpr double kClimbSpeedRefresh = 150.0;  // m of altitude change before rec
 // Formation lead: share of the sustained speed the leader flies at most, and the most an
 // outside follower is asked for in a turn.
 constexpr double kLeadSpeedShare = 0.88;
+constexpr double kAvoidMinHeight = 150.0;  // m above the ground: no resolutions below
+constexpr double kAvoidMargin = 30.0;      // m beyond the protected height
+constexpr double kAvoidClearTime = 3.0;    // s without a conflict before the resolution ends
+constexpr double kAvoidLevel = 10.0;       // m: closer vertically counts as co-altitude
 constexpr double kFollowerSpeedShare = 0.92;
 
 // Thrust / power lapse at the density ratio sigma: sigma^n in the troposphere; above the
@@ -216,6 +220,54 @@ void FixedWingAgent::set_formation_lead(double lateral_extent) {
     lead_age_ = 0.0;
 }
 
+void FixedWingAgent::set_traffic(std::span<const Traffic> traffic) {
+    conflict_now_ = false;
+    // No resolutions on the ground, during takeoff / landing or close to the ground.
+    const double height = position_.z - p_.gear_height - ground_elevation();
+    if (on_ground_ || mode_ == FlightMode::Takeoff || mode_ == FlightMode::Land ||
+        height < kAvoidMinHeight)
+        return;
+    const Vec3 own_velocity = out_.velocity;
+    double earliest = p_.avoidance_lookahead;
+    const Traffic* threat = nullptr;
+    Vec3 miss{};
+    for (const Traffic& t : traffic) {
+        if (!is_finite(t.position) || !is_finite(t.velocity)) continue;
+        const Vec3 r = t.position - position_;
+        const Vec3 w = t.velocity - own_velocity;
+        const double w2 = dot(w, w);
+        const double t_cpa = w2 > 1e-6 ? std::max(-dot(r, w) / w2, 0.0) : 0.0;
+        if (t_cpa > earliest) continue;
+        const Vec3 m = r + w * t_cpa;  // the other one relative to us at the closest point
+        if (m.xy().length() >= p_.avoidance_radius || std::abs(m.z) >= p_.avoidance_height)
+            continue;
+        earliest = t_cpa;
+        threat = &t;
+        miss = m;
+    }
+    if (!threat) return;
+    conflict_now_ = true;
+    if (avoid_sense_ == 0) {
+        // Move away vertically; level with each other, decide by the relative position so
+        // that both aircraft pick opposite senses.
+        const Vec3 r = threat->position - position_;
+        if (std::abs(miss.z) > kAvoidLevel) {
+            avoid_sense_ = miss.z > 0.0 ? -1 : 1;
+        } else {
+            avoid_sense_ = (std::abs(r.x) > 1e-3 ? r.x : r.y) > 0.0 ? 1 : -1;
+        }
+    }
+    const double needed = p_.avoidance_height + kAvoidMargin;
+    const double other_altitude = threat->position.z + threat->velocity.z * earliest;
+    avoid_altitude_ = other_altitude + avoid_sense_ * needed;
+    // A descent that would go through the terrain floor becomes a climb.
+    if (avoid_sense_ < 0 && avoid_altitude_ < ground_elevation() + p_.min_terrain_clearance) {
+        avoid_sense_ = 1;
+        avoid_altitude_ = other_altitude + needed;
+    }
+    avoid_clear_time_ = 0.0;
+}
+
 void FixedWingAgent::set_leader_state(const LeaderState& leader) {
     leader_ = leader;
     leader_age_ = 0.0;
@@ -296,6 +348,13 @@ void FixedWingAgent::step(double dt, const Environment& input) {
 
     lead_age_ += dt;
     if (lead_age_ > kLeaderTimeout) lead_extent_ = 0.0;  // no followers reported any more
+    if (avoid_sense_ != 0) {
+        avoid_clear_time_ = conflict_now_ ? 0.0 : avoid_clear_time_ + dt;
+        if (avoid_clear_time_ > kAvoidClearTime || on_ground_ || mode_ == FlightMode::Takeoff ||
+            mode_ == FlightMode::Land)
+            avoid_sense_ = 0;
+    }
+    conflict_now_ = false;  // until the next traffic update
 
     SlotReference slot_ref{};
     if (mode_ == FlightMode::Formation) {
@@ -388,6 +447,9 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
                            mode_ == FlightMode::Land;
     if (!own_speed) cmd.speed = speed_target_;
     resolved_altitude_target_ = cmd.altitude;
+    // Collision avoidance overrides the task's altitude until the conflict is clear.
+    if (avoid_sense_ > 0) cmd.altitude = std::max(cmd.altitude, avoid_altitude_);
+    if (avoid_sense_ < 0) cmd.altitude = std::min(cmd.altitude, avoid_altitude_);
 
     if (!on_ground_) {
         // Terrain floor from the predicted terrain ahead.
@@ -947,6 +1009,7 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
             runway_elevation_ > kNoGround ? position_.z - runway_elevation_ : kUnknown;
     }
     out_.on_ground = on_ground_;
+    out_.avoiding_traffic = avoid_sense_ != 0;
     out_.speed_brake = speed_brake_;
     out_.flaps = flaps_;
     out_.gear_down = gear_down_;

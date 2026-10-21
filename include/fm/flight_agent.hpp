@@ -10,6 +10,7 @@
 #pragma once
 
 #include <concepts>
+#include <span>
 #include <type_traits>
 #include <variant>
 
@@ -130,6 +131,10 @@ public:
     // leaders limit their bank and speed so the followers can stay in their slots. Call
     // every step (fm::ecs::follow does it); expires after 2 s. 0 = not leading.
     void set_formation_lead(double lateral_extent);
+    // Vehicles around this one, every step before step(), for collision avoidance
+    // (fixed-wing: climbs or descends away from a predicted conflict). Leave out its
+    // formation partners. The Flecs module does it for all agents.
+    void set_traffic(std::span<const Traffic> traffic);
 
     // The host moved the vehicle (teleport, respawn, editor move): continue from `position`
     // and `heading` (rad, NaN = keep) instead of jumping back. Speed is kept.

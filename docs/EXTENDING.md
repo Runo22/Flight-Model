@@ -442,6 +442,10 @@ ile algılar), yoksa varsayılan davranış uygulanır:
 |---|---|---|
 | `bool land_on(const DeckSpot&)` | Hareketli bir güverte spotuna iniş (`RotorcraftAgent`'ta var) | `FlightAgent::land_on` `false` döner |
 | `bool deck_operation() const` | Güverte işi sürüyor: lider (gemi) durumu her adım gerekli | `tracks_leader()` yalnızca `Formation` modunda `true` |
+| `set_speed(double, SpeedRef)` | CAS / Mach hedefini kendisi tutar | `FlightAgent` o anki irtifada TAS'a çevirip `set_speed(double)` çağırır |
+| `set_fuel(double)` | Yakıt / ikmal | Yok sayılır |
+| `set_formation_lead(double)` | Kol lideri olarak yatış / hız sınırı | Yok sayılır |
+| `set_traffic(std::span<const Traffic>)` | Çarpışma önleme | Yok sayılır (araç yine başkalarına trafik olarak görünür) |
 
 ### `step(dt, env)` kuralları
 

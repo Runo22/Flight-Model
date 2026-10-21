@@ -106,6 +106,12 @@ struct FixedWingParams {
     double flaps_up_height = 150.0;        // m AGL
     double gear_up_height = 10.0;          // m AGL, gear retraction after lift-off
     double formation_min_separation = 30.0;  // m, minimum distance kept to a leader
+    // Collision avoidance (traffic from set_traffic): a pass predicted within the lookahead
+    // closer than the radius horizontally and the height vertically is resolved by
+    // climbing or descending, like TCAS.
+    double avoidance_radius = 300.0;     // m
+    double avoidance_height = 100.0;     // m
+    double avoidance_lookahead = 30.0;   // s
 
     // Approach and landing
     double glide_slope = 0.0524;           // rad (3 deg)

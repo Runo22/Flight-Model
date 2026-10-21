@@ -133,6 +133,32 @@ TEST_CASE("flecs: formation leaders bank for their widest follower") {
     CHECK(max_bank < p.bank_max - deg2rad(2.0));  // the leader banked less than it could
 }
 
+TEST_CASE("flecs: agents avoid each other unless switched off") {
+    for (const bool avoid : {true, false}) {
+        flecs::world world = make_world(WorldFrame::enu());
+        ecs::set_collision_avoidance(world, avoid);
+        const FixedWingParams p = presets::light_propeller();
+        flecs::entity a = world.entity();
+        flecs::entity b = world.entity();
+        ecs::attach(a, p, {{0, 0, 1500}, 0.0, p.cruise_speed, false});
+        ecs::attach(b, p, {{0, 6000, 1500}, deg2rad(180.0), p.cruise_speed, false});
+        double closest = 1e9;
+        bool flagged = false;
+        for (int i = 0; i < static_cast<int>(90.0 / kDt); ++i) {
+            world.progress(kDt);
+            closest = std::min(closest, (ecs::agent(a)->state().position -
+                                         ecs::agent(b)->state().position).length());
+            flagged = flagged || ecs::agent(a)->state().avoiding_traffic;
+        }
+        CHECK(flagged == avoid);
+        if (avoid) {
+            CHECK(closest > p.avoidance_height);
+        } else {
+            CHECK(closest < 20.0);
+        }
+    }
+}
+
 TEST_CASE("flecs: drone follows an entity that only has a TrackedPose") {
     flecs::world world = make_world(WorldFrame::enu());
     flecs::entity car = world.entity("car").set<ecs::TrackedPose>({{0, 0, 0}});

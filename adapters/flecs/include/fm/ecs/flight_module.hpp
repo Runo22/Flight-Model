@@ -40,6 +40,8 @@ struct FrameConfig {
 struct FlightSettings {
     bool paused = false;    // true: no agent is stepped; the rest of the world keeps running
     double max_step = 0.25; // s, longest simulated time per frame (hitches, debugger stops)
+    // Agents see each other as traffic and resolve predicted conflicts (fixed-wing).
+    bool collision_avoidance = true;
 };
 
 // --- Components ------------------------------------------------------------------------
@@ -187,6 +189,9 @@ void resume(flecs::entity e);
 bool is_paused(flecs::entity e);
 // Longest time advanced per frame; longer frames (hitches) run slower instead of jumping.
 void set_max_step(flecs::world& world, double seconds);
+// Collision avoidance between all agents (on by default). Formation partners never avoid
+// each other.
+void set_collision_avoidance(flecs::world& world, bool enabled);
 
 void set_frame(flecs::world& world, const WorldFrame& frame);
 const WorldFrame& frame(const flecs::world& world);

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 
 #include "fm/atmosphere.hpp"
 #include "fm/derived_outputs.hpp"
@@ -14,6 +15,7 @@
 #include "fm/route.hpp"
 #include "fm/route_tracker.hpp"
 #include "fm/terrain.hpp"
+#include "fm/traffic.hpp"
 #include "fm/vehicle_params.hpp"
 
 namespace fm {
@@ -61,6 +63,10 @@ public:
     // minimum speed) and keeps a speed margin. Refreshed every step by the host (the Flecs
     // module does it); expires after 2 s without a refresh. 0 = not leading.
     void set_formation_lead(double lateral_extent);
+    // Vehicles around this one (not its formation partners), every step before step(): a
+    // predicted conflict is resolved vertically (FixedWingParams::avoidance_*). Without
+    // updates for 3 s the resolution ends.
+    void set_traffic(std::span<const Traffic> traffic);
     void set_leader_state(const LeaderState& leader);
     // The host moved the aircraft: continue from `position` / `heading` (NaN = keep), see
     // FlightAgent::relocate. Speed, flight path and the current task are kept.
@@ -151,6 +157,11 @@ private:
     FixedWingParams p_;
     double rated_lapse_ = 1.0;  // engine density lapse at the critical altitude
     MotionTracker motion_;
+    // Collision avoidance: +1 climbing, -1 descending away from traffic, 0 none.
+    int avoid_sense_ = 0;
+    double avoid_altitude_ = 0.0;   // m, altitude that clears the conflict
+    bool conflict_now_ = false;     // the last traffic update still predicts a conflict
+    double avoid_clear_time_ = 0.0; // s without a conflict
     double lead_extent_ = 0.0;  // m, widest follower offset (formation lead)
     double lead_age_ = 0.0;     // s since the last refresh
     double sustained_speed_ = 0.0;

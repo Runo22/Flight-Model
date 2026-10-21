@@ -143,6 +143,14 @@ void FlightAgent::set_formation_lead(double lateral_extent) {
         impl_);
 }
 
+void FlightAgent::set_traffic(std::span<const Traffic> traffic) {
+    std::visit(
+        [&](auto& m) {
+            if constexpr (requires { m.set_traffic(traffic); }) m.set_traffic(traffic);
+        },
+        impl_);
+}
+
 bool FlightAgent::tracks_leader() const {
     return std::visit(
         [](const auto& m) {

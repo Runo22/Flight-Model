@@ -263,7 +263,27 @@ fm::ecs::land_on(seahawk, carrier, spot);
 * Sabit kanatlı İHA'lar (TB3 sınıfı, ski-jump) henüz gemiye inip kalkamaz; bkz.
   [`ROADMAP.md`](ROADMAP.md). `land_on` onlar için `false` döner.
 
-## 8. İlerlemeyi takip etmek
+## 8. Kol uçuşu ve çarpışma önleme
+
+* **Kol:** `fm::ecs::follow(takipci, lider, slot)` takipçiyi liderin frame'indeki bir slota
+  bağlar: x sağ, y ileri, z yukarı. Hazır dizilimler `fm::formation::echelon_right`, `vic`,
+  `line_abreast` ve `trail`'dir.
+* **Liderin sınırı:** Sabit kanatlı lider, en geniş takipçisi izleyebilsin diye yatışını ve
+  hızını sınırlar. Bunu modül her frame otomatik yapar. Geniş açıklıklı savaş uçağı kolları
+  da sert dönüşlerde dağılmaz.
+* **Çarpışma önleme:** Modül her frame havadaki ajanları birbirine trafik olarak verir.
+  Sabit kanatlı, 30 s içinde 300 m yatay / 100 m dikeyden yakın bir geçiş öngörürse TCAS
+  gibi tırmanır ya da alçalır. İki uçak her zaman zıt yön seçer; çatışma bitince göreve
+  döner.
+* **Devre dışı durumlar:** Yerde, kalkış/inişte ve yere 150 m'den yakınken çalışmaz.
+  Alçalma arazi tabanını delecekse tırmanış seçilir. Aynı kolun üyeleri birbirinden kaçmaz.
+* **Ayarlar:** `FixedWingParams::avoidance_radius`, `avoidance_height` ve
+  `avoidance_lookahead` ile ayarlanır. `fm::ecs::set_collision_avoidance(world, false)`
+  kapatır. Kaçınma sürerken `state().avoiding_traffic` `true` olur. Flecs dışında
+  `agent.set_traffic(...)` her adımda çağrılır.
+* **Henüz yok:** Oyuncunun uçağı gibi ajanı olmayan trafik ve helikopterlerin kaçınması.
+
+## 9. İlerlemeyi takip etmek
 
 | Ne | Nereden |
 |---|---|
@@ -276,7 +296,7 @@ fm::ecs::land_on(seahawk, carrier, spot);
 | Yakıt | `FlightPose::fuel` (kg; modellenmiyorsa NaN). `state()` ek olarak `fuel_flow` (kg/s) ve `mass` (kg) verir. İkmal: `agent->set_fuel(kg)` |
 | G ve açılar | `FlightPose`: `g_force` (gövde eksenlerinde hissedilen g: x ileri, y sağ, z yukarı; düz uçuşta ~{0, 0, 1}), `angle_of_attack`, `sideslip_angle`, `turn_rate` (derece). `state()` ek olarak `load_factor`, `acceleration` (m/s², ENU), `pitch_rate` ve `roll_rate` verir |
 
-## 9. Hangi araç ne yapar
+## 10. Hangi araç ne yapar
 
 | Komut | Sabit kanat | Helikopter / drone | Gemi |
 |---|---|---|---|

@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
+#include <cstdint>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -268,6 +271,77 @@ FlightModule::FlightModule(flecs::world& world) {
             }
         });
 
+    // Collision avoidance: every airborne agent gets the agents around it as traffic, except
+    // its formation partners. Reads other entities, so it stays single threaded.
+    world.system<FlightController>("TrafficSystem")
+        .kind(flecs::OnUpdate)
+        .without<Paused>()
+        .run([](flecs::iter& it) {
+            const FlightSettings settings = settings_of(it.world());
+            if (settings.paused || !settings.collision_avoidance) {
+                it.fini();
+                return;
+            }
+            struct Entry {
+                flecs::entity entity;
+                FlightAgent* agent;
+                Traffic traffic;
+                flecs::entity leader;  // formation leader, if flying in one
+            };
+            std::vector<Entry> entries;
+            while (it.next()) {
+                auto controller = it.field<FlightController>(0);
+                for (auto i : it) {
+                    FlightController& fc = controller[i];
+                    if (!fc.agent || fc.agent->kind() == VehicleKind::Ship) continue;
+                    const FlightState& s = fc.agent->state();
+                    if (s.on_ground) continue;
+                    const flecs::entity e = it.entity(i);
+                    flecs::entity leader;
+                    if (const auto* f = compat::try_get<FollowLeader>(e);
+                        f && fc.agent->mode() == FlightMode::Formation)
+                        leader = f->leader;
+                    entries.push_back({e, &*fc.agent, {s.position, s.velocity}, leader});
+                }
+            }
+            // Neighbours from a uniform grid over the ground plane.
+            constexpr double kCell = 3000.0;    // m, larger than any conflict radius
+            constexpr double kMaxHeight = 1500.0;
+            auto cell = [&](double v) { return static_cast<std::int64_t>(std::floor(v / kCell)); };
+            auto key = [](std::int64_t x, std::int64_t y) {
+                return (static_cast<std::uint64_t>(x) << 32) ^
+                       (static_cast<std::uint64_t>(y) & 0xffffffffu);
+            };
+            std::unordered_map<std::uint64_t, std::vector<std::size_t>> grid;
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const Vec3& p = entries[i].traffic.position;
+                grid[key(cell(p.x), cell(p.y))].push_back(i);
+            }
+            std::vector<Traffic> near;
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const Entry& a = entries[i];
+                near.clear();
+                const std::int64_t cx = cell(a.traffic.position.x);
+                const std::int64_t cy = cell(a.traffic.position.y);
+                for (std::int64_t dx = -1; dx <= 1; ++dx) {
+                    for (std::int64_t dy = -1; dy <= 1; ++dy) {
+                        const auto found = grid.find(key(cx + dx, cy + dy));
+                        if (found == grid.end()) continue;
+                        for (const std::size_t j : found->second) {
+                            const Entry& b = entries[j];
+                            const bool partners = a.leader == b.entity || b.leader == a.entity ||
+                                                  (a.leader && a.leader == b.leader);
+                            if (j == i || partners ||
+                                std::abs(b.traffic.position.z - a.traffic.position.z) > kMaxHeight)
+                                continue;
+                            near.push_back(b.traffic);
+                        }
+                    }
+                }
+                a.agent->set_traffic(near);
+            }
+        });
+
     // Every agent only touches its own components: safe to run on worker threads.
     world.system<FlightController, FlightPose, const TerrainHeight*, const HeightAboveGround*,
                  const Wind*, GeoPose*>("FlightSystem")
@@ -362,6 +436,12 @@ void pause(flecs::entity e) { e.add<Paused>(); }
 void resume(flecs::entity e) { e.remove<Paused>(); }
 
 bool is_paused(flecs::entity e) { return e.has<Paused>(); }
+
+void set_collision_avoidance(flecs::world& world, bool enabled) {
+    FlightSettings s = settings_of(world);
+    s.collision_avoidance = enabled;
+    world.set<FlightSettings>(s);
+}
 
 void set_max_step(flecs::world& world, double seconds) {
     FlightSettings s = settings_of(world);
