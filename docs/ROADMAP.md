@@ -92,7 +92,12 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   hizalanma (`LineUp`) ve kalkış (`TakeoffPlan::taxi`, `TakeoffPlan::heading`); inişten sonra
   park yerine taksi (`taxi(yol, son_yon)`). Pure pursuit yol takibi, köşe öncesi frenleme,
   burun tekeri dönüş yarıçapı, son noktada istenen yönde durma.
-- **Testler:** 99 çekirdek + 25 Flecs + navigasyon örneği + 2 plugin testi;
+- **Kol halinde sıralı kalkış ve iniş (Flecs):** `takeoff_flight` (sırayla taksi, pistte
+  kademeli dizilme, aralıklı ya da ikişerli kalkış, lidere katılma) ve `land_flight`
+  (echelon, overhead break, aralıklı touchdown, pistin dönüşümlü yarıları, sıralı durma).
+  Çekirdekte: overhead pattern (`LandingOptions`), kalkışta bekle/serbest bırak
+  (`TakeoffPlan::hold`, `release_takeoff`), inişte durma noktası.
+- **Testler:** 105 çekirdek + 28 Flecs + navigasyon örneği + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar
@@ -105,7 +110,12 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - [x] Rota sonunda iniş (`Route::runway` + `EndBehavior::Land`), inişten sonra tekrar kalkış.
 - [x] Yerde taksi: taksi yolu (waypoint listesi) üzerinde düşük hızlı hareket ve dönüş,
   pist eksenine hizalanma, yön ile kalkış, inişten sonra park yerine taksi.
-- [ ] Geri itme (pushback) ve yerde çarpışma önleme (taksi yolunda sıra bekleme).
+- [x] Overhead pattern (initial, break, downwind, base, kısa final), kapalı pattern ile pas
+  geçme, inişte durma noktası.
+- [x] Kol halinde sıralı kalkış ve iniş (`fm::ecs::takeoff_flight` / `land_flight`).
+- [ ] Yerde çarpışma önleme (taksi yolunda sıra bekleme).
+- [ ] Bağımsız trafik için pist sıralaması (ATC benzeri: farklı kollardan gelenleri tek
+  sıraya koyma, düz yaklaşmada aralık).
 - [ ] Yerdeyken rüzgâr etkisi, yan rüzgârda teker koymadan önce crab'dan çıkma (decrab).
 - [ ] Pist uzunluğu ve pist sonu kontrolü (kısa pistte pas geçme / kalkış iptali).
 
@@ -181,7 +191,9 @@ Helikopter ve drone için iniş / kalkış hazır (Faz 0). Sıradakiler:
 
 ## 6. Bilinen sınırlamalar
 
-- Yerde geri itme (pushback) ve yerde çarpışma önleme yok; uçak yerinde dönemez (Faz 1).
+- Yerde çarpışma önleme yok; uçak yerinde dönemez (Faz 1).
+- Kol sıralaması yalnızca kendi kolunu bilir: aynı pisti kullanan başka trafikle
+  (ör. ayrı bir kol ya da yolcu uçağı) aralık ayarlamaz.
 - Yan kayma (sideslip) yok; uçuş her zaman koordineli.
 - Yerdeyken rüzgâr yok sayılır.
 - Atmosfer modeli 32 km'ye kadar (ISA).

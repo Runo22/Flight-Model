@@ -5,8 +5,10 @@
 //
 // Every snippet of docs/NAVIGATION.md comes from here. The program checks its own results
 // and is run as a test (fm_navigation_example).
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include "fm/ecs/flight_module.hpp"
@@ -269,6 +271,39 @@ int main() {
         fm::ecs::agent(viper)->takeoff(plan);
     }
 
+    // 13) A flight of four fighters at the air base: out of the shelters along the taxiway,
+    //     staggered on the runway, takeoffs 10 s apart, the wingmen rejoin their leader.
+    //     Later the flight comes back for an overhead break and lands one after another.
+    const fm::GeoPoint base{40.90, 29.50, game::query_hot(40.90, 29.50)};
+    const double base_heading = fm::ecs::local_heading(world, 270.0, base);  // true 270
+    const fm::Vec3 base_start = fm::ecs::to_local(world, base);
+    const auto air_base = [&](double along, double right) {
+        const fm::Vec2 dir = fm::heading_vector(base_heading);
+        const fm::Vec2 p = base_start.xy() + dir * along + fm::right_of(dir) * right;
+        return fm::Vec3{p.x, p.y, 0.0};
+    };
+    std::vector<flecs::entity> vipers;
+    for (int k = 0; k < 4; ++k) {  // shelters south of the runway, noses north
+        const fm::GeoPoint shelter = fm::ecs::geo(world)->to_geo(air_base(100.0 + 60.0 * k, -250.0));
+        const std::string name = "Viper" + std::to_string(k + 1);
+        vipers.push_back(spawn(world, name.c_str(), fm::presets::single_engine_fighter(),
+                               {shelter.latitude, shelter.longitude, 0.0, 0, 0, 0.0}, 0.0, true));
+    }
+    const fm::Runway base_runway{base_start, base_heading};
+    {
+        fm::TakeoffPlan plan;
+        plan.runway = base_runway;
+        plan.taxi = {air_base(100.0, -180.0), air_base(-20.0, -180.0), air_base(-20.0, -70.0)};
+        plan.climb_height = 600.0;
+        fm::Route r;  // the leader orbits west of the base, the wingmen join it
+        r.waypoints = {wp(world, 40.92, 29.38, 2000.0)};
+        r.on_end = fm::EndBehavior::Loiter;
+        plan.then = r;
+        fm::ecs::FlightTakeoff options;
+        options.interval = 10.0;
+        fm::ecs::takeoff_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, plan, options);
+    }
+
     // Progress can be followed through the mode, the phase and the route index.
     int patrol_laps = 0;
     std::size_t last_index = 0;
@@ -276,6 +311,8 @@ int main() {
     bool shuttle_taxi = false;
     bool viper_lined_up = false;
     bool viper_flew = false;
+    bool flight_joined = false;
+    std::vector<double> flight_touchdown(4, -1.0);
     double cruiser_yaw_settled = 0.0;
     for (int second = 0; second < 900; ++second) {
         run(world, 1.0);
@@ -290,6 +327,19 @@ int main() {
             shuttle_taxi = fm::ecs::agent(shuttle)->taxi(to_apron, runway_heading + fm::kPi / 2.0);
         }
         viper_lined_up = viper_lined_up || pose(viper).phase == fm::FlightPhase::LineUp;
+        // 13) Once joined up, the flight comes back for an overhead break.
+        if (second == 420) {
+            flight_joined = std::all_of(vipers.begin() + 1, vipers.end(), [](flecs::entity v) {
+                return pose(v).mode == fm::FlightMode::Formation;
+            });
+            fm::ecs::FlightLanding landing;
+            landing.interval = 12.0;  // s between touchdowns
+            fm::ecs::land_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, base_runway, landing);
+        }
+        for (int k = 0; k < 4; ++k) {
+            if (second > 420 && flight_touchdown[k] < 0.0 && pose(vipers[k]).on_ground)
+                flight_touchdown[k] = second;
+        }
         viper_flew = viper_flew || height_above_terrain(viper) > 300.0;
         if (second % 150 == 0) {
             std::printf("t=%3d s  Turboprop %-7s | Jet %-6s wp %zu | Shuttle %-7s %-12s\n",
@@ -341,6 +391,15 @@ int main() {
                        fm::presets::attack_helicopter().gear_height) < 0.1,
           "11 helicopter landed on the carrier's deck");
     check(viper_lined_up && viper_flew, "12 fighter taxied out of the hangar, lined up, took off");
+    std::vector<double> touchdowns = flight_touchdown;
+    std::sort(touchdowns.begin(), touchdowns.end());
+    bool spaced = touchdowns.front() > 0.0;
+    for (std::size_t k = 1; k < touchdowns.size(); ++k)
+        spaced = spaced && touchdowns[k] - touchdowns[k - 1] >= 8.0;
+    check(flight_joined && spaced &&
+              std::all_of(vipers.begin(), vipers.end(),
+                          [](flecs::entity v) { return pose(v).phase == fm::FlightPhase::Landed; }),
+          "13 flight took off in sequence, rejoined, and landed one by one after the break");
     std::printf("\n%s\n", failures == 0 ? "all examples OK" : "SOME EXAMPLES FAILED");
     return failures == 0 ? 0 : 1;
 }

@@ -18,6 +18,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <vector>
 
 #include <flecs.h>
 
@@ -145,10 +146,69 @@ struct TransformLink {
     GeoPose written{};
 };
 
+// Flight (formation) takeoff and landing in sequence, see takeoff_flight() / land_flight().
+struct FlightTakeoff {
+    double interval = 10.0;      // s between the brake releases of successive rows
+    bool pairs = false;          // element takeoff: two aircraft side by side per row
+    double side_offset = 8.0;    // m left / right of the centerline, alternating (0 = on it)
+    double row_spacing = 150.0;  // m between the line-up rows along the runway
+    // Rejoin slots of the wingmen (index 0 = first wingman); missing = echelon right, 50 m.
+    std::vector<FormationSlot> slots;
+    // Taxi paths of the wingmen (index 0 = first wingman). Missing or empty: the leader's
+    // path, entered once the aircraft ahead has moved on along it.
+    std::vector<std::vector<Vec3>> taxi;
+};
+
+struct FlightLanding {
+    double interval = 12.0;          // s between touchdowns
+    // Break direction; empty = away from the wingmen (left when they fly on the right).
+    std::optional<bool> left_pattern;
+    double break_distance = 300.0;   // m past the runway start where the leader breaks
+    double side_offset = 8.0;        // m left / right of the centerline, alternating
+    double stop_spacing = 150.0;     // m between the stop positions (the leader stops furthest)
+    double echelon_spacing = 80.0;   // m, wingmen re-form in echelon for the break
+};
+
+// Bookkeeping of a flight sequence, on the leader entity. Removed when the sequence ends.
+struct FlightSequence {
+    struct Member {
+        flecs::entity entity;
+        TakeoffPlan plan{};       // takeoff
+        Runway runway{};          // landing (shifted to its side of the runway)
+        LandingOptions landing{};
+        FormationSlot slot{};     // rejoin slot after takeoff / echelon slot before the break
+        // Landing: wingmen on the break side first drop back behind the echelon here, then
+        // move to their slot at its outer end, so nobody crosses another's path.
+        FormationSlot transit{};
+        bool in_transit = false;
+        int row = 0;              // takeoff: line-up row, released row * interval after row 0
+        bool shared_taxi = false; // takeoff: taxis along the leader's path
+        bool passed_entry = false;  // takeoff: reached the first point of the shared path
+        bool started = false;     // takeoff command / landing command given
+        bool released = false;
+        bool done = false;        // rejoined / landed, or dropped (deleted, no agent)
+    };
+    bool landing = false;
+    std::vector<Member> members;  // [0] = leader; landing: in landing order
+    FlightTakeoff takeoff{};
+    FlightLanding land{};
+    double clock = 0.0;           // s since the sequence started
+    double release_time = -1.0;   // clock when the first row was released
+    // Landing: pattern shared by the flight.
+    Runway runway{};
+    bool left_pattern = true;
+    double initial_speed = 0.0;   // m/s
+    double break_spacing = 0.0;   // m between successive break points
+    double natural_stop = 0.0;    // m, longest landing roll of the flight
+    bool ordered = false;         // landing order fixed once the leader is on the initial
+};
+
 // --- Module ----------------------------------------------------------------------------
 
 // Systems (phase OnUpdate, in this order):
+//   FlightSequenceSystem: flight takeoffs and landings in sequence (single threaded).
 //   FollowSystem: feeds followers with their leader's state (single threaded).
+//   TrafficSystem: nearby agents as traffic for collision avoidance (single threaded).
 //   FlightSystem: steps every agent and writes FlightPose (multi-thread safe).
 struct FlightModule {
     explicit FlightModule(flecs::world& world);
@@ -239,6 +299,32 @@ void stop_following(flecs::entity follower);
 // TrackedPose / TrackedGeoPose) and keeps it on the deck until takeoff(). Returns false when
 // `e` has no agent, cannot land on a deck or is on the ground.
 bool land_on(flecs::entity e, flecs::entity carrier, const DeckSpot& spot);
+
+// --- Flights: takeoff and landing in sequence --------------------------------------------
+// A flight is a leader and its wingmen (fixed-wing aircraft).
+
+// Takeoff of a flight on the ground. The aircraft taxi (the leader along plan.taxi, the
+// wingmen along their own paths or behind each other along the leader's), line up staggered
+// on alternating sides of plan.runway (the leader furthest down) and wait. Once all are
+// lined up, the rows release their brakes `interval` seconds apart (pairs roll side by side
+// with `pairs`). Every wingman joins the leader's formation when its takeoff ends; the
+// leader flies plan.then. Returns false (and commands nothing) without a runway or when an
+// aircraft has no fixed-wing agent on the ground.
+bool takeoff_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen,
+                    const TakeoffPlan& plan, const FlightTakeoff& options = {});
+
+// Overhead recovery of a flight in the air. The wingmen re-form in echelon on the side away
+// from the break, the leader flies to the initial point and along the runway, and breaks
+// over it; the wingmen break after it so that they touch down `interval` seconds apart, on
+// alternating sides of the runway, and stop one behind the other. Wingmen that are not in
+// their echelon slot when the leader is on the initial (or not in its formation at all)
+// land last: each flies the pattern on its own once the aircraft before it has broken.
+// Returns false (and commands nothing) when an aircraft has no fixed-wing agent in the air.
+bool land_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen,
+                 const Runway& runway, const FlightLanding& options = {});
+
+// True while a takeoff_flight() / land_flight() of this leader is in progress.
+bool flight_sequence_active(flecs::entity leader);
 
 // --- Game transform binding -------------------------------------------------------------
 

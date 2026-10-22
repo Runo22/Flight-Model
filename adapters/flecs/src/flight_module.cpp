@@ -14,6 +14,7 @@ namespace {
 
 constexpr double kLeaderVelocityTau = 0.3;  // s, smoothing of estimated leader velocity
 constexpr double kMaxLeaderSpeed = 1500.0;  // m/s, faster position changes are jumps
+constexpr double kRejoinDistance = 300.0;  // m from its slot: the follower is rejoining
 
 const FrameConfig& config_or_default(const FrameConfig* config) {
     static const FrameConfig default_config{};
@@ -195,6 +196,190 @@ void attach_agent(flecs::entity e, FlightAgent agent, const std::optional<GeoPro
     if (proj) e.set<GeoPose>(geo_pose);
 }
 
+// Where `slot` of a leader at `position` heading `heading` is.
+Vec3 slot_position(const Vec3& position, double heading, const FormationSlot& slot) {
+    const Vec2 forward = heading_vector(heading);
+    const Vec3& o = slot.offset;
+    const Vec2 at = position.xy() + right_of(forward) * o.x + forward * o.y;
+    return {at.x, at.y, position.z + o.z};
+}
+
+FixedWingAgent* fixed_wing_of(flecs::entity e) {
+    FlightAgent* a = e.is_alive() ? agent(e) : nullptr;
+    return a ? a->fixed_wing() : nullptr;
+}
+
+// Flight takeoff: start the taxi (one after the other along a shared path), release the rows
+// once everybody is lined up, rejoin the leader once airborne.
+void step_takeoff(flecs::entity leader, FlightSequence& seq) {
+    const FlightTakeoff& o = seq.takeoff;
+    const std::vector<Vec3>& lead_taxi = seq.members.front().plan.taxi;
+    const Vec2 entry = lead_taxi.empty() ? Vec2{} : lead_taxi.front().xy();
+    bool all_ready = true;
+    const FlightSequence::Member* ahead = nullptr;
+    for (std::size_t m = 0; m < seq.members.size(); ++m) {
+        FlightSequence::Member& mem = seq.members[m];
+        if (mem.done) continue;
+        FixedWingAgent* fw = fixed_wing_of(mem.entity);
+        if (!fw) {
+            mem.done = true;  // deleted, or no fixed-wing agent any more
+            continue;
+        }
+        const FlightState& s = fw->state();
+        const double radius = std::max(fw->params().taxi_turn_radius, 10.0);
+        if (!mem.started) {
+            // Along the leader's path: enter it once the aircraft ahead has moved on.
+            bool go = true;
+            if (mem.shared_taxi && ahead) {
+                const FixedWingAgent* a = fixed_wing_of(ahead->entity);
+                go = !a || (ahead->started && ahead->passed_entry &&
+                            (a->state().position.xy() - entry).length() > 4.0 * radius);
+            }
+            if (go) {
+                mem.started = agent(mem.entity)->takeoff(mem.plan);
+                mem.done = !mem.started;
+            }
+            all_ready = false;
+            ahead = &mem;
+            continue;
+        }
+        ahead = &mem;
+        if ((s.position.xy() - entry).length() < 2.0 * radius) mem.passed_entry = true;
+        if (!mem.released) {
+            if (fw->mode() != FlightMode::Takeoff) {
+                mem.done = true;  // given another command
+                continue;
+            }
+            all_ready = all_ready && s.phase == FlightPhase::LineUp && s.ground_speed < 0.3;
+            if (seq.release_time >= 0.0 && seq.clock >= seq.release_time + mem.row * o.interval) {
+                fw->release_takeoff();
+                mem.released = true;
+                if (m == 0) mem.done = true;  // the leader flies its plan
+            }
+            continue;
+        }
+        // Airborne after the takeoff: join the leader.
+        if (m > 0 && fw->mode() != FlightMode::Takeoff && !s.on_ground) {
+            follow(mem.entity, leader, mem.slot);
+            mem.done = true;
+        }
+    }
+    if (seq.release_time < 0.0 && all_ready) seq.release_time = seq.clock;
+}
+
+// Landing parameters of the member at position `m` of the landing order: alternating sides
+// of the runway (the leader on the break side), later breaks, shorter stops.
+void assign_landing(const FlightSequence& seq, std::size_t m, FlightSequence::Member& mem) {
+    const FlightLanding& o = seq.land;
+    const double side = seq.left_pattern ? -1.0 : 1.0;
+    const Vec2 right = right_of(heading_vector(seq.runway.heading));
+    const double shift = (m % 2 == 0 ? side : -side) * o.side_offset;
+    const Vec2 at = seq.runway.start.xy() + right * shift;
+    mem.runway = seq.runway;
+    mem.runway.start.x = at.x;
+    mem.runway.start.y = at.y;
+    mem.landing.pattern = LandingPattern::Overhead;
+    mem.landing.left_pattern = seq.left_pattern;
+    mem.landing.break_distance = o.break_distance + static_cast<double>(m) * seq.break_spacing;
+    mem.landing.initial_speed = seq.initial_speed;
+    // Initial leg: the leader on the centerline, wingmen in echelon next to it.
+    mem.landing.initial_offset = (m == 0 ? 0.0 : mem.slot.offset.x) - shift;
+    mem.landing.stop_distance =
+        seq.natural_stop + static_cast<double>(seq.members.size() - 1 - m) * o.stop_spacing;
+}
+
+// Flight landing. Once the leader flies along the runway on the initial leg, the wingmen in
+// their echelon slots leave the formation for their own overhead approach at once; the
+// others are moved to the end of the landing order and start when the aircraft before them
+// has broken.
+void step_landing(FlightSequence& seq) {
+    using Stage = FixedWingAgent::LandingStage;
+    const auto past_break = [](const FixedWingAgent* fw) {
+        if (!fw || fw->mode() != FlightMode::Land) return true;
+        const Stage stage = fw->landing_stage();
+        return stage != Stage::Positioning && stage != Stage::Initial;
+    };
+    const flecs::entity leader = seq.members.front().entity;
+    const FixedWingAgent* lead_fw = fixed_wing_of(leader);
+    // Distance from a slot: horizontal, and height difference.
+    const auto slot_error = [&](const FlightSequence::Member& mem, const FormationSlot& slot) {
+        const FixedWingAgent* fw = fixed_wing_of(mem.entity);
+        if (!fw || !lead_fw) return Vec2{1e9, 1e9};
+        const FlightState& l = lead_fw->state();
+        const Vec3 d = fw->state().position - slot_position(l.position, l.attitude.heading, slot);
+        return Vec2{d.xy().length(), std::abs(d.z)};
+    };
+    if (!seq.ordered) {
+        // Wingmen dropping back behind the echelon move on to their slot.
+        for (FlightSequence::Member& mem : seq.members) {
+            if (mem.in_transit && slot_error(mem, mem.transit).x < seq.land.echelon_spacing) {
+                follow(mem.entity, leader, mem.slot);
+                mem.in_transit = false;
+            }
+        }
+    }
+    if (!seq.ordered) {
+        // The leader established on the initial: on the centerline, along the runway.
+        bool on_initial = !lead_fw || lead_fw->mode() != FlightMode::Land;
+        if (!on_initial) {
+            const Stage stage = lead_fw->landing_stage();
+            const FlightState& l = lead_fw->state();
+            const Vec2 dir = heading_vector(seq.runway.heading);
+            const double offset = dot(l.position.xy() - seq.runway.start.xy(), right_of(dir));
+            on_initial = stage != Stage::Positioning &&
+                         (stage != Stage::Initial ||
+                          (std::abs(wrap_pi(l.track - seq.runway.heading)) < deg2rad(10.0) &&
+                           std::abs(offset) < 150.0));
+        }
+        if (!on_initial) return;
+        // Wingmen close to their echelon slot keep their place in the order.
+        const auto in_position = [&](const FlightSequence::Member& mem) {
+            const FixedWingAgent* fw = fixed_wing_of(mem.entity);
+            const FollowLeader* f = mem.entity.try_get<FollowLeader>();
+            if (!fw || !f || f->leader != leader || fw->mode() != FlightMode::Formation ||
+                mem.in_transit)
+                return false;
+            const Vec2 error = slot_error(mem, mem.slot);
+            return error.x < std::max(100.0, 1.5 * seq.land.echelon_spacing) && error.y < 200.0;
+        };
+        std::stable_partition(seq.members.begin() + 1, seq.members.end(),
+                              [&](const FlightSequence::Member& mem) {
+                                  return mem.started || in_position(mem);
+                              });
+        for (std::size_t m = 1; m < seq.members.size(); ++m) {
+            FlightSequence::Member& mem = seq.members[m];
+            if (mem.started) continue;
+            assign_landing(seq, m, mem);
+            if (in_position(mem)) {
+                stop_following(mem.entity);
+                mem.started = agent(mem.entity)->land(mem.runway, mem.landing);
+                mem.done = !mem.started;
+            }
+        }
+        seq.ordered = true;
+    }
+    for (std::size_t m = 0; m < seq.members.size(); ++m) {
+        FlightSequence::Member& mem = seq.members[m];
+        if (mem.done) continue;
+        FixedWingAgent* fw = fixed_wing_of(mem.entity);
+        if (!fw) {
+            mem.done = true;
+            continue;
+        }
+        if (!mem.started) {
+            // Late: start once the aircraft before it has broken.
+            const FlightSequence::Member& before = seq.members[m - 1];
+            if (!before.done && (!before.started || !past_break(fixed_wing_of(before.entity))))
+                continue;
+            stop_following(mem.entity);
+            mem.started = agent(mem.entity)->land(mem.runway, mem.landing);
+            mem.done = !mem.started;
+            continue;
+        }
+        mem.done = fw->mode() != FlightMode::Land || fw->state().phase == FlightPhase::Landed;
+    }
+}
+
 template <typename... T>
 void reset_cached_ids() {
     (flecs::_::type<T>::reset(), ...);
@@ -218,9 +403,39 @@ FlightModule::FlightModule(flecs::world& world) {
     world.component<TransformLink>();
     world.component<FlightSettings>();
     world.component<Paused>();
+    world.component<FlightSequence>();
 
     if (!world.try_get<FrameConfig>()) world.set<FrameConfig>({});
     if (!world.try_get<FlightSettings>()) world.set<FlightSettings>({});
+
+    // Commands other entities (the flight members), so it must stay single threaded.
+    world.system<FlightSequence>("FlightSequenceSystem")
+        .kind(flecs::OnUpdate)
+        .without<Paused>()
+        .run([](flecs::iter& it) {
+            const FlightSettings settings = settings_of(it.world());
+            if (settings.paused) {
+                it.fini();
+                return;
+            }
+            const double dt = std::min<double>(it.delta_time(), settings.max_step);
+            while (it.next()) {
+                auto sequence = it.field<FlightSequence>(0);
+                for (auto i : it) {
+                    FlightSequence& seq = sequence[i];
+                    seq.clock += dt;
+                    if (seq.landing) {
+                        step_landing(seq);
+                    } else {
+                        step_takeoff(it.entity(i), seq);
+                    }
+                    const bool finished =
+                        std::all_of(seq.members.begin(), seq.members.end(),
+                                    [](const FlightSequence::Member& m) { return m.done; });
+                    if (finished) it.entity(i).remove<FlightSequence>();
+                }
+            }
+        });
 
     // Reads other entities (the leaders), so it must stay single threaded.
     world.system<FollowLeader, FlightController>("FollowSystem")
@@ -235,8 +450,13 @@ FlightModule::FlightModule(flecs::world& world) {
             }
             const FrameConfig& cfg = config_of(stage);
             const double dt = std::min<double>(it.delta_time(), settings.max_step);
-            // Widest follower offset per formation leader.
-            std::vector<std::pair<flecs::entity, double>> leads;
+            // Widest follower offset per formation leader, and whether one is rejoining.
+            struct Lead {
+                flecs::entity leader;
+                double extent = 0.0;
+                bool rejoining = false;
+            };
+            std::vector<Lead> leads;
             while (it.next()) {
                 auto follow = it.field<FollowLeader>(0);
                 auto controller = it.field<FlightController>(1);
@@ -250,24 +470,34 @@ FlightModule::FlightModule(flecs::world& world) {
                         continue;
                     }
                     if (!fc.agent || !fc.agent->tracks_leader()) continue;
-                    if (auto leader = leader_state(cfg, follow[i], dt))
-                        fc.agent->set_leader_state(*leader);
+                    const std::optional<LeaderState> leader = leader_state(cfg, follow[i], dt);
+                    if (leader) fc.agent->set_leader_state(*leader);
                     if (fc.agent->mode() != FlightMode::Formation) continue;
                     const double extent = std::abs(follow[i].slot.offset.x);
-                    auto lead = std::find_if(leads.begin(), leads.end(), [&](const auto& l) {
-                        return l.first == follow[i].leader;
+                    bool rejoining = false;
+                    if (leader) {
+                        const double heading = std::isfinite(leader->heading)
+                                                   ? leader->heading
+                                                   : heading_of(leader->velocity.xy());
+                        const Vec3 at = slot_position(leader->position, heading, follow[i].slot);
+                        rejoining = (fc.agent->state().position - at).length() > kRejoinDistance;
+                    }
+                    auto lead = std::find_if(leads.begin(), leads.end(), [&](const Lead& l) {
+                        return l.leader == follow[i].leader;
                     });
                     if (lead == leads.end()) {
-                        leads.emplace_back(follow[i].leader, extent);
+                        leads.push_back({follow[i].leader, extent, rejoining});
                     } else {
-                        lead->second = std::max(lead->second, extent);
+                        lead->extent = std::max(lead->extent, extent);
+                        lead->rejoining = lead->rejoining || rejoining;
                     }
                 }
             }
-            // Leaders bank only as far as their followers can follow.
-            for (const auto& [leader, extent] : leads) {
-                if (auto* fc = leader.try_get_mut<FlightController>(); fc && fc->agent)
-                    fc->agent->set_formation_lead(extent);
+            // Leaders bank only as far as their followers can follow, and slow down for
+            // the ones still rejoining.
+            for (const Lead& l : leads) {
+                if (auto* fc = l.leader.try_get_mut<FlightController>(); fc && fc->agent)
+                    fc->agent->set_formation_lead(l.extent, l.rejoining);
             }
         });
 
@@ -398,7 +628,7 @@ void unload(flecs::world& world) {
     // This binary may stay loaded and call load() again: forget the cached ids.
     reset_cached_ids<FlightModule, FrameConfig, FlightController, TerrainHeight,
                      HeightAboveGround, Wind, TrackedPose, TrackedGeoPose, FlightPose, GeoPose,
-                     FollowLeader, TransformLink, FlightSettings, Paused>();
+                     FollowLeader, TransformLink, FlightSettings, Paused, FlightSequence>();
 }
 
 flecs::entity module_entity(const flecs::world& world) {
@@ -533,6 +763,156 @@ bool land_on(flecs::entity e, flecs::entity carrier, const DeckSpot& spot) {
         a->set_leader_state(fc->agent->as_leader());
     e.set<FollowLeader>(relation);
     return true;
+}
+
+bool takeoff_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen,
+                    const TakeoffPlan& plan, const FlightTakeoff& options) {
+    if (!plan.runway || !(options.interval >= 0.0)) return false;
+    std::vector<flecs::entity> all{leader};
+    all.insert(all.end(), wingmen.begin(), wingmen.end());
+    for (std::size_t m = 0; m < all.size(); ++m) {
+        const FixedWingAgent* fw = fixed_wing_of(all[m]);
+        if (!fw || !fw->state().on_ground || (m > 0 && all[m] == leader)) return false;
+    }
+    FlightSequence seq;
+    seq.takeoff = options;
+    const int per_row = options.pairs ? 2 : 1;
+    const int rows = (static_cast<int>(all.size()) + per_row - 1) / per_row;
+    const Vec2 dir = heading_vector(plan.runway->heading);
+    for (std::size_t m = 0; m < all.size(); ++m) {
+        FlightSequence::Member mem;
+        mem.entity = all[m];
+        mem.row = static_cast<int>(m) / per_row;
+        // Staggered line-up: the leader's row furthest down the runway, sides alternating.
+        const double side = (m % 2 == 0 ? -1.0 : 1.0) * options.side_offset;
+        const double along = (rows - 1 - mem.row) * options.row_spacing;
+        Runway runway = *plan.runway;
+        const Vec2 at = runway.start.xy() + dir * along + right_of(dir) * side;
+        runway.start.x = at.x;
+        runway.start.y = at.y;
+        mem.plan = plan;
+        mem.plan.runway = runway;
+        mem.plan.hold = true;
+        if (m > 0) {
+            const std::size_t w = m - 1;
+            const bool own = w < options.taxi.size() && !options.taxi[w].empty();
+            mem.plan.then.reset();
+            mem.plan.taxi = own ? options.taxi[w] : plan.taxi;
+            mem.shared_taxi = !own && !plan.taxi.empty();
+            mem.slot = w < options.slots.size() ? options.slots[w]
+                                                : formation::echelon_right(static_cast<int>(w), 50.0);
+        }
+        // Without a path: straight to the line-up point.
+        if (mem.plan.taxi.empty()) mem.plan.taxi = {runway.start};
+        seq.members.push_back(std::move(mem));
+    }
+    leader.set<FlightSequence>(std::move(seq));
+    return true;
+}
+
+bool land_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen,
+                 const Runway& runway, const FlightLanding& options) {
+    if (!is_finite(runway.start) || !std::isfinite(runway.heading) ||
+        !(options.interval > 0.0) || !std::isfinite(options.break_distance))
+        return false;
+    std::vector<flecs::entity> all{leader};
+    all.insert(all.end(), wingmen.begin(), wingmen.end());
+    double natural_stop = 0.0;  // longest landing roll of the flight, from the runway start
+    for (std::size_t m = 0; m < all.size(); ++m) {
+        const FixedWingAgent* fw = fixed_wing_of(all[m]);
+        if (!fw || fw->state().on_ground || (m > 0 && all[m] == leader)) return false;
+        const double v_app = 0.5 * fw->overhead_initial_speed(runway);
+        natural_stop = std::max(natural_stop, fw->params().touchdown_distance + 100.0 +
+                                                  v_app * v_app /
+                                                      (2.0 * std::max(fw->params().brake_deceleration, 0.1)));
+    }
+    // Break away from the wingmen of the leader's formation.
+    bool left = true;
+    if (options.left_pattern) {
+        left = *options.left_pattern;
+    } else {
+        double offsets = 0.0;
+        for (const flecs::entity w : wingmen) {
+            const FollowLeader* f = w.try_get<FollowLeader>();
+            if (f && f->leader == leader) offsets += f->slot.offset.x;
+        }
+        left = offsets >= 0.0;
+    }
+    const FixedWingAgent* lead_fw = fixed_wing_of(leader);
+    FlightSequence seq;
+    seq.landing = true;
+    seq.land = options;
+    seq.runway = runway;
+    seq.left_pattern = left;
+    seq.initial_speed = lead_fw->overhead_initial_speed(runway);
+    seq.break_spacing = lead_fw->break_spacing(runway, options.interval, seq.initial_speed);
+    seq.natural_stop = natural_stop;
+    // Landing order = echelon order: the wingmen already on the echelon side (inner ones
+    // first), then the ones on the break side, then those not in the leader's formation.
+    const double echelon_side = left ? 1.0 : -1.0;  // echelon to the right for a left break
+    struct Wingman {
+        flecs::entity entity;
+        Vec3 offset{};
+        bool crossing = false;
+    };
+    std::vector<Wingman> keep, cross;
+    std::vector<flecs::entity> others;
+    for (const flecs::entity w : wingmen) {
+        const FollowLeader* f = w.try_get<FollowLeader>();
+        if (f && f->leader == leader && agent(w)->mode() == FlightMode::Formation) {
+            const Vec3 o = f->slot.offset;
+            const bool crossing = o.x * echelon_side < -1.0;
+            (crossing ? cross : keep).push_back({w, o, crossing});
+        } else {
+            others.push_back(w);
+        }
+    }
+    const auto depth = [&](const Wingman& w) { return std::abs(w.offset.x) - w.offset.y; };
+    const auto by_depth = [&](const Wingman& a, const Wingman& b) { return depth(a) < depth(b); };
+    std::stable_sort(keep.begin(), keep.end(), by_depth);
+    std::stable_sort(cross.begin(), cross.end(), by_depth);
+    std::vector<Wingman> echelon = keep;
+    echelon.insert(echelon.end(), cross.begin(), cross.end());
+    const double step = options.echelon_spacing * 0.7071;  // along and across per position
+    FlightSequence::Member lead_member;
+    lead_member.entity = leader;
+    seq.members.push_back(lead_member);
+    int crossing_index = 0;
+    for (std::size_t k = 0; k < echelon.size(); ++k) {
+        FlightSequence::Member mem;
+        mem.entity = echelon[k].entity;
+        const int index = static_cast<int>(k);
+        mem.slot = left ? formation::echelon_right(index, options.echelon_spacing)
+                        : formation::echelon_left(index, options.echelon_spacing);
+        if (echelon[k].crossing) {
+            // Straight back on its own side, behind the whole echelon.
+            mem.transit.offset = {echelon[k].offset.x,
+                                  -(static_cast<double>(echelon.size()) + 2.0 + crossing_index) * step,
+                                  echelon[k].offset.z};
+            mem.in_transit = true;
+            ++crossing_index;
+        }
+        seq.members.push_back(mem);
+    }
+    for (const flecs::entity w : others) {
+        FlightSequence::Member mem;
+        mem.entity = w;
+        seq.members.push_back(mem);
+    }
+    for (std::size_t m = 0; m < seq.members.size(); ++m) assign_landing(seq, m, seq.members[m]);
+    // The leader starts its approach; its wingmen re-form in echelon for the break.
+    FlightSequence::Member& lead = seq.members.front();
+    lead.started = agent(leader)->land(lead.runway, lead.landing);
+    for (std::size_t m = 1; m <= echelon.size(); ++m) {
+        FlightSequence::Member& mem = seq.members[m];
+        follow(mem.entity, leader, mem.in_transit ? mem.transit : mem.slot);
+    }
+    leader.set<FlightSequence>(std::move(seq));
+    return true;
+}
+
+bool flight_sequence_active(flecs::entity leader) {
+    return leader.is_alive() && leader.has<FlightSequence>();
 }
 
 }  // namespace fm::ecs

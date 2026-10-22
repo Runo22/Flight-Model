@@ -3,6 +3,7 @@ add_executable(fm_tests
   test_basics.cpp
   test_deck.cpp
   test_fixed_wing.cpp
+  test_flight_ops.cpp
   test_geo.cpp
   test_outputs.cpp
   test_presets.cpp

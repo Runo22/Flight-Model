@@ -34,6 +34,7 @@ constexpr double kAvoidMargin = 30.0;      // m beyond the protected height
 constexpr double kAvoidClearTime = 3.0;    // s without a conflict before the resolution ends
 constexpr double kAvoidLevel = 10.0;       // m: closer vertically counts as co-altitude
 constexpr double kFollowerSpeedShare = 0.92;
+constexpr double kRejoinSpeedShare = 0.8;  // of the cruise speed, while followers rejoin
 // Taxi and line-up.
 constexpr double kLineUpHeading = deg2rad(3.0);  // lined up: heading within this ...
 constexpr double kLineUpOffset = 3.0;            // ... and this close to the centerline (m)
@@ -49,6 +50,20 @@ constexpr double kTaxiStopSpeed = 0.01;          // m/s
 constexpr double kTaxiStopDistance = 1.5;        // m short of the end: arrived
 constexpr double kGroundLateralAccel = 3.0;      // m/s^2, steering limit at speed
 constexpr double kSteerRateAtSpeed = deg2rad(5.0);  // rad/s, allowed at any speed
+constexpr double kHoldStopTime = 1.0;            // s, stopping when lined up to wait
+// Overhead pattern.
+constexpr double kBreakBank = deg2rad(60.0);       // most bank in the break turn
+constexpr double kInitialSpeedFactor = 2.0;        // initial leg speed / approach speed
+constexpr double kDownwindSpeedFactor = 1.3;       // downwind speed / approach speed
+constexpr double kBaseSpeedFactor = 1.15;          // base turn speed / approach speed
+constexpr double kBaseBank = deg2rad(45.0);        // most bank planned for the base turn
+constexpr double kShortFinalTime = 35.0;           // s straight on the glide path
+constexpr double kInitialCorridor = 2000.0;        // m beside the runway line: on initial
+
+// Bank of the overhead break turn: hard, within the AI's bank and load factor limits.
+double break_bank(const FixedWingParams& p) {
+    return std::min({kBreakBank, p.bank_max, std::acos(1.0 / std::max(p.load_factor_max, 1.01))});
+}
 
 // Thrust / power lapse at the density ratio sigma: sigma^n in the troposphere; above the
 // tropopause (constant temperature) in proportion to the density.
@@ -228,6 +243,7 @@ bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
     takeoff_heading_ = wrap_2pi(heading);
     course_target_ = takeoff_heading_;
     takeoff_origin_ = origin;
+    takeoff_released_ = !plan.hold;
     const Vec2 dir = heading_vector(takeoff_heading_);
     path.push_back(origin + dir * kCenterlineLength);
     taxi_.start(std::move(path), false);
@@ -237,8 +253,18 @@ bool FixedWingAgent::takeoff(const TakeoffPlan& plan) {
     if (!lining_up_) taxi_.clear();
     runway_elevation_ = ground_elevation();
     flaps_ = true;
-    phase_ = lining_up_ ? FlightPhase::Taxi : FlightPhase::TakeoffRoll;
+    if (lining_up_) {
+        phase_ = FlightPhase::Taxi;
+    } else {
+        phase_ = takeoff_released_ ? FlightPhase::TakeoffRoll : FlightPhase::LineUp;
+    }
     out_.phase = phase_;
+    return true;
+}
+
+bool FixedWingAgent::release_takeoff() {
+    if (mode_ != FlightMode::Takeoff || !on_ground_) return false;
+    takeoff_released_ = true;
     return true;
 }
 
@@ -269,15 +295,32 @@ void FixedWingAgent::hover() {
     loiter_here_ = mode_ == FlightMode::Loiter;
 }
 
-bool FixedWingAgent::land(const Runway& runway) {
+bool FixedWingAgent::land(const Runway& runway, const LandingOptions& options) {
     if (on_ground_) return false;
     mode_ = FlightMode::Land;
     route_.clear();
+    taxi_.clear();
     runway_ = runway;
     runway_.heading = wrap_2pi(runway.heading);
     runway_elevation_ = runway.start.z;
+    landing_ = options;
     landing_stage_ = LandingStage::Positioning;
     phase_ = FlightPhase::Approach;
+    if (options.pattern == LandingPattern::Overhead) {
+        // Already flying along the runway towards the break point (e.g. next to the leader
+        // of a formation): the initial leg starts here, on a line parallel to the runway.
+        const Vec2 dir = heading_vector(runway_.heading);
+        const Vec2 rel = position_.xy() - runway_.start.xy();
+        const double along = dot(rel, dir);
+        const double offset = dot(rel, right_of(dir));
+        const double track = out_.ground_speed > 1.0 ? out_.track : heading_;
+        if (std::abs(wrap_pi(track - runway_.heading)) < deg2rad(45.0) &&
+            along < options.break_distance && along > -2.0 * p_.final_approach_distance &&
+            std::abs(offset) < kInitialCorridor) {
+            landing_stage_ = LandingStage::Initial;
+            initial_offset_ = std::isfinite(options.initial_offset) ? options.initial_offset : offset;
+        }
+    }
     return true;
 }
 
@@ -290,8 +333,9 @@ void FixedWingAgent::join_formation(const FormationSlot& slot) {
     leader_age_ = 0.0;
 }
 
-void FixedWingAgent::set_formation_lead(double lateral_extent) {
+void FixedWingAgent::set_formation_lead(double lateral_extent, bool rejoining) {
     lead_extent_ = std::isfinite(lateral_extent) ? std::max(lateral_extent, 0.0) : 0.0;
+    lead_rejoin_ = rejoining;
     lead_age_ = 0.0;
 }
 
@@ -396,6 +440,7 @@ bool FixedWingAgent::relocate(const Vec3& position, double heading) {
             case FlightMode::Land:
                 if (landing_stage_ == LandingStage::Rollout) {
                     runway_.heading = wrap_2pi(runway_.heading + r.turn);
+                    taxi_.clear();  // brake to a stop from here
                 } else {
                     landing_stage_ = LandingStage::Positioning;  // a new approach from here
                 }
@@ -429,7 +474,10 @@ void FixedWingAgent::step(double dt, const Environment& input) {
     }
 
     lead_age_ += dt;
-    if (lead_age_ > kLeaderTimeout) lead_extent_ = 0.0;  // no followers reported any more
+    if (lead_age_ > kLeaderTimeout) {  // no followers reported any more
+        lead_extent_ = 0.0;
+        lead_rejoin_ = false;
+    }
     if (avoid_sense_ != 0) {
         avoid_clear_time_ = conflict_now_ ? 0.0 : avoid_clear_time_ + dt;
         if (avoid_clear_time_ > kAvoidClearTime || on_ground_ || mode_ == FlightMode::Takeoff ||
@@ -484,6 +532,15 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
         cmd.altitude = position_.z;
         cmd.speed = 0.0;
         cmd.bank_limit = 0.0;
+        if (mode_ == FlightMode::Land && taxi_.active()) {
+            // Landing roll to the stop point: braking, then on at taxi speed.
+            const TaxiPath::Steering st =
+                taxi_.update(position_.xy(), heading_, tas_, taxi_settings());
+            cmd.heading = st.heading;
+            cmd.taxi = true;
+            cmd.taxi_accel = st.acceleration;
+            cmd.taxi_max_brake = p_.brake_deceleration;
+        }
         return cmd;
     }
 
@@ -638,6 +695,13 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
         const double along = dot(position_.xy() - takeoff_origin_, dir);
         const Vec2 aim = takeoff_origin_ + dir * (along + std::max(kRollLookahead, 3.0 * tas_));
         cmd.heading = heading_of(aim - position_.xy());
+        if (!takeoff_released_) {
+            // Lined up and waiting for the release: brakes on.
+            phase_ = FlightPhase::LineUp;
+            cmd.taxi = true;
+            cmd.taxi_accel = -tas_ / kHoldStopTime;
+            return;
+        }
         cmd.full_thrust = true;
         cmd.rotate = tas_ >= rotate_speed(atm.density);
         phase_ = cmd.rotate ? FlightPhase::Rotation : FlightPhase::TakeoffRoll;
@@ -730,8 +794,19 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
 
     cmd.heading = runway_.heading;
     switch (landing_stage_) {
+        case LandingStage::Initial:
+        case LandingStage::Break:
+        case LandingStage::Downwind:
+        case LandingStage::Base:
+            phase_ = FlightPhase::Approach;
+            guide_pattern(cmd, atm, vg);
+            break;
         case LandingStage::Positioning: {
             phase_ = FlightPhase::Approach;
+            if (landing_.pattern == LandingPattern::Overhead) {
+                guide_pattern(cmd, atm, vg);
+                break;
+            }
             // Entry point on the extended centerline, far enough out to turn onto final.
             const double radius = turn_radius(positioning_speed);
             const Vec2 entry = aim.xy() - dir * (faf_distance + 2.0 * radius);
@@ -812,7 +887,9 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
             cmd.use_accel = true;
             cmd.lateral_accel = l1_line(aim.xy(), dir, pos, vg, l1);
             const double height = position_.z - p_.gear_height - runway_.start.z;
-            cmd.altitude = runway_.start.z + p_.takeoff_climb_height;
+            const bool overhead = landing_.pattern == LandingPattern::Overhead;
+            cmd.altitude =
+                runway_.start.z + (overhead ? p_.pattern_height : p_.takeoff_climb_height);
             cmd.speed = 1.2 * v_app;
             cmd.full_thrust = height < p_.flaps_up_height;
             if (p_.retractable_gear && out_.vertical_speed > 1.0) gear_down_ = false;
@@ -820,12 +897,133 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
                 tas_ > 1.05 * kStallMargin * stall_speed(atm.density, false))
                 flaps_ = false;
             if (!flaps_) cmd.speed = positioning_speed;
-            if (position_.z > cmd.altitude - 30.0) landing_stage_ = LandingStage::Positioning;
+            if (position_.z > cmd.altitude - 30.0) {
+                // Overhead: on along the runway to the break again (a closed pattern).
+                landing_stage_ = overhead ? LandingStage::Initial : LandingStage::Positioning;
+                initial_offset_ = dot(pos - runway_.start.xy(), right_of(dir));
+            }
             break;
         }
         case LandingStage::Rollout:
             break;  // handled on the ground
     }
+}
+
+// Overhead pattern: initial leg along the runway at pattern height, a 180 deg break turn,
+// downwind, and a descending base turn onto a short final flown like a straight-in final.
+// Aircraft breaking later fly a longer downwind and land correspondingly later.
+void FixedWingAgent::guide_pattern(Command& cmd, const AtmosphereSample& atm, const Vec2& vg) {
+    const Vec2 dir = heading_vector(runway_.heading);
+    const Vec2 right = right_of(dir);
+    const Vec2 start = runway_.start.xy();
+    const Vec2 pos = position_.xy();
+    const double along = dot(pos - start, dir);  // m past the runway start
+    const double gs = std::max(vg.length(), 1.0);
+    const L1Settings l1 = l1_settings(gs);
+    const double side = landing_.left_pattern ? -1.0 : 1.0;  // downwind side, right = +1
+    const double v_app = approach_speed(atm.density);
+    const double v_initial = std::isfinite(landing_.initial_speed)
+                                 ? landing_.initial_speed
+                                 : kInitialSpeedFactor * v_app;
+    const double v_downwind = kDownwindSpeedFactor * v_app;
+    const double pattern_altitude = runway_.start.z + p_.pattern_height;
+    const double final_length = kShortFinalTime * v_app;  // m before the aim point
+    const double base_along = p_.touchdown_distance - final_length;
+    // Descent from abeam the aim point on the downwind (the perch) through the base turn
+    // to the glide path height at the start of the final.
+    const double base_radius = 0.5 * std::abs(downwind_offset_);
+    const double final_altitude = runway_.start.z + final_length * std::tan(p_.glide_slope);
+    const double descent_path = final_length + kPi * base_radius;
+    const auto descend = [&](double flown) {
+        const double drop = pattern_altitude - final_altitude;
+        cmd.altitude = pattern_altitude - drop * std::clamp(flown / descent_path, 0.0, 1.0);
+        if (flown > 0.0 && flown < descent_path) cmd.vertical_speed_ff = -drop * gs / descent_path;
+    };
+    cmd.use_accel = true;
+    cmd.altitude = pattern_altitude;
+    switch (landing_stage_) {
+        case LandingStage::Positioning: {
+            // To the initial point on the extended centerline.
+            const Vec3 aim = aim_point();
+            const double radius = turn_radius(v_initial);
+            const Vec2 ip = aim.xy() - dir * (p_.final_approach_distance + 2.0 * radius);
+            cmd.lateral_accel = l1_point(ip, pos, vg, l1);
+            cmd.speed = v_initial;
+            // Joining the extended centerline between the initial point and the runway.
+            const double to_aim = dot(pos - aim.xy(), dir);
+            const bool aligned = to_aim < -0.8 * p_.final_approach_distance &&
+                                 to_aim > -p_.final_approach_distance - 3.0 * radius &&
+                                 std::abs(wrap_pi(heading_of(vg) - runway_.heading)) < deg2rad(30.0) &&
+                                 std::abs(dot(pos - start, right)) < 0.5 * radius;
+            if (aligned || (pos - ip).length() < radius) {
+                landing_stage_ = LandingStage::Initial;
+                initial_offset_ =
+                    std::isfinite(landing_.initial_offset) ? landing_.initial_offset : 0.0;
+            }
+            break;
+        }
+        case LandingStage::Initial:
+            cmd.lateral_accel = l1_line(start + right * initial_offset_, dir, pos, vg, l1);
+            cmd.speed = v_initial;
+            if (along >= landing_.break_distance) {
+                landing_stage_ = LandingStage::Break;
+                // Downwind two break radii out, at least wide enough for the base turn.
+                const double v_base = kBaseSpeedFactor * v_app;
+                const double base_bank = std::min(p_.bank_max, kBaseBank);
+                const double min_offset = 2.0 * v_base * v_base / (kGravity * std::tan(base_bank));
+                downwind_offset_ = initial_offset_ +
+                                   side * 2.0 * break_radius(0.5 * (v_initial + v_downwind));
+                if (side * downwind_offset_ < min_offset) downwind_offset_ = side * min_offset;
+            }
+            break;
+        case LandingStage::Break: {
+            // Hard level turn to the downwind, slowing down at idle (speed brake).
+            cmd.lateral_accel = side * kGravity * std::tan(break_bank(p_));
+            cmd.speed = v_downwind;
+            if (std::abs(wrap_pi(heading_of(vg) - runway_.heading - kPi)) < deg2rad(30.0))
+                landing_stage_ = LandingStage::Downwind;
+            break;
+        }
+        case LandingStage::Downwind:
+            cmd.lateral_accel = l1_line(start + right * downwind_offset_, -dir, pos, vg, l1);
+            cmd.speed = v_downwind;
+            flaps_ = true;
+            gear_down_ = true;
+            descend(p_.touchdown_distance - along);
+            if (along <= base_along) landing_stage_ = LandingStage::Base;
+            break;
+        case LandingStage::Base: {
+            // Half circle from the downwind onto the runway line.
+            const Vec2 center = start + dir * base_along + right * (0.5 * downwind_offset_);
+            cmd.lateral_accel = l1_loiter(center, base_radius, side > 0.0, pos, vg, l1);
+            cmd.speed = kBaseSpeedFactor * v_app;
+            cmd.terrain_floor = false;
+            const double heading_error = std::abs(wrap_pi(heading_of(vg) - runway_.heading));
+            const double turned = std::clamp(1.0 - heading_error / kPi, 0.0, 1.0);
+            descend(final_length + turned * kPi * base_radius);
+            if (heading_error < deg2rad(20.0) || along > base_along + 0.5 * final_length)
+                landing_stage_ = LandingStage::Final;
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+double FixedWingAgent::overhead_initial_speed(const Runway& runway) const {
+    return kInitialSpeedFactor * approach_speed(isa(runway.start.z + p_.pattern_height).density);
+}
+
+double FixedWingAgent::break_spacing(const Runway& runway, double interval,
+                                     double initial_speed) const {
+    // Breaking d further on costs d on the initial leg and d again on the downwind.
+    const double v_downwind =
+        kDownwindSpeedFactor * approach_speed(isa(runway.start.z + p_.pattern_height).density);
+    return interval / (1.0 / initial_speed + 1.0 / v_downwind);
+}
+
+double FixedWingAgent::break_radius(double speed) const {
+    return speed * speed / (kGravity * std::tan(break_bank(p_)));
 }
 
 void FixedWingAgent::guide_formation(Command& cmd, const Vec2& vg, const SlotReference& ref) {
@@ -854,9 +1052,11 @@ void FixedWingAgent::guide_formation(Command& cmd, const Vec2& vg, const SlotRef
         // its along-track speed.
         const L1Settings tight{p_.l1_period * 0.6, p_.l1_damping, 0.0};
         cmd.lateral_accel = l1_line(ref.position.xy(), dir, pos, vg, tight) + ref.turn_rate * gs;
-        const double speed_error = dot(ref.velocity.xy(), dir) + kFormationAlongGain * along -
-                                   dot(vg, dir);
-        cmd.speed = tas_ + std::clamp(speed_error, -join_delta, join_delta);
+        // Along-track speed of the slot plus a bounded closing speed, as an absolute target
+        // (relative to the own speed it would keep accelerating while far behind or while
+        // flying across the slot's direction in a turn).
+        const double closing = std::clamp(kFormationAlongGain * along, -join_delta, join_delta);
+        cmd.speed = dot(ref.velocity.xy(), dir) + closing + wind_offset;
         cmd.speed_time_constant = std::min(p_.speed_time_constant, kFormationSpeedTau);
     }
 
@@ -879,7 +1079,10 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     if (on_ground_) {
         c.throttle = cmd.full_thrust ? 1.0 : p_.engine.idle_throttle;
         c.steer_heading = cmd.heading;
-        if (cmd.taxi) taxi_controls(cmd.taxi_accel, atm, c);
+        if (cmd.taxi) {
+            taxi_controls(cmd.taxi_accel,
+                          cmd.taxi_max_brake > 0.0 ? cmd.taxi_max_brake : kTaxiMaxBrake, atm, c);
+        }
         return c;
     }
 
@@ -896,6 +1099,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     // Leading a formation: keep a speed margin the followers can use to catch up.
     if (lead_extent_ > 0.0)
         v_cmd = std::min(v_cmd, std::max(v_min, kLeadSpeedShare * sustained_speed(atm, v_min, v_max)));
+    if (lead_rejoin_) v_cmd = std::min(v_cmd, std::max(v_min, kRejoinSpeedShare * p_.cruise_speed));
     // Below the terrain floor: slow down towards the best climb angle speed and put the
     // energy into climbing, like a pilot clearing rising ground.
     if (cmd.terrain_alert) v_cmd = std::min(v_cmd, std::max(v_min, min_drag_speed(atm.density)));
@@ -984,19 +1188,20 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
 }
 
 // Thrust and wheel brakes for the commanded acceleration while taxiing.
-void FixedWingAgent::taxi_controls(double accel, const AtmosphereSample& atm, Control& c) const {
+void FixedWingAgent::taxi_controls(double accel, double max_brake, const AtmosphereSample& atm,
+                                   Control& c) const {
     const double m = mass_;
     const double w = m * kGravity;
     const double slope = terrain_.valid() ? std::atan(terrain_.slope()) : 0.0;
     const double resistance = p_.rolling_friction * w * std::cos(slope) + w * std::sin(slope);
-    const double a = std::clamp(accel, -kTaxiMaxBrake, kTaxiMaxAccel);
+    const double a = std::clamp(accel, -max_brake, kTaxiMaxAccel);
     const double t_max = thrust_available(tas_, atm);
     c.taxi = true;
     c.throttle = std::clamp((m * a + resistance) / std::max(t_max, 1e-6), p_.engine.idle_throttle,
                             std::max(kTaxiMaxThrottle, p_.engine.idle_throttle));
     // The brakes take what the engines (idle thrust, spooling down) give too much.
     const double surplus = (throttle_ * t_max - resistance) / m - a;
-    c.brake = std::clamp(surplus, 0.0, kTaxiMaxBrake);
+    c.brake = std::clamp(surplus, 0.0, max_brake);
 }
 
 void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, const Vec3& wind,
@@ -1060,6 +1265,16 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
             landing_stage_ = LandingStage::Rollout;
             phase_ = FlightPhase::Rollout;
             speed_brake_ = p_.speedbrake_dcd0 > 0.0;
+            taxi_.clear();
+            if (std::isfinite(landing_.stop_distance)) {
+                // Roll on to the stop point, but never stop shorter than braking allows.
+                const Vec2 line = heading_vector(runway_.heading);
+                const Vec2 start = runway_.start.xy();
+                const double along = dot(position_.xy() - start, line);
+                const double braking = tas_ * tas_ / (2.0 * std::max(p_.brake_deceleration, 0.1));
+                const double stop = std::max(landing_.stop_distance, along + braking);
+                taxi_.start({start + line * along, start + line * stop}, true);
+            }
             return;
         }
         phase_ = gentle ? FlightPhase::Landed : FlightPhase::TerrainContact;

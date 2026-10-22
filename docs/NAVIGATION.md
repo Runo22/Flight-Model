@@ -318,7 +318,8 @@ fm::ecs::land_on(seahawk, carrier, spot);
   `line_abreast` ve `trail`'dir.
 * **Liderin sınırı:** Sabit kanatlı lider, en geniş takipçisi izleyebilsin diye yatışını ve
   hızını sınırlar. Bunu modül her frame otomatik yapar. Geniş açıklıklı savaş uçağı kolları
-  da sert dönüşlerde dağılmaz.
+  da sert dönüşlerde dağılmaz. Slotundan 300 m'den uzak bir takipçi varsa (rejoin) lider seyir
+  hızının %80'ini aşmaz; takipçi yetişince serbest kalır.
 * **Çarpışma önleme:** Modül her frame havadaki ajanları birbirine trafik olarak verir.
   Sabit kanatlı, 30 s içinde 300 m yatay / 100 m dikeyden yakın bir geçiş öngörürse TCAS
   gibi tırmanır ya da alçalır. İki uçak her zaman zıt yön seçer; çatışma bitince göreve
@@ -330,6 +331,69 @@ fm::ecs::land_on(seahawk, carrier, spot);
   kapatır. Kaçınma sürerken `state().avoiding_traffic` `true` olur. Flecs dışında
   `agent.set_traffic(...)` her adımda çağrılır.
 * **Henüz yok:** Oyuncunun uçağı gibi ajanı olmayan trafik ve helikopterlerin kaçınması.
+
+### Kol halinde sıralı kalkış
+
+Lider ve wingman'ler (sabit kanat, yerde) aynı pistten sırayla kalkar ve lidere katılır:
+
+```cpp
+fm::TakeoffPlan plan;
+plan.runway = base_runway;
+plan.taxi = {air_base(100.0, -180.0), air_base(-20.0, -180.0), air_base(-20.0, -70.0)};
+plan.climb_height = 600.0;
+plan.then = r;  // the leader's route; the wingmen join it
+fm::ecs::FlightTakeoff options;
+options.interval = 10.0;
+fm::ecs::takeoff_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, plan, options);
+```
+
+* **Taksi:** Lider `plan.taxi` yolunu izler. Wingman'ler kendi yolu verilmemişse
+  (`options.taxi`) aynı yola sırayla girer; her biri öndeki uçak yolun başından ayrılınca
+  harekete geçer.
+* **Dizilme:** Uçaklar pistin sol/sağ yarısına dönüşümlü (`side_offset`, 8 m) ve arka
+  arkaya sıralar hâlinde (`row_spacing`, 150 m) dizilir; lider en öndedir. Her uçak hizalanıp
+  frenle bekler (`phase` = `LineUp`).
+* **Kalkış:** Herkes dizilince sıralar `interval` saniye arayla fren bırakır.
+  `options.pairs = true` ile ikişerli eleman kalkışı yapılır (aynı sıradaki iki uçak yan
+  yana koşar).
+* **Toplanma:** Kalkışı biten wingman lidere katılır (`options.slots`; verilmezse 50 m
+  aralıklı sağ echelon). Lider `plan.then` rotasını uçar ve takipçiler yetişene kadar
+  yavaş gider.
+* Tek uçakta aynı mekanizma: `plan.hold = true` hizalanıp bekletir,
+  `agent->release_takeoff()` koşuyu başlatır.
+
+### Overhead break ile sıralı iniş
+
+```cpp
+fm::ecs::FlightLanding landing;
+landing.interval = 12.0;  // s between touchdowns
+fm::ecs::land_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, base_runway, landing);
+```
+
+* **Echelon:** Lider initial noktasına (pist ekseninde `final_approach_distance` dışarıda)
+  uçar. Kolundaki wingman'ler kırılış yönünün tersine echelon olur. Kırılış tarafındaki
+  wingman'ler önce kolun arkasına düşer, sonra echelon'un dış ucuna geçer; kimse kimsenin
+  önünden geçmez. Kırılış yönü verilmezse (`left_pattern`) wingman'lerden uzak taraf seçilir.
+* **Initial:** Lider pist ekseninde `pattern_height` yükseklikte (jetlerde 450 m) ve iniş
+  hızının 2 katında gelir. Wingman'ler kendi echelon hatlarında aynı hızla yanında uçar.
+* **Break:** Lider pistin `break_distance` (300 m) ilerisinde 60° yatışla (aracın sınırı
+  daha düşükse o) 180° döner. Her wingman biraz daha ileride kırar, mesafe touchdown'lar
+  `interval` saniye arayla olacak şekilde hesaplanır.
+* **Downwind, base ve final:** Herkes downwind'de iniş takımı ve flap açar. Pist eşiği
+  hizasından itibaren alçalır ve 180° base dönüşüyle 35 s'lik kısa finale girer.
+* **Yerde:** Uçaklar pistin dönüşümlü yarılarına iner. Önce inen daha ileride durur
+  (`stop_spacing`, 150 m); frenleme erken biterse taksi hızında durma noktasına ilerler.
+* **Geç kalanlar:** Lider initial'e yerleştiğinde echelon slotunda olmayan (ya da kolda hiç
+  olmayan) wingman sıranın sonuna alınır. Öndeki uçak kırınca kendi overhead yaklaşmasını
+  yapar.
+* **Tek uçakta:**
+  `agent->land(runway, {.pattern = fm::LandingPattern::Overhead, .break_distance = 300.0})`.
+  `LandingOptions::stop_distance` her inişte koşunun nerede biteceğini belirler.
+  `fixed_wing()->landing_stage()` aşamayı verir: `Initial`, `Break`, `Downwind`, `Base`,
+  `Final` ...
+* **Pas geçme:** Overhead'de pas geçen uçak pattern yüksekliğine tırmanır ve pistin
+  üstünden yeniden kırar (kapalı pattern).
+* `fm::ecs::flight_sequence_active(lider)` sıra sürerken `true` döner.
 
 ## 9. İlerlemeyi takip etmek
 
@@ -354,6 +418,7 @@ fm::ecs::land_on(seahawk, carrier, spot);
 | `follow_route` | Fly-by / fly-over, waypoint hızları | Aynısı, ayrıca `hold_time`. Drone keskin köşede yavaşlar; helikopter köşeyi hızını koruyarak yatışlı bir yayla alır | Fly-by, waypoint hızları; dümen gecikmesi için dönüşe erken başlar (`hold_time` yok) |
 | `takeoff` | Gerekirse taksi ve hizalanma, sonra pistten koşu, rotasyon, tırmanış | Dikey kalkış | Yok (`false`) |
 | `taxi(yol, yon)` | Yerde taksi, son noktada durur | Yok (`false`) | Yok (`false`) |
-| `land(runway)` | Pist yaklaşması, flare, frenleme | Pist başına uçup dikey iniş | Yok (`false`) |
+| `land(runway, options)` | Düz ya da overhead pattern, flare, frenleme, isteğe bağlı durma noktası | Pist başına uçup dikey iniş | Yok (`false`) |
+| `release_takeoff()` | `TakeoffPlan::hold` ile bekleyen kalkışı başlatır | Yok (`false`) | Yok (`false`) |
 | `land()` | Pist olmadan inemez (`false`) | Bulunduğu yere dikey iniş | Yok (`false`); durmak için `hover()` |
 | `land_on(spot)` | Henüz yok (`false`) | Hareketli güverteye iniş, güvertede gemiyle hareket; `takeoff()` güverteden kalkar | Yok (`false`); iniş noktalarını sağlar (`deck_spots`) |

@@ -66,6 +66,7 @@ FixedWingParams fast_jet() {
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;
+    p.pattern_height = 450.0;           // 1500 ft overhead pattern
     p.brake_deceleration = 3.0;
     return p;
 }
@@ -130,6 +131,7 @@ FixedWingParams airliner_jet() {
     p.flare_height = 12.0;
     p.touchdown_sink_rate = 0.7;
     p.decision_height = 60.0;
+    p.pattern_height = 450.0;           // 1500 ft overhead pattern
     p.brake_deceleration = 2.5;
     return p;
 }
@@ -354,6 +356,7 @@ FixedWingParams single_engine_fighter() {
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;
+    p.pattern_height = 450.0;           // 1500 ft overhead pattern
     p.brake_deceleration = 3.0;
     return p;
 }
@@ -422,6 +425,7 @@ FixedWingParams twin_engine_fighter() {
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;
+    p.pattern_height = 450.0;           // 1500 ft overhead pattern
     p.brake_deceleration = 3.0;
     return p;
 }
@@ -553,6 +557,7 @@ FixedWingParams jet_uav() {
     p.flare_height = 5.0;
     p.touchdown_sink_rate = 0.6;
     p.decision_height = 40.0;
+    p.pattern_height = 450.0;           // 1500 ft overhead pattern
     p.brake_deceleration = 2.5;
     return p;
 }

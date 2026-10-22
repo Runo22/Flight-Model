@@ -123,6 +123,7 @@ struct FixedWingParams {
     double flare_height = 6.0;             // m wheel height where the flare starts
     double touchdown_sink_rate = 0.6;      // m/s target sink rate at touchdown
     double decision_height = 40.0;         // m, approach stability check (go-around)
+    double pattern_height = 300.0;         // m above the runway, overhead pattern
     double brake_deceleration = 2.5;       // m/s^2 during the landing roll
 };
 

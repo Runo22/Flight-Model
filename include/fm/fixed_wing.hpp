@@ -25,6 +25,10 @@ class FixedWingAgent {
 public:
     using params_type = FixedWingParams;
     static constexpr VehicleKind kind = VehicleKind::FixedWing;
+    // Positioning / Final: straight-in. Initial, Break, Downwind, Base: overhead pattern.
+    enum class LandingStage {
+        Positioning, Initial, Break, Downwind, Base, Final, Flare, GoAround, Rollout
+    };
 
     FixedWingAgent(FixedWingParams params, const InitialConditions& ic);
 
@@ -49,6 +53,9 @@ public:
     // along plan.taxi and lining up first when needed (see TakeoffPlan). Only valid while
     // on the ground; returns false otherwise.
     bool takeoff(const TakeoffPlan& plan);
+    // Starts the run of a takeoff planned with `hold` (at once when lined up, otherwise as
+    // soon as it is). False when not on a takeoff on the ground.
+    bool release_takeoff();
     // Taxi on the ground through `path` (z ignored) and stop at its last point, arriving
     // along `final_heading` (rad) when given, e.g. into a hangar or parking spot after
     // landing. Ends parked. Only valid on the ground; returns false otherwise.
@@ -56,7 +63,11 @@ public:
     // Approach and landing on `runway` (start = threshold, heading = landing direction):
     // positioning to the extended centerline, 3 deg glide path, flare, touchdown and
     // braking. Unstable approaches go around and try again. Returns false on the ground.
-    bool land(const Runway& runway);
+    // LandingOptions select the overhead pattern and where the landing roll ends.
+    // Overhead: an aircraft flying along the runway towards the break point (e.g. a
+    // wingman next to its leader) starts on its own initial line, others fly to the
+    // initial point first.
+    bool land(const Runway& runway, const LandingOptions& options = {});
     // Without a runway a fixed-wing aircraft cannot land: returns false.
     bool land() { return false; }
     // Fixed-wing aircraft cannot hover: orbits the current position instead.
@@ -68,7 +79,9 @@ public:
     // only as far as the followers can follow (outside: speed and bank limit, inside:
     // minimum speed) and keeps a speed margin. Refreshed every step by the host (the Flecs
     // module does it); expires after 2 s without a refresh. 0 = not leading.
-    void set_formation_lead(double lateral_extent);
+    // `rejoining`: a follower is still far from its slot (e.g. after an interval takeoff);
+    // the leader flies at most 80% of its cruise speed so it can catch up.
+    void set_formation_lead(double lateral_extent, bool rejoining = false);
     // Vehicles around this one (not its formation partners), every step before step(): a
     // predicted conflict is resolved vertically (FixedWingParams::avoidance_*). Without
     // updates for 3 s the resolution ends.
@@ -87,9 +100,15 @@ public:
     // Height of the reference point above the ground when standing on it.
     double ground_offset() const { return p_.gear_height; }
     const RouteTracker& route() const { return route_; }
+    LandingStage landing_stage() const { return landing_stage_; }
 
     // --- Performance helpers --------------------------------------------------------
     double stall_speed(double density, bool flaps) const;
+    // Overhead pattern on `runway`: the default initial speed (m/s TAS), and how much
+    // further along the runway (m) an aircraft breaks to touch down `interval` seconds
+    // after one breaking earlier at `initial_speed`.
+    double overhead_initial_speed(const Runway& runway) const;
+    double break_spacing(const Runway& runway, double interval, double initial_speed) const;
     double turn_radius(double speed) const;
     double rotate_speed(double density) const;
 
@@ -112,6 +131,7 @@ private:
         double gamma_time_constant = 0.0; // s, 0 = params default (flare uses a quicker one)
         bool taxi = false;                // ground: taxi_accel with thrust and wheel brakes
         double taxi_accel = 0.0;          // m/s^2
+        double taxi_max_brake = 0.0;      // m/s^2, 0 = taxi default
     };
     struct Control {
         double bank = 0.0;
@@ -130,7 +150,10 @@ private:
     void finish_route(EndBehavior behavior);
     void guide_takeoff(Command& cmd, const AtmosphereSample& atm);
     void guide_taxi(Command& cmd);
-    void taxi_controls(double accel, const AtmosphereSample& atm, Control& c) const;
+    void taxi_controls(double accel, double max_brake, const AtmosphereSample& atm,
+                       Control& c) const;
+    void guide_pattern(Command& cmd, const AtmosphereSample& atm, const Vec2& ground_velocity);
+    double break_radius(double speed) const;  // m, overhead break turn
     TaxiPath::Settings taxi_settings() const;
     void guide_formation(Command& cmd, const Vec2& ground_velocity, const SlotReference& ref);
     void guide_landing(Command& cmd, const AtmosphereSample& atm, const Vec2& ground_velocity);
@@ -177,6 +200,7 @@ private:
     double avoid_clear_time_ = 0.0; // s without a conflict
     double lead_extent_ = 0.0;  // m, widest follower offset (formation lead)
     double lead_age_ = 0.0;     // s since the last refresh
+    bool lead_rejoin_ = false;  // a follower is rejoining: slow down
     double sustained_speed_ = 0.0;
     double sustained_altitude_ = -1e9;
     double fuel_ = 0.0;       // kg
@@ -225,10 +249,13 @@ private:
     Vec2 takeoff_origin_{};      // a point on the centerline
     double takeoff_heading_ = 0.0;
     bool lining_up_ = false;     // taxiing to the runway / lining up before the run
+    bool takeoff_released_ = true;  // false: lined up and waiting (TakeoffPlan::hold)
     TaxiPath taxi_;              // taxi and line-up path
 
-    enum class LandingStage { Positioning, Final, Flare, GoAround, Rollout };
     Runway runway_{};
+    LandingOptions landing_{};
+    double initial_offset_ = 0.0;   // m right of the runway line, overhead initial leg
+    double downwind_offset_ = 0.0;  // m right of the runway line, downwind leg
     LandingStage landing_stage_ = LandingStage::Positioning;
     double flare_height_ = 0.0;  // m, wheel height where the flare started (lag included)
     double flare_sink_ = 0.0;    // m/s, sink rate at the flare start

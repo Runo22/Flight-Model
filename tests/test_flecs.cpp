@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 #include "fm/ecs/flight_module.hpp"
 #include "fm/presets.hpp"
@@ -660,4 +661,156 @@ TEST_CASE("flecs: invalid coordinates attach nothing") {
     CHECK(ecs::agent(a) != nullptr);
     run(world, 1.0);
     CHECK_NEAR(geo_pose_of(a).latitude, 41.0, 1e-6);
+}
+
+// --- Flights: takeoff and landing in sequence --------------------------------------------
+
+namespace {
+constexpr double kAirfield = 100.0;
+
+std::vector<flecs::entity> parked_flight(flecs::world& world, const FixedWingParams& p, int n) {
+    std::vector<flecs::entity> flight;
+    for (int k = 0; k < n; ++k) {  // shelters south of the runway, noses north
+        flecs::entity e = world.entity();
+        ecs::attach(e, p, {{-200.0 + 60.0 * k, -200.0, kAirfield}, 0.0, 0.0, true});
+        e.set<ecs::TerrainHeight>({kAirfield});
+        flight.push_back(e);
+    }
+    return flight;
+}
+
+double min_separation(const std::vector<flecs::entity>& flight, bool airborne_only) {
+    double d = 1e9;
+    for (std::size_t i = 0; i < flight.size(); ++i)
+        for (std::size_t j = i + 1; j < flight.size(); ++j) {
+            const FlightState& a = ecs::agent(flight[i])->state();
+            const FlightState& b = ecs::agent(flight[j])->state();
+            if (airborne_only && a.on_ground && b.on_ground) continue;
+            d = std::min(d, (a.position - b.position).length());
+        }
+    return d;
+}
+}  // namespace
+
+TEST_CASE("flecs: a flight taxis out, takes off in sequence and rejoins") {
+    for (const bool pairs : {false, true}) {
+        flecs::world world = make_world(WorldFrame::enu());
+        const std::vector<flecs::entity> flight =
+            parked_flight(world, presets::single_engine_fighter(), 4);
+        TakeoffPlan plan;
+        plan.runway = Runway{{0, 0, kAirfield}, deg2rad(90.0)};  // east from (0, 0)
+        plan.taxi = {{-200, -120, 0}, {-50, -120, 0}, {-50, -40, 0}};
+        Route r;
+        Waypoint w;
+        w.position = {20000, 10000, 3000};
+        r.waypoints = {w};
+        r.on_end = EndBehavior::Loiter;
+        plan.then = r;
+        ecs::FlightTakeoff options;
+        options.pairs = pairs;
+        options.interval = 12.0;
+        CHECK(!ecs::takeoff_flight(flight[0], {flight[1]}, TakeoffPlan{}));  // no runway
+        CHECK(ecs::takeoff_flight(flight[0], {flight[1], flight[2], flight[3]}, plan, options));
+        std::vector<double> roll(4, -1.0);
+        double min_ground = 1e9;
+        double t = 0.0;
+        for (; t < 600.0 && (t < 1.0 || ecs::flight_sequence_active(flight[0])); t += kDt) {
+            world.progress(kDt);
+            for (int k = 0; k < 4; ++k)
+                if (roll[k] < 0.0 && pose_of(flight[k]).phase == FlightPhase::TakeoffRoll) roll[k] = t;
+            min_ground = std::min(min_ground, min_separation(flight, false));
+        }
+        CHECK(!ecs::flight_sequence_active(flight[0]));
+        for (int k = 1; k < 4; ++k) {
+            const int row = pairs ? k / 2 : k;
+            CHECK_NEAR(roll[k] - roll[0], row * options.interval, 0.2);
+        }
+        CHECK(min_ground > 14.0);
+        // The leader flies its route and waits for the wingmen, which rejoin.
+        run(world, 240.0);
+        CHECK(pose_of(flight[0]).mode == FlightMode::Route ||
+              pose_of(flight[0]).mode == FlightMode::Loiter);
+        for (int k = 1; k < 4; ++k) {
+            CHECK(pose_of(flight[k]).mode == FlightMode::Formation);
+            const Vec3 d = pose_of(flight[k]).position - pose_of(flight[0]).position;
+            CHECK(d.length() < 50.0 * k + 60.0);
+        }
+    }
+}
+
+TEST_CASE("flecs: a flight lands in sequence after an overhead break") {
+    flecs::world world = make_world(WorldFrame::enu());
+    const FixedWingParams p = presets::single_engine_fighter();
+    std::vector<flecs::entity> flight;
+    for (int k = 0; k < 4; ++k) {  // fingertip, heading for the airfield
+        flecs::entity e = world.entity();
+        ecs::attach(e, p, {{-30000.0 - 40.0 * k, 8000.0, 3000.0}, deg2rad(90.0), 180.0, false});
+        e.set<ecs::TerrainHeight>({kAirfield});
+        flight.push_back(e);
+    }
+    for (int k = 1; k < 4; ++k) CHECK(ecs::follow(flight[k], flight[0], formation::vic(k - 1, 60.0)));
+    run(world, 30.0);
+    const Runway runway{{0, 0, kAirfield}, deg2rad(90.0)};
+    ecs::FlightLanding options;
+    options.interval = 12.0;
+    CHECK(ecs::land_flight(flight[0], {flight[1], flight[2], flight[3]}, runway, options));
+    CHECK(ecs::flight_sequence_active(flight[0]));
+    std::vector<double> touchdown(4, -1.0);
+    double min_air = 1e9;
+    for (double t = 0.0; t < 900.0 && ecs::flight_sequence_active(flight[0]); t += kDt) {
+        world.progress(kDt);
+        for (int k = 0; k < 4; ++k)
+            if (touchdown[k] < 0.0 && pose_of(flight[k]).on_ground) touchdown[k] = t;
+        min_air = std::min(min_air, min_separation(flight, true));
+    }
+    CHECK(!ecs::flight_sequence_active(flight[0]));
+    CHECK(min_air > 20.0);
+    // Landing order = echelon order: the leader, then the wingmen on the right (vic slots 0
+    // and 2: flight[1], flight[3]), then the one that crossed over from the left.
+    const std::vector<int> order{0, 1, 3, 2};
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        const ecs::FlightPose& pose = pose_of(flight[order[i]]);
+        CHECK(pose.phase == FlightPhase::Landed);
+        CHECK(std::abs(pose.position.y) > 4.0 && std::abs(pose.position.y) < 12.0);
+        if (i > 0) {
+            const int before = order[i - 1];
+            CHECK_NEAR(touchdown[order[i]] - touchdown[before], options.interval,
+                       0.25 * options.interval);
+            // Alternate sides, each stopping behind the one before.
+            CHECK(pose.position.y * pose_of(flight[before]).position.y < 0.0);
+            CHECK(pose.position.x < pose_of(flight[before]).position.x - 100.0);
+        }
+    }
+}
+
+TEST_CASE("flecs: a straggler lands after the flight") {
+    flecs::world world = make_world(WorldFrame::enu());
+    const FixedWingParams p = presets::turboprop_trainer();
+    std::vector<flecs::entity> flight;
+    for (int k = 0; k < 3; ++k) {
+        flecs::entity e = world.entity();
+        ecs::attach(e, p, {{-20000.0 - 40.0 * k, -40.0 * k, 1000.0}, deg2rad(90.0), 100.0, false});
+        e.set<ecs::TerrainHeight>({kAirfield});
+        flight.push_back(e);
+    }
+    CHECK(ecs::follow(flight[1], flight[0], formation::echelon_right(0, 40.0)));
+    // flight[2] is somewhere else, not in the formation.
+    ecs::agent(flight[2])->relocate({-15000, 12000, 1500});
+    run(world, 20.0);
+    const Runway runway{{0, 0, kAirfield}, deg2rad(90.0)};
+    CHECK(ecs::land_flight(flight[0], {flight[2], flight[1]}, runway));
+    std::vector<double> touchdown(3, -1.0);
+    double min_air = 1e9;
+    for (double t = 0.0; t < 1200.0 && ecs::flight_sequence_active(flight[0]); t += kDt) {
+        world.progress(kDt);
+        for (int k = 0; k < 3; ++k)
+            if (touchdown[k] < 0.0 && pose_of(flight[k]).on_ground) touchdown[k] = t;
+        min_air = std::min(min_air, min_separation(flight, true));
+    }
+    for (int k = 0; k < 3; ++k) CHECK(pose_of(flight[k]).phase == FlightPhase::Landed);
+    // The wingman in formation lands second, the straggler last.
+    CHECK(touchdown[1] > touchdown[0] + 5.0);
+    CHECK(touchdown[2] > touchdown[1] + 5.0);
+    CHECK(pose_of(flight[2]).position.x < pose_of(flight[1]).position.x);
+    CHECK(min_air > 20.0);
 }

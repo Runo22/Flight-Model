@@ -110,6 +110,8 @@ public:
                 AltitudeRef altitude_ref = AltitudeRef::Absolute);
     // Fixed-wing: taxi along plan.taxi, line up on plan.runway / plan.heading and take off.
     bool takeoff(const TakeoffPlan& plan = {});
+    // Starts the run of a takeoff planned with TakeoffPlan::hold. Others: false.
+    bool release_takeoff();
     // Fixed-wing on the ground: taxi through `path` (z ignored) and stop at its last point,
     // arriving along `final_heading` (rad, NaN = any), e.g. into a hangar after landing.
     // Others, or non-finite points: false.
@@ -120,9 +122,10 @@ public:
     // Rotorcraft: vertical landing here. Fixed-wing: needs a runway (returns false).
     // Ships: false (use hover() to stop).
     bool land();
-    // Fixed-wing: approach and landing on the runway. Rotorcraft: fly to the runway start
-    // at the current altitude and land vertically there. Ships: false.
-    bool land(const Runway& runway);
+    // Fixed-wing: approach and landing on the runway (`options`: straight-in or overhead
+    // pattern, where the landing roll ends). Rotorcraft: fly to the runway start at the
+    // current altitude and land vertically there. Ships: false.
+    bool land(const Runway& runway, const LandingOptions& options = {});
     // Rotorcraft: land on a spot of a moving deck (ship flight deck) and ride on it until
     // takeoff(), which lifts off with the deck's velocity. The carrier's state must arrive
     // with set_leader_state() every step (fm::ecs::land_on does it). Other vehicles (and
@@ -135,7 +138,8 @@ public:
     // Leading a formation whose widest follower is `lateral_extent` m to the side: fixed-wing
     // leaders limit their bank and speed so the followers can stay in their slots. Call
     // every step (fm::ecs::follow does it); expires after 2 s. 0 = not leading.
-    void set_formation_lead(double lateral_extent);
+    // `rejoining`: a follower is still far from its slot; the leader slows down for it.
+    void set_formation_lead(double lateral_extent, bool rejoining = false);
     // Vehicles around this one, every step before step(), for collision avoidance
     // (fixed-wing: climbs or descends away from a predicted conflict). Leave out its
     // formation partners. The Flecs module does it for all agents.

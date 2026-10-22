@@ -125,9 +125,31 @@ bool FlightAgent::land() {
     return std::visit([](auto& m) { return m.land(); }, impl_);
 }
 
-bool FlightAgent::land(const Runway& runway) {
-    if (!usable(runway)) return false;
-    return std::visit([&](auto& m) { return m.land(runway); }, impl_);
+bool FlightAgent::land(const Runway& runway, const LandingOptions& options) {
+    if (!usable(runway) || std::isinf(options.break_distance) ||
+        std::isnan(options.break_distance) || std::isinf(options.initial_speed) ||
+        options.initial_speed <= 0.0 || std::isinf(options.stop_distance) ||
+        std::isinf(options.initial_offset))
+        return false;
+    return std::visit(
+        [&](auto& m) {
+            if constexpr (requires { m.land(runway, options); })
+                return m.land(runway, options);
+            else
+                return m.land(runway);
+        },
+        impl_);
+}
+
+bool FlightAgent::release_takeoff() {
+    return std::visit(
+        [](auto& m) {
+            if constexpr (requires { { m.release_takeoff() } -> std::same_as<bool>; })
+                return m.release_takeoff();
+            else
+                return false;
+        },
+        impl_);
 }
 
 bool FlightAgent::land_on(const DeckSpot& spot) {
@@ -151,11 +173,11 @@ void FlightAgent::set_fuel(double fuel) {
         impl_);
 }
 
-void FlightAgent::set_formation_lead(double lateral_extent) {
+void FlightAgent::set_formation_lead(double lateral_extent, bool rejoining) {
     std::visit(
         [&](auto& m) {
-            if constexpr (requires { m.set_formation_lead(lateral_extent); })
-                m.set_formation_lead(lateral_extent);
+            if constexpr (requires { m.set_formation_lead(lateral_extent, rejoining); })
+                m.set_formation_lead(lateral_extent, rejoining);
         },
         impl_);
 }

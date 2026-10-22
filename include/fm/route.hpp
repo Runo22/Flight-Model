@@ -30,6 +30,26 @@ struct Runway {
     double heading = 0.0;  // rad
 };
 
+enum class LandingPattern {
+    StraightIn,  // long final from the final approach fix
+    // Military recovery: along the runway at pattern height, a 180 deg break turn over the
+    // runway, downwind, a descending base turn onto a short final.
+    Overhead,
+};
+
+struct LandingOptions {
+    LandingPattern pattern = LandingPattern::StraightIn;
+    bool left_pattern = true;         // overhead: break and fly the downwind left of the runway
+    double break_distance = 0.0;      // overhead: m past the runway start where the break starts
+    double initial_speed = kUnknown;  // overhead: m/s TAS before the break; NaN = 2 x approach
+    // Overhead: m right of the runway line where the initial leg is flown (wingmen next to
+    // their leader); NaN = the runway line, or the current line when already on the initial.
+    double initial_offset = kUnknown;
+    // m past the runway start where the landing roll ends (rolling on at taxi speed if
+    // braking ends earlier); NaN = where braking ends.
+    double stop_distance = kUnknown;
+};
+
 struct Waypoint {
     Vec3 position{};
     AltitudeRef altitude_ref = AltitudeRef::Absolute;
@@ -75,6 +95,9 @@ struct TakeoffPlan {
     // Fixed-wing: ground path to the runway, e.g. out of a hangar along the taxiways
     // (z ignored, the aircraft stays on the ground).
     std::vector<Vec3> taxi;
+    // Fixed-wing: line up and wait; the run starts on release_takeoff() (formation and
+    // interval takeoffs).
+    bool hold = false;
 };
 
 }  // namespace fm
