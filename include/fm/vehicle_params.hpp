@@ -77,7 +77,15 @@ struct FixedWingParams {
     double descent_rate_max = 15.0;    // m/s
 
     // Speeds (m/s)
-    double cruise_speed = 60.0;        // true airspeed used when no speed is commanded
+    // Flown when no speed is commanded: this true airspeed, but below `cruise_altitude` not
+    // more than its calibrated airspeed there (like a CAS / Mach schedule: lower true
+    // airspeeds down low). A negative cruise_altitude keeps the true airspeed everywhere.
+    double cruise_speed = 60.0;        // true airspeed
+    double cruise_altitude = -1.0;     // m
+    // Orbits (loiter, hover) without a commanded speed are flown at this calibrated airspeed
+    // (0 = the best endurance speed: minimum drag speed for jets, a bit slower for propeller
+    // aircraft, at least 1.4 stall speeds).
+    double loiter_speed = 0.0;
     // Large climbs the commanded speed cannot sustain are flown at full power at this
     // equivalent airspeed (0 = best climb rate speed of the model, < 0 = always climb at
     // the commanded speed).

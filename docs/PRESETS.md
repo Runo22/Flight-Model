@@ -399,6 +399,7 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Kalkış | `rotate_speed`, `rotation_pitch`, `cl_alpha`, `cl0` + `flaps_dcl0` | yer etkisi, güç fazlası |
 | İniş mesafesi | `touchdown_distance`, `brake_deceleration`, `approach_speed_factor` | — |
 | Taksi | `taxi_speed` (düz taksi yolu), `taxi_turn_radius` (burun tekeri; köşe hızı √(1.5·r)) | — |
+| Komutsuz hız | `cruise_speed` + `cruise_altitude` (altında aynı CAS; negatif = her irtifada aynı TAS), yörüngede `loiter_speed` (0 = dayanım hızı) | `cruise_speed` |
 | Overhead pattern | `pattern_height` (jetler 450 m, diğerleri 300 m), break yatışı `bank_max` (en çok 60°), pattern hızları iniş hızından | — |
 | Seyirde burun açısı | `cl0`, `cl_alpha` | `flat_plate_area` |
 | Dönüş | AI: `bank_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |

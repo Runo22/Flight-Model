@@ -38,6 +38,7 @@ double angle_diff_deg(double a, double b) { return std::abs(rad2deg(wrap_pi(a - 
 TEST_CASE("relocate: cruising aircraft continues on the new line and altitude") {
     const FixedWingParams p = presets::fast_jet();
     FlightAgent a(p, airborne({0, 0, 2000}, 0.0, p.cruise_speed));
+    a.set_speed(p.cruise_speed);
     simulate(a, 20.0);
     CHECK(a.relocate({10000, 5000, 3000}, deg2rad(90.0)));
     CHECK_NEAR(a.state().position.x, 10000.0, 1e-9);  // visible right away

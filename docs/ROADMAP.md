@@ -97,7 +97,11 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   (echelon, overhead break, aralıklı touchdown, pistin dönüşümlü yarıları, sıralı durma).
   Çekirdekte: overhead pattern (`LandingOptions`), kalkışta bekle/serbest bırak
   (`TakeoffPlan::hold`, `release_takeoff`), inişte durma noktası.
-- **Testler:** 105 çekirdek + 28 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
+- **Hızlar:** hedef hız knot olarak da verilebilir (`SpeedRef::CalibratedKnots`,
+  `TrueKnots`). Komutsuz uçuşta CAS/Mach takvimi (`cruise_altitude`) ve yörüngede dayanım hızı.
+  Kol lideri en yavaş takipçiye göre hız sınırlar; önce kolu toplar (bekleme yörüngesi),
+  sonra göreve gider.
+- **Testler:** 108 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
   (`sortie`, `flight`) + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 

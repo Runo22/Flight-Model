@@ -2,6 +2,7 @@
 // sets the top speed) with velocity-based guidance for hover, routes, landing and formation.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <optional>
 
@@ -68,6 +69,12 @@ public:
     const RotorcraftParams& params() const { return p_; }
     // Height of the reference point above the ground when standing on it.
     double ground_offset() const { return p_.gear_height; }
+    // Fastest speed (m/s) held while following in formation, NaN when not in formation:
+    // a fixed-wing leader stays below it as far as it can.
+    double formation_speed_limit() const {
+        return mode_ == FlightMode::Formation ? 0.92 * std::min(p_.max_speed, power_.max_speed)
+                                              : kUnknown;
+    }
     const RouteTracker& route() const { return route_; }
 
 private:

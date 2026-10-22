@@ -43,7 +43,7 @@ fm::ecs::agent(e)->go_to(fm::ecs::to_local(world, {41.20, 29.20, 2500.0}), opt);
 | `on_arrival` | `ContinueStraight` (varsayılan): üstünden geçip düz devam. `Loiter`: uçak noktanın etrafında tur atar, drone üstünde bekler. `Land`: drone oraya iner (uçak pist ister, bkz. [Bölüm 4](#4-kalkış-ve-iniş)). |
 | `altitude_ref` | `Absolute` (varsayılan): deniz seviyesinden metre. `AboveTerrain`: z araziden yükseklik (arazi takibi). `Keep`: şu anki irtifa korunur, z yok sayılır. |
 | `speed` | Hız; NaN (varsayılan) = mevcut hız hedefi |
-| `speed_ref` | `True` (varsayılan): gerçek hava hızı, m/s. `Calibrated`: kalibre hava hızı (gösterge, IAS/CAS), m/s. `Mach`: Mach sayısı. Sabit kanatlı CAS ve Mach hedeflerini irtifa değişirken korur |
+| `speed_ref` | `True` (varsayılan): gerçek hava hızı, m/s. `Calibrated`: kalibre hava hızı (gösterge, IAS/CAS), m/s. `CalibratedKnots` / `TrueKnots`: aynıları knot olarak (KCAS / KTAS). `Mach`: Mach sayısı. Sabit kanatlı CAS ve Mach hedeflerini irtifa değişirken korur |
 | `vertical` | `Linear` (varsayılan): irtifa yol boyunca doğrusal değişir. `Immediate`: hemen tırmanır/alçalır. |
 
 Park halindeki bir uçağa `go_to` (ya da rota, loiter) verilirse **önce kendisi kalkar**:
@@ -97,7 +97,7 @@ fm::ecs::agent(jet)->follow_route(r);
 |---|---|
 | `position` | Yerel konum; z `altitude_ref`'e göre okunur |
 | `altitude_ref` | `Absolute`, `AboveTerrain` (araziden yükseklik) ya da `Keep` (irtifayı değiştirme) |
-| `speed`, `speed_ref` | Bu waypoint'ten itibaren hız; NaN = değiştirme. `speed_ref` ile TAS, CAS ya da Mach |
+| `speed`, `speed_ref` | Bu waypoint'ten itibaren hız; NaN = değiştirme. `speed_ref` ile TAS, CAS (m/s ya da knot) ya da Mach |
 | `fly_over` | `false` (varsayılan): köşeyi keserek dön (fly-by). `true`: tam üstünden geç |
 | `hold_time` | Drone: burada bu kadar saniye bekle |
 
@@ -218,10 +218,22 @@ fm::ecs::agent(e)->cruise();                     // keep going straight as now
   taşıp oturabilir) ve rüzgârda sürüklenmez.
 * Çizgi düzdür: 200 km sonra gerçek kuzeye göre rota ~1° kayar (büyük daire gibi).
 * Hiç komut yoksa araç düz devam eder (`cruise`); drone durgunsa olduğu yerde bekler.
-* Hız gösterge hızı ya da Mach olarak da verilebilir:
+* Hız gösterge hızı (knot ya da m/s) veya Mach olarak da verilebilir:
+  `set_speed(300.0, fm::SpeedRef::CalibratedKnots)` (300 KCAS),
   `hold(course, 10000.0, 0.78, fm::AltitudeRef::Absolute, fm::SpeedRef::Mach)`,
-  `set_speed(fm::knots(250.0), fm::SpeedRef::Calibrated)`. Sabit kanatlı bu hedefi
-  tırmanırken ve alçalırken de tutar.
+  `go_to(p, {.speed = 250.0, .speed_ref = fm::SpeedRef::CalibratedKnots})`. Sabit kanatlı bu
+  hedefi tırmanırken ve alçalırken de tutar. Çıktılar m/s'dir; `fm::to_knots(m_s)` çevirir.
+* **Komut edilmiş hız** (`set_speed`, `hold`, waypoint / `go_to` hızı) bir sonraki komuta
+  kadar her modda (loiter dahil) geçerlidir. Başlangıç hızı (`attach`'teki hız) komut
+  sayılmaz.
+* **Komut yoksa (sabit kanat):**
+  * Seyir, rota ve `go_to`'da `cruise_speed` uçulur. `cruise_altitude`'un altında bunun oradaki
+    CAS'ı tutulur (CAS/Mach takvimi gibi). Alçakta gerçek hız düşer; F-16 her irtifada
+    ~300 KCAS, yolcu jeti ~260 KCAS uçar.
+  * Yörüngede (`loiter`, `hover`) dayanım hızı uçulur: jette en az sürükleme hızı, pervanelide
+    biraz daha yavaşı, en az 1.4 Vs. F-16 ~300 KCAS, Hürkuş ~130 KCAS, yolcu jeti ~215 KCAS
+    uçar. `FixedWingParams::loiter_speed` (CAS) ile sabitlenebilir. Varsayılan yörünge
+    yarıçapı en çok 30° yatışla dönülecek kadardır.
 * **Tırmanış kipi (sabit kanat):** bazı tırmanışlarda komut edilen hız, istenen tırmanma
   oranını veremez. Tırmanış 150 m'den büyükse uçak bu durumda tam güçle en iyi tırmanma
   hızında tırmanır ve hedefe 30 m kala komut edilen hıza döner. `go_to`, rota, `hold` ve
@@ -325,8 +337,16 @@ fm::ecs::land_on(seahawk, carrier, spot);
   `line_abreast` ve `trail`'dir.
 * **Liderin sınırı:** Sabit kanatlı lider, en geniş takipçisi izleyebilsin diye yatışını ve
   hızını sınırlar. Bunu modül her frame otomatik yapar. Geniş açıklıklı savaş uçağı kolları
-  da sert dönüşlerde dağılmaz. Slotundan 300 m'den uzak bir takipçi varsa (rejoin) lider seyir
-  hızının %80'ini aşmaz; takipçi yetişince serbest kalır.
+  da sert dönüşlerde dağılmaz.
+* **En yavaş takipçi:** Lider, en yavaş takipçinin kolda tutabileceği hızın %90'ını aşmaz
+  (ör. F-16 lider, Kızılelma takipçi). Ancak kendi asgari hızının (1.3 Vs) altına inmez. Bu
+  hıza bile yetişemeyen takipçi (ör. F-16'nın arkasında Anka) geride kalır; lider düşmektense
+  yoluna devam eder.
+* **Önce kol, sonra görev:** Slotundan 300 m'den uzak bir takipçi varsa lider seyir hızının
+  %80'ini (ve en yavaş takipçinin %75'ini) aşmaz. 2 km'den uzaksa ve takipçiler liderin asgari
+  hızına yetişebiliyorsa lider bulunduğu yerde nazik bir yörüngede bekler
+  (`fixed_wing()->waiting_for_formation()`). Takipçiler onun çemberine girip arkadan
+  yetişir. Kol 5 s yerinde kalınca lider görevine (seyir, `go_to`, rota) devam eder.
 * **Çarpışma önleme:** Modül her frame havadaki ajanları birbirine trafik olarak verir.
   Sabit kanatlı, 30 s içinde 300 m yatay / 100 m dikeyden yakın bir geçiş öngörürse TCAS
   gibi tırmanır ya da alçalır. İki uçak her zaman zıt yön seçer; çatışma bitince göreve

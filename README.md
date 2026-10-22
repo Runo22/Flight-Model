@@ -25,7 +25,7 @@ guide: [`docs/PRESETS.md`](docs/PRESETS.md).
 | Command | Fixed-wing | Multirotor |
 |---|---|---|
 | no command / `cruise()` | straight and level on the current ground track | straight and level, or hover when stationary |
-| `hold(course, altitude, speed)` | new track/altitude/speed | same |
+| `hold(course, altitude, speed)` | new track/altitude/speed; speeds as TAS, CAS (m/s or knots: `SpeedRef::CalibratedKnots`) or Mach | same |
 | `go_to(point)` | fly to a point (then continue straight, loiter, ...) | fly to a point and stop |
 | `follow_route(route)` | fly-by/fly-over waypoints, linear altitude profile, loops | same, plus waypoint hold times |
 | `loiter(center, radius)` | orbit | orbit, or hover when radius is 0 |

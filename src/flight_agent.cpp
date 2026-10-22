@@ -173,11 +173,25 @@ void FlightAgent::set_fuel(double fuel) {
         impl_);
 }
 
-void FlightAgent::set_formation_lead(double lateral_extent, bool rejoining) {
+void FlightAgent::set_formation_lead(double lateral_extent, double rejoin_distance,
+                                     double follower_speed) {
     std::visit(
         [&](auto& m) {
-            if constexpr (requires { m.set_formation_lead(lateral_extent, rejoining); })
-                m.set_formation_lead(lateral_extent, rejoining);
+            if constexpr (requires {
+                              m.set_formation_lead(lateral_extent, rejoin_distance, follower_speed);
+                          })
+                m.set_formation_lead(lateral_extent, rejoin_distance, follower_speed);
+        },
+        impl_);
+}
+
+double FlightAgent::formation_speed_limit() const {
+    return std::visit(
+        [](const auto& m) {
+            if constexpr (requires { { m.formation_speed_limit() } -> std::same_as<double>; })
+                return m.formation_speed_limit();
+            else
+                return kUnknown;
         },
         impl_);
 }

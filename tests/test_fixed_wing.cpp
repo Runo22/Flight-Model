@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "fm/air_data.hpp"
 #include "fm/fixed_wing.hpp"
 #include "fm/presets.hpp"
 #include "harness.hpp"
@@ -139,15 +140,22 @@ TEST_CASE("fixed-wing: go_to then loiter at the point") {
     a.go_to({10000, 10000, 3000}, opt);
     simulate(a, 400.0);
     CHECK(a.mode() == FlightMode::Loiter);
-    double min_r = 1e9, max_r = 0.0;
+    double min_r = 1e9, max_r = 0.0, max_bank = 0.0;
     simulate(a, 300.0, {}, {}, [&](const FlightState& s, double) {
         const double r = (s.position.xy() - Vec2{10000, 10000}).length();
         min_r = std::min(min_r, r);
         max_r = std::max(max_r, r);
+        max_bank = std::max(max_bank, std::abs(s.attitude.roll));
     });
-    const double expected = 1.2 * a.turn_radius(p.cruise_speed);
-    CHECK(min_r > 0.75 * expected);
-    CHECK(max_r < 1.25 * expected);
+    // Without a speed command: a gentle orbit (at most 30 deg of bank) at the endurance
+    // speed.
+    const double bank = std::min(p.bank_max, deg2rad(30.0));
+    const double v = a.state().airspeed;
+    const double expected = 1.1 * v * v / (kGravity * std::tan(bank));
+    CHECK(min_r > 0.85 * expected);
+    CHECK(max_r < 1.15 * expected);
+    CHECK(max_bank < bank + deg2rad(2.0));
+    CHECK(a.state().calibrated_airspeed < 0.85 * calibrated_airspeed(p.cruise_speed, isa(3000.0)));
 }
 
 TEST_CASE("fixed-wing: large climbs at the climb speed, then back to the commanded speed") {

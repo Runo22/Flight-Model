@@ -54,7 +54,7 @@ struct Waypoint {
     Vec3 position{};
     AltitudeRef altitude_ref = AltitudeRef::Absolute;
     double speed = kUnknown;   // NaN = keep the current speed target
-    SpeedRef speed_ref = SpeedRef::True;  // `speed` is TAS (m/s), CAS (m/s) or Mach
+    SpeedRef speed_ref = SpeedRef::True;  // `speed` in TAS / CAS (m/s or knots) or Mach
     bool fly_over = false;     // true: pass over the point; false: cut the corner (fly-by)
     double hold_time = 0.0;    // s, rotorcraft hovers here before continuing
 };

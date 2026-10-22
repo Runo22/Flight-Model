@@ -35,6 +35,19 @@ constexpr double kAvoidClearTime = 3.0;    // s without a conflict before the re
 constexpr double kAvoidLevel = 10.0;       // m: closer vertically counts as co-altitude
 constexpr double kFollowerSpeedShare = 0.92;
 constexpr double kRejoinSpeedShare = 0.8;  // of the cruise speed, while followers rejoin
+// Leading followers: share of the slowest follower's formation speed limit flown at most,
+// in formation and while one of them rejoins.
+constexpr double kLeadFollowerShare = 0.9;
+constexpr double kRejoinFollowerShare = 0.75;
+constexpr double kRejoinClosing = 0.35;    // of the cruise speed, a rejoining follower's overtake
+constexpr double kRejoinDistance = 300.0;  // m from its slot: a follower is rejoining
+constexpr double kHoldDistance = 2000.0;   // m from its slot: the leader holds for it
+constexpr double kTurningRejoinRate = 0.01;  // rad/s: a leader turning faster is circled
+constexpr double kMaxJoinDistance = 2000.0;   // m, station keeping within it
+constexpr double kRejoinTaper = 20.0;          // s: overtake at most distance / 20 s
+constexpr double kHoldSettleTime = 5.0;        // s with the followers close: stop holding
+constexpr double kLoiterBank = deg2rad(30.0);  // default orbit radius: at most this bank
+constexpr double kLoiterStallMargin = 1.4;     // default orbit speed: at least 1.4 Vs
 // Taxi and line-up.
 constexpr double kLineUpHeading = deg2rad(3.0);  // lined up: heading within this ...
 constexpr double kLineUpOffset = 3.0;            // ... and this close to the centerline (m)
@@ -82,16 +95,18 @@ FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& 
         rated_lapse_ = density_lapse(isa(p_.engine.critical_altitude).sigma,
                                      p_.engine.density_exponent);
     }
+    if (p_.cruise_altitude >= 0.0)
+        cruise_calibrated_ = calibrated_airspeed(p_.cruise_speed, isa(p_.cruise_altitude));
     position_ = ic.position;
     heading_ = wrap_2pi(ic.heading);
     course_target_ = heading_;
     course_anchor_ = position_.xy();
-    speed_target_ = p_.cruise_speed;
     runway_elevation_ = kNoGround;
     on_ground_ = ic.on_ground;
     gear_down_ = on_ground_ || !p_.retractable_gear;
 
     const AtmosphereSample atm = isa(position_.z);
+    speed_target_ = default_speed(atm);  // the initial speed is not a speed command
     if (on_ground_) {
         runway_elevation_ = ic.position.z;
         position_.z = ic.position.z + p_.gear_height;
@@ -100,8 +115,7 @@ FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& 
         phase_ = FlightPhase::Parked;
     } else {
         // Start trimmed for level flight.
-        tas_ = ic.speed > 0.0 ? ic.speed : p_.cruise_speed;
-        speed_target_ = tas_;
+        tas_ = ic.speed > 0.0 ? ic.speed : speed_target_;
         trim_level(atm);
         phase_ = FlightPhase::Airborne;
     }
@@ -137,6 +151,7 @@ void FixedWingAgent::hold_course(double course, const Vec2& anchor, double altit
 
 void FixedWingAgent::set_speed(double speed, SpeedRef ref) {
     if (!std::isfinite(speed) || speed <= 0.0) return;
+    speed_commanded_ = true;
     speed_ref_ = ref;
     speed_command_ = speed;
     speed_target_ = true_airspeed(speed, ref, isa(position_.z, temperature_offset_));
@@ -333,9 +348,12 @@ void FixedWingAgent::join_formation(const FormationSlot& slot) {
     leader_age_ = 0.0;
 }
 
-void FixedWingAgent::set_formation_lead(double lateral_extent, bool rejoining) {
+void FixedWingAgent::set_formation_lead(double lateral_extent, double rejoin_distance,
+                                        double follower_speed) {
     lead_extent_ = std::isfinite(lateral_extent) ? std::max(lateral_extent, 0.0) : 0.0;
-    lead_rejoin_ = rejoining;
+    lead_rejoin_distance_ = std::isfinite(rejoin_distance) ? std::max(rejoin_distance, 0.0) : 0.0;
+    lead_follower_speed_ =
+        std::isfinite(follower_speed) && follower_speed > 0.0 ? follower_speed : kUnknown;
     lead_age_ = 0.0;
 }
 
@@ -466,17 +484,26 @@ void FixedWingAgent::step(double dt, const Environment& input) {
         relocation_.reset();
         settle_relocation(r);
     }
-    // CAS and Mach targets: the true airspeed for the altitude reached one speed time
-    // constant ahead, so the speed keeps up while climbing or descending.
-    if (speed_ref_ != SpeedRef::True) {
+    // CAS and Mach targets (and the default speeds): the true airspeed for the altitude
+    // reached one speed time constant ahead, so the speed keeps up while climbing or
+    // descending.
+    {
         const double ahead = position_.z + out_.vertical_speed * p_.speed_time_constant;
-        speed_target_ = true_airspeed(speed_command_, speed_ref_, isa(ahead, temperature_offset_));
+        const AtmosphereSample atm_ahead = isa(ahead, temperature_offset_);
+        if (!speed_commanded_) {
+            speed_target_ = default_speed(atm_ahead);
+        } else if (speed_ref_ != SpeedRef::True) {
+            speed_target_ = true_airspeed(speed_command_, speed_ref_, atm_ahead);
+        }
     }
 
     lead_age_ += dt;
+    if (lead_hold_)
+        hold_joined_time_ = lead_rejoin_distance_ < kRejoinDistance ? hold_joined_time_ + dt : 0.0;
     if (lead_age_ > kLeaderTimeout) {  // no followers reported any more
         lead_extent_ = 0.0;
-        lead_rejoin_ = false;
+        lead_rejoin_distance_ = 0.0;
+        lead_follower_speed_ = kUnknown;
     }
     if (avoid_sense_ != 0) {
         avoid_clear_time_ = conflict_now_ ? 0.0 : avoid_clear_time_ + dt;
@@ -588,6 +615,13 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
     const bool own_speed = mode_ == FlightMode::Takeoff || mode_ == FlightMode::Formation ||
                            mode_ == FlightMode::Land || mode_ == FlightMode::Taxi;
     if (!own_speed) cmd.speed = speed_target_;
+    // Leading followers still far away: orbit here until they have joined.
+    update_lead_hold(atm);
+    if (lead_hold_) {
+        cmd.use_accel = true;
+        cmd.lateral_accel = l1_loiter(hold_center_, hold_radius_, true, position_.xy(), vg,
+                                      l1_settings(gs));
+    }
     resolved_altitude_target_ = cmd.altitude;
     // Collision avoidance overrides the task's altitude until the conflict is clear.
     if (avoid_sense_ > 0) cmd.altitude = std::max(cmd.altitude, avoid_altitude_);
@@ -909,6 +943,34 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
     }
 }
 
+// Form up first, then go: a leader whose followers are far from their slots orbits where it
+// is until they have joined, then carries on with its task. Not when they cannot even fly
+// its minimum speed (waiting would not help), nor on the ground or in a takeoff / landing.
+void FixedWingAgent::update_lead_hold(const AtmosphereSample& atm) {
+    const double v_min = kStallMargin * stall_speed(atm.density, false);
+    const bool can_wait = !on_ground_ &&
+                          (mode_ == FlightMode::Cruise || mode_ == FlightMode::GoTo ||
+                           mode_ == FlightMode::Route) &&
+                          std::isfinite(lead_follower_speed_) && lead_follower_speed_ >= v_min;
+    if (!can_wait) {
+        lead_hold_ = false;
+        return;
+    }
+    if (lead_hold_) {
+        // Joined and settled in their slots: carry on.
+        if (hold_joined_time_ > kHoldSettleTime) lead_hold_ = false;
+        return;
+    }
+    if (lead_rejoin_distance_ < kHoldDistance) return;
+    hold_joined_time_ = 0.0;
+    lead_hold_ = true;
+    // Sized for the speed flown while holding, with a bank margin so the orbit is flown
+    // as planned.
+    const double v = std::max(1.2 * v_min, kRejoinSpeedShare * cruise_speed_at(atm));
+    hold_radius_ = 1.1 * v * v / (kGravity * std::tan(0.8 * std::min(p_.bank_max, kLoiterBank)));
+    hold_center_ = position_.xy() + right_of(heading_vector(heading_)) * hold_radius_;
+}
+
 // Overhead pattern: initial leg along the runway at pattern height, a 180 deg break turn,
 // downwind, and a descending base turn onto a short final flown like a straight-in final.
 // Aircraft breaking later fly a longer downwind and land correspondingly later.
@@ -1035,18 +1097,41 @@ void FixedWingAgent::guide_formation(Command& cmd, const Vec2& vg, const SlotRef
     const double join_delta = 0.15 * p_.cruise_speed;
     const double wind_offset = tas_ - gs;  // rough airspeed/groundspeed difference
     const L1Settings l1 = l1_settings(gs);
-    const double join_distance =
-        std::max(3.0 * l1_distance(l1, gs), 10.0 * p_.formation_min_separation);
+    // Station keeping close to the slot, rejoin beyond: at most 2 km, and within a third of
+    // the leader's turn radius while it keeps turning (tracking the slot line from further
+    // away only flies a parallel circle).
+    double join_distance = std::min(3.0 * l1_distance(l1, gs), kMaxJoinDistance);
+    const double slot_speed = ref.velocity.xy().length();
+    if (std::abs(ref.turn_rate) > kTurningRejoinRate)
+        join_distance = std::min(join_distance, 0.3 * slot_speed / std::abs(ref.turn_rate));
+    join_distance = std::max(join_distance, 10.0 * p_.formation_min_separation);
 
     cmd.use_accel = true;
     cmd.altitude = ref.position.z;
     if (err.length() > join_distance) {
-        // Rejoin: head for where the slot will be, slightly faster (or slower) than it.
-        const double t_go = std::clamp(err.length() / gs, 0.0, 60.0);
-        const Vec2 aim = ref.position.xy() + ref.velocity.xy() * t_go;
-        cmd.lateral_accel = l1_point(aim, pos, vg, l1);
-        const double closing = along >= 0.0 ? join_delta : -join_delta;
-        cmd.speed = ref.velocity.xy().length() + wind_offset + closing;
+        // Rejoin, faster than the slot when behind it, slower when ahead.
+        double overtake = kRejoinClosing * cruise_speed_at(isa(position_.z, temperature_offset_));
+        if (std::isfinite(formation_speed_limit_))
+            overtake = std::min(overtake, std::max(formation_speed_limit_ - slot_speed, join_delta));
+        overtake = std::min(overtake, std::max(err.length() / kRejoinTaper, join_delta));
+        bool behind = along >= 0.0;
+        if (std::abs(ref.turn_rate) > kTurningRejoinRate && slot_speed > 1.0) {
+            // The leader keeps turning (e.g. holding for the flight): fly the slot's circle
+            // and catch up along it. Chasing a point on the circle would only orbit outside.
+            const Vec2 v_dir = ref.velocity.xy() / slot_speed;
+            const bool right = ref.turn_rate > 0.0;
+            const double radius = slot_speed / std::abs(ref.turn_rate);
+            const Vec2 center = ref.position.xy() + (right ? right_of(v_dir) : -right_of(v_dir)) * radius;
+            cmd.lateral_accel = l1_loiter(center, radius, right, pos, vg, l1);
+            // Behind when the slot is less than half a circle ahead in the turn direction.
+            const double ahead = cross(pos - center, ref.position.xy() - center);  // > 0: CCW
+            behind = right ? ahead < 0.0 : ahead > 0.0;
+        } else {
+            // Head for where the slot will be.
+            const double t_go = std::clamp(err.length() / gs, 0.0, 60.0);
+            cmd.lateral_accel = l1_point(ref.position.xy() + ref.velocity.xy() * t_go, pos, vg, l1);
+        }
+        cmd.speed = slot_speed + wind_offset + (behind ? overtake : -overtake);
     } else {
         // Station keeping: track the slot line, anticipate the leader's turn and match
         // its along-track speed.
@@ -1099,7 +1184,19 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     // Leading a formation: keep a speed margin the followers can use to catch up.
     if (lead_extent_ > 0.0)
         v_cmd = std::min(v_cmd, std::max(v_min, kLeadSpeedShare * sustained_speed(atm, v_min, v_max)));
-    if (lead_rejoin_) v_cmd = std::min(v_cmd, std::max(v_min, kRejoinSpeedShare * p_.cruise_speed));
+    // Followers rejoining: slow down so they catch up (form up first, then go). Never
+    // faster than the slowest follower can follow, but never below the own minimum speed
+    // either: a follower too slow for that falls behind.
+    const bool rejoining = lead_rejoin_distance_ > kRejoinDistance;
+    if (rejoining) v_cmd = std::min(v_cmd, std::max(v_min, kRejoinSpeedShare * cruise_speed_at(atm)));
+    if (std::isfinite(lead_follower_speed_)) {
+        const double share = rejoining ? kRejoinFollowerShare : kLeadFollowerShare;
+        v_cmd = std::min(v_cmd, std::max(v_min, share * lead_follower_speed_));
+    }
+    // As a follower: what can be held in formation (for the leader to stay below).
+    formation_speed_limit_ = mode_ == FlightMode::Formation
+                                 ? kFollowerSpeedShare * sustained_speed(atm, v_min, v_max)
+                                 : kUnknown;
     // Below the terrain floor: slow down towards the best climb angle speed and put the
     // energy into climbing, like a pilot clearing rising ground.
     if (cmd.terrain_alert) v_cmd = std::min(v_cmd, std::max(v_min, min_drag_speed(atm.density)));
@@ -1420,7 +1517,7 @@ void FixedWingAgent::start_flying_here() {
     on_ground_ = false;
     lining_up_ = false;
     taxi_.clear();
-    tas_ = std::max(tas_, p_.cruise_speed);
+    tas_ = std::max(tas_, cruise_speed_at(isa(position_.z)));
     ground_pitch_ = 0.0;
     flaps_ = false;
     speed_brake_ = false;
@@ -1564,8 +1661,10 @@ double FixedWingAgent::lead_bank_limit(const AtmosphereSample& atm, double v_min
     // same turn rate, one to the inside (1 - d/R) times slower; d/R = d g tan(bank) / v^2.
     const double v = std::max(tas_, v_min);
     const double a = lead_extent_ * kGravity / (v * v);  // d/R per unit tan(bank)
-    const double fast = std::min(kFollowerSpeedShare * sustained_speed(atm, v_min, v_max) / v - 1.0,
-                                 1.0 - 1.1 * v_min / v);
+    const double follower_max = std::isfinite(lead_follower_speed_)
+                                    ? lead_follower_speed_
+                                    : kFollowerSpeedShare * sustained_speed(atm, v_min, v_max);
+    const double fast = std::min(follower_max / v - 1.0, 1.0 - 1.1 * v_min / v);
     double tan_bank = std::max(fast, 0.0) / a;
     // The outside follower turns at the leader's rate with at most its own bank limit:
     // tan(bank) (1 + a tan(bank)) <= tan(bank_max).
@@ -1607,7 +1706,35 @@ double FixedWingAgent::rotate_speed(double density) const {
 }
 
 double FixedWingAgent::loiter_radius_default() const {
-    return 1.2 * turn_radius(std::max(tas_, speed_target_));
+    // A gentle orbit at the speed it will be flown at: at most 30 deg of bank.
+    const AtmosphereSample atm = isa(position_.z, temperature_offset_);
+    const double v = speed_commanded_
+                         ? speed_target_
+                         : true_airspeed_from_calibrated(loiter_calibrated_speed(), atm);
+    return 1.1 * v * v / (kGravity * std::tan(std::min(p_.bank_max, kLoiterBank)));
+}
+
+double FixedWingAgent::cruise_speed_at(const AtmosphereSample& atm) const {
+    if (cruise_calibrated_ <= 0.0) return p_.cruise_speed;
+    return std::min(p_.cruise_speed, true_airspeed_from_calibrated(cruise_calibrated_, atm));
+}
+
+double FixedWingAgent::default_speed(const AtmosphereSample& atm) const {
+    if (mode_ == FlightMode::Loiter)
+        return true_airspeed_from_calibrated(loiter_calibrated_speed(), atm);
+    return cruise_speed_at(atm);
+}
+
+double FixedWingAgent::loiter_calibrated_speed() const {
+    if (p_.loiter_speed > 0.0) return p_.loiter_speed;
+    // Best endurance: the minimum drag speed for jets, a bit slower for propeller aircraft
+    // (as equivalent airspeeds, at sea level density), with a margin above the stall in
+    // the orbit's bank.
+    const double rho = isa(0.0).density;
+    const double factor = p_.engine.type == EngineType::Jet ? 1.0 : 0.8;
+    const double cl = std::sqrt(p_.cd0 / std::max(p_.induced_drag_k, 1e-6));
+    const double v_md = std::sqrt(2.0 * mass_ * kGravity / (rho * p_.wing_area * cl));
+    return std::max(factor * v_md, kLoiterStallMargin * stall_speed(rho, false));
 }
 
 double FixedWingAgent::approach_speed(double density) const {

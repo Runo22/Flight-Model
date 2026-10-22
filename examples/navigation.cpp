@@ -353,7 +353,7 @@ int main() {
     bool trainer_waited = false;
     bool trainer_flew = false;
     double cruiser_yaw_settled = 0.0;
-    for (int second = 0; second < 1050; ++second) {
+    for (int second = 0; second < 1100; ++second) {
         run(world, 1.0);
         if (second == 400) cruiser_yaw_settled = transform(cruiser).yaw;
         const std::size_t index = fm::ecs::agent(uav)->fixed_wing()->route().index();

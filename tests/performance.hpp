@@ -198,6 +198,7 @@ inline Landing landing(const FixedWingParams& p) {
         ic.position.y = -distance;
         return ic;
     }());
+    b.set_speed(1.6 * stall_speed(p, 0.0, false));  // positioning at the starting speed
     b.land(Runway{{0.0, 0.0, 0.0}, 0.0});
     Landing r;
     double last_vs = 0.0;

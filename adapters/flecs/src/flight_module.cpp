@@ -14,7 +14,6 @@ namespace {
 
 constexpr double kLeaderVelocityTau = 0.3;  // s, smoothing of estimated leader velocity
 constexpr double kMaxLeaderSpeed = 1500.0;  // m/s, faster position changes are jumps
-constexpr double kRejoinDistance = 300.0;  // m from its slot: the follower is rejoining
 
 const FrameConfig& config_or_default(const FrameConfig* config) {
     static const FrameConfig default_config{};
@@ -471,7 +470,8 @@ FlightModule::FlightModule(flecs::world& world) {
             struct Lead {
                 flecs::entity leader;
                 double extent = 0.0;
-                bool rejoining = false;
+                double rejoin_distance = 0.0;      // m, furthest follower from its slot
+                double follower_speed = kUnknown;  // slowest follower's limit, m/s
             };
             std::vector<Lead> leads;
             while (it.next()) {
@@ -491,30 +491,32 @@ FlightModule::FlightModule(flecs::world& world) {
                     if (leader) fc.agent->set_leader_state(*leader);
                     if (fc.agent->mode() != FlightMode::Formation) continue;
                     const double extent = std::abs(follow[i].slot.offset.x);
-                    bool rejoining = false;
+                    double distance = 0.0;  // from the slot
                     if (leader) {
                         const double heading = std::isfinite(leader->heading)
                                                    ? leader->heading
                                                    : heading_of(leader->velocity.xy());
                         const Vec3 at = slot_position(leader->position, heading, follow[i].slot);
-                        rejoining = (fc.agent->state().position - at).length() > kRejoinDistance;
+                        distance = (fc.agent->state().position - at).length();
                     }
+                    const double speed = fc.agent->formation_speed_limit();
                     auto lead = std::find_if(leads.begin(), leads.end(), [&](const Lead& l) {
                         return l.leader == follow[i].leader;
                     });
                     if (lead == leads.end()) {
-                        leads.push_back({follow[i].leader, extent, rejoining});
+                        leads.push_back({follow[i].leader, extent, distance, speed});
                     } else {
                         lead->extent = std::max(lead->extent, extent);
-                        lead->rejoining = lead->rejoining || rejoining;
+                        lead->rejoin_distance = std::max(lead->rejoin_distance, distance);
+                        if (!(lead->follower_speed <= speed)) lead->follower_speed = speed;
                     }
                 }
             }
-            // Leaders bank only as far as their followers can follow, and slow down for
-            // the ones still rejoining.
+            // Leaders bank only as far as their followers can follow, stay below the
+            // slowest one's speed and slow down for the ones still rejoining.
             for (const Lead& l : leads) {
                 if (auto* fc = l.leader.try_get_mut<FlightController>(); fc && fc->agent)
-                    fc->agent->set_formation_lead(l.extent, l.rejoining);
+                    fc->agent->set_formation_lead(l.extent, l.rejoin_distance, l.follower_speed);
             }
         });
 

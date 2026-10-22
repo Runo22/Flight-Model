@@ -16,6 +16,7 @@ inline constexpr double kGravity = 9.80665;  // m/s^2
 constexpr double deg2rad(double deg) { return deg * (kPi / 180.0); }
 constexpr double rad2deg(double rad) { return rad * (180.0 / kPi); }
 constexpr double knots(double kt) { return kt * 0.514444; }  // kt -> m/s
+constexpr double to_knots(double ms) { return ms / 0.514444; }  // m/s -> kt
 constexpr double feet(double ft) { return ft * 0.3048; }     // ft -> m
 
 struct Vec2 {

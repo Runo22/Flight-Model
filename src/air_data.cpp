@@ -43,6 +43,8 @@ double true_airspeed(double speed, SpeedRef ref, const AtmosphereSample& atm) {
     switch (ref) {
         case SpeedRef::Calibrated: return true_airspeed_from_calibrated(speed, atm);
         case SpeedRef::Mach: return speed * atm.speed_of_sound;
+        case SpeedRef::TrueKnots: return knots(speed);
+        case SpeedRef::CalibratedKnots: return true_airspeed_from_calibrated(knots(speed), atm);
         case SpeedRef::True: break;
     }
     return speed;

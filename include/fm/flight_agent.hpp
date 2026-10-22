@@ -97,9 +97,12 @@ public:
     // return false); NaN speeds keep the current speed. Bad step inputs (NaN wind, infinite
     // terrain, non-finite dt) are ignored too, so host data never poisons the state.
     void cruise();
-    // `speed` in `speed_ref`: TAS (m/s), CAS (m/s, what the airspeed indicator shows) or
-    // Mach. Fixed-wing aircraft hold CAS / Mach targets through altitude changes; other
-    // vehicles convert them once at the current altitude.
+    // `speed` in `speed_ref`: TAS or CAS (what the airspeed indicator shows) in m/s or knots,
+    // or Mach, e.g. set_speed(300.0, SpeedRef::CalibratedKnots). Fixed-wing aircraft hold
+    // CAS / Mach targets through altitude changes; other vehicles convert them once at the
+    // current altitude. A commanded speed holds in every mode until the next command;
+    // without one fixed-wing aircraft fly their cruise schedule, and orbits at the
+    // endurance speed (FixedWingParams::cruise_speed, loiter_speed).
     void hold(double course, double altitude, double speed,
               AltitudeRef altitude_ref = AltitudeRef::Absolute,
               SpeedRef speed_ref = SpeedRef::True);
@@ -138,8 +141,15 @@ public:
     // Leading a formation whose widest follower is `lateral_extent` m to the side: fixed-wing
     // leaders limit their bank and speed so the followers can stay in their slots. Call
     // every step (fm::ecs::follow does it); expires after 2 s. 0 = not leading.
-    // `rejoining`: a follower is still far from its slot; the leader slows down for it.
-    void set_formation_lead(double lateral_extent, bool rejoining = false);
+    // Form up first, then go: `rejoin_distance` (m) is how far the furthest follower is
+    // from its slot; fixed-wing leaders slow down for it and hold (orbit) while it is far.
+    // `follower_speed`: true airspeed (m/s) the slowest follower can hold in formation; the
+    // leader stays below it as far as its own minimum speed allows (NaN = unknown).
+    void set_formation_lead(double lateral_extent, double rejoin_distance = 0.0,
+                            double follower_speed = kUnknown);
+    // Fastest true airspeed (m/s) this vehicle can hold while following in formation, NaN
+    // when not following or unknown.
+    double formation_speed_limit() const;
     // Vehicles around this one, every step before step(), for collision avoidance
     // (fixed-wing: climbs or descends away from a predicted conflict). Leave out its
     // formation partners. The Flecs module does it for all agents.

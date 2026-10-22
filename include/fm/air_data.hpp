@@ -5,14 +5,17 @@
 #include <cmath>
 
 #include "fm/atmosphere.hpp"
+#include "fm/math.hpp"
 
 namespace fm {
 
 // What a commanded speed is measured in.
 enum class SpeedRef {
-    True,        // true airspeed, m/s
-    Calibrated,  // calibrated (indicated) airspeed, m/s: the airspeed indicator
-    Mach,        // Mach number
+    True,             // true airspeed, m/s
+    Calibrated,       // calibrated (indicated) airspeed, m/s: the airspeed indicator
+    Mach,             // Mach number
+    TrueKnots,        // true airspeed, knots (KTAS)
+    CalibratedKnots,  // calibrated (indicated) airspeed, knots (KCAS / KIAS)
 };
 
 inline constexpr double kSeaLevelPressure = 101325.0;            // Pa

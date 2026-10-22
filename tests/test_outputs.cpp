@@ -46,6 +46,7 @@ TEST_CASE("air data: calibrated, equivalent and true airspeed, Mach") {
 TEST_CASE("outputs: g force, turn rate and acceleration in a level turn") {
     const FixedWingParams p = presets::light_propeller();
     FlightAgent a(p, airborne({0, 0, 1500}, 0.0, p.cruise_speed));
+    a.set_speed(p.cruise_speed);  // keep the starting speed (not the cruise schedule)
     simulate(a, 10.0);
     // Straight and level: 1 g into the seat, tilted by the pitch attitude; no acceleration.
     const double pitch = a.state().attitude.pitch;
@@ -165,6 +166,74 @@ TEST_CASE("speeds: CAS and Mach targets are held through altitude changes") {
     heli.hold(0.0, 3000.0, knots(100.0), AltitudeRef::Absolute, SpeedRef::Calibrated);
     simulate(heli, 120.0);
     CHECK_NEAR(heli.state().calibrated_airspeed, knots(100.0), knots(3.0));
+}
+
+TEST_CASE("speeds: targets in knots, true or calibrated") {
+    const FixedWingParams p = presets::single_engine_fighter();
+    FlightAgent a(p, airborne({0, 0, 3000}, 0.0, 180.0));
+    a.set_speed(300.0, SpeedRef::CalibratedKnots);
+    simulate(a, 90.0);
+    CHECK_NEAR(to_knots(a.state().calibrated_airspeed), 300.0, 2.0);
+    GoToOptions opt;
+    opt.speed = 420.0;
+    opt.speed_ref = SpeedRef::TrueKnots;
+    a.go_to({0, 80000, 3000}, opt);
+    simulate(a, 90.0);
+    CHECK_NEAR(to_knots(a.state().airspeed), 420.0, 2.0);
+    CHECK_NEAR(true_airspeed(250.0, SpeedRef::CalibratedKnots, isa(0.0)), knots(250.0), 1e-6);
+    // Other vehicles convert once at the current altitude.
+    InitialConditions heli;
+    heli.position = {0, 0, 500};
+    FlightAgent h(presets::attack_helicopter(), heli);
+    h.hold(0.0, 500.0, 100.0, AltitudeRef::Absolute, SpeedRef::CalibratedKnots);
+    simulate(h, 60.0);
+    CHECK_NEAR(to_knots(h.state().calibrated_airspeed), 100.0, 3.0);
+}
+
+TEST_CASE("speeds: without a command the cruise speed is held as CAS down low") {
+    const FixedWingParams p = presets::single_engine_fighter();
+    const double cruise_cas = calibrated_airspeed(p.cruise_speed, isa(p.cruise_altitude));
+    // Spawned fast down low: settles at the cruise CAS (not the cruise true airspeed).
+    FlightAgent low(p, airborne({0, 0, 1000}, 0.0, p.cruise_speed));
+    simulate(low, 120.0);
+    CHECK_NEAR(low.state().calibrated_airspeed, cruise_cas, 2.0);
+    CHECK(low.state().airspeed < 0.8 * p.cruise_speed);
+    // At the cruise altitude: the cruise true airspeed (Mach 0.8).
+    FlightAgent high(p, airborne({0, 0, p.cruise_altitude}, 0.0, 200.0));
+    simulate(high, 120.0);
+    CHECK_NEAR(high.state().airspeed, p.cruise_speed, 2.0);
+    // Presets without a cruise altitude keep the true airspeed.
+    const FixedWingParams uav = presets::propeller_uav();
+    FlightAgent u(uav, airborne({0, 0, 1000}, 0.0, 40.0));
+    simulate(u, 120.0);
+    CHECK_NEAR(u.state().airspeed, uav.cruise_speed, 1.0);
+}
+
+TEST_CASE("speeds: orbits without a command at the endurance speed, gently banked") {
+    for (const FixedWingParams& p : {presets::single_engine_fighter(), presets::airliner_jet(),
+                                     presets::turboprop_trainer(), presets::propeller_uav()}) {
+        FlightAgent a(p, airborne({0, 0, 2000}, 0.0, p.cruise_speed));
+        a.hover();  // orbit here
+        double max_bank = 0.0;
+        simulate(a, 600.0, {}, {}, [&](const FlightState& s, double t) {
+            if (t > 300.0) max_bank = std::max(max_bank, std::abs(s.attitude.roll));
+        });
+        // Best endurance speed of the model: around the minimum drag speed (jets) or a bit
+        // slower (propellers), at least 1.4 stall speeds.
+        const double cas = a.state().calibrated_airspeed;
+        const double vs = a.fixed_wing()->stall_speed(isa(0.0).density, false);
+        CHECK(cas > 1.35 * vs);
+        // Well below the cruise true airspeed (MALE UAVs cruise close to 1.4 stall speeds).
+        CHECK(cas < std::max(0.85 * calibrated_airspeed(p.cruise_speed, isa(2000.0)), 1.45 * vs));
+        CHECK(max_bank < std::min(p.bank_max, deg2rad(30.0)) + deg2rad(2.0));
+    }
+    // A commanded speed is kept in the orbit.
+    const FixedWingParams p = presets::single_engine_fighter();
+    FlightAgent a(p, airborne({0, 0, 2000}, 0.0, 200.0));
+    a.set_speed(400.0, SpeedRef::CalibratedKnots);
+    a.hover();
+    simulate(a, 120.0);
+    CHECK_NEAR(to_knots(a.state().calibrated_airspeed), 400.0, 3.0);
 }
 
 TEST_CASE("fuel: burns with the thrust, lightens the aircraft, stops the engine when empty") {

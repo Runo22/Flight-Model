@@ -730,10 +730,13 @@ TEST_CASE("flecs: a flight taxis out, takes off in sequence and rejoins") {
         run(world, 240.0);
         CHECK(pose_of(flight[0]).mode == FlightMode::Route ||
               pose_of(flight[0]).mode == FlightMode::Loiter);
+        const ecs::FlightPose& lead = pose_of(flight[0]);
+        const Vec2 forward = heading_vector(deg2rad(lead.heading));
         for (int k = 1; k < 4; ++k) {
             CHECK(pose_of(flight[k]).mode == FlightMode::Formation);
-            const Vec3 d = pose_of(flight[k]).position - pose_of(flight[0]).position;
-            CHECK(d.length() < 50.0 * k + 60.0);
+            const Vec3& o = formation::echelon_right(k - 1, 50.0).offset;  // the default slots
+            const Vec2 slot = lead.position.xy() + right_of(forward) * o.x + forward * o.y;
+            CHECK((pose_of(flight[k]).position.xy() - slot).length() < 100.0);
         }
     }
 }
@@ -813,4 +816,76 @@ TEST_CASE("flecs: a straggler lands after the flight") {
     CHECK(touchdown[2] > touchdown[1] + 5.0);
     CHECK(pose_of(flight[2]).position.x < pose_of(flight[1]).position.x);
     CHECK(min_air > 20.0);
+}
+
+// --- Formation leaders and slower followers ----------------------------------------------
+
+namespace {
+struct FormationRun {
+    double joined_at = -1.0;      // s, all followers within 150 m of their slots
+    double lead_moved = 0.0;      // m the leader got towards its target until then
+    bool waited = false;          // the leader held for the followers
+    double min_lead_speed = 1e9;  // m/s TAS
+};
+
+FormationRun fly_formation(const FixedWingParams& lead_p, const FixedWingParams& wing_p,
+                           double behind, double seconds, std::vector<flecs::entity>* out = nullptr) {
+    flecs::world world = make_world(WorldFrame::enu());
+    flecs::entity lead = world.entity();
+    ecs::attach(lead, lead_p, {{0, 0, 3000}, 0.0, 0.8 * lead_p.cruise_speed, false});
+    std::vector<flecs::entity> wings;
+    for (int k = 0; k < 2; ++k) {
+        flecs::entity e = world.entity();
+        ecs::attach(e, wing_p, {{60.0 * (k + 1), -behind - 60.0 * (k + 1), 3000}, 0.0,
+                                0.8 * wing_p.cruise_speed, false});
+        CHECK(ecs::follow(e, lead, formation::echelon_right(k, 80.0)));
+        wings.push_back(e);
+    }
+    ecs::agent(lead)->go_to({0, 100000, 3000});
+    FormationRun r;
+    for (double t = 0.0; t < seconds; t += kDt) {
+        world.progress(kDt);
+        const FlightState& l = ecs::agent(lead)->state();
+        r.waited = r.waited || ecs::agent(lead)->fixed_wing()->waiting_for_formation();
+        r.min_lead_speed = std::min(r.min_lead_speed, l.airspeed);
+        double worst = 0.0;
+        const Vec2 forward = heading_vector(l.attitude.heading);
+        for (int k = 0; k < 2; ++k) {
+            const Vec3& o = formation::echelon_right(k, 80.0).offset;
+            const Vec2 slot = l.position.xy() + right_of(forward) * o.x + forward * o.y;
+            worst = std::max(worst, (ecs::agent(wings[k])->state().position.xy() - slot).length());
+        }
+        if (r.joined_at < 0.0 && worst < 150.0) {
+            r.joined_at = t;
+            r.lead_moved = l.position.y;  // the target is due north
+        }
+    }
+    if (out) *out = wings;
+    return r;
+}
+}  // namespace
+
+TEST_CASE("flecs: form up first, then go: the leader holds for followers far behind") {
+    // Same type, 6 km behind.
+    const FormationRun r = fly_formation(presets::single_engine_fighter(),
+                                         presets::single_engine_fighter(), 6000.0, 240.0);
+    CHECK(r.waited);
+    CHECK(r.joined_at > 0.0 && r.joined_at < 180.0);
+    CHECK(r.lead_moved < 5000.0);  // held near its start instead of flying on (~20 km)
+    // Slower jet UAVs: the leader stays below their speed and waits for them.
+    const FormationRun u =
+        fly_formation(presets::single_engine_fighter(), presets::jet_uav(), 3000.0, 240.0);
+    CHECK(u.waited);
+    CHECK(u.joined_at > 0.0 && u.joined_at < 200.0);
+}
+
+TEST_CASE("flecs: a leader faster than its followers can follow flies on at its own minimum") {
+    // MALE UAVs cannot fly the fighter's minimum speed: it does not wait, does not stall.
+    const FixedWingParams lead_p = presets::single_engine_fighter();
+    const FormationRun r = fly_formation(lead_p, presets::propeller_uav(), 500.0, 200.0);
+    CHECK(!r.waited);
+    CHECK(r.joined_at < 0.0);  // left behind
+    const double vs = FixedWingAgent(lead_p, {{0, 0, 3000}, 0.0, 100.0, false})
+                          .stall_speed(isa(3000.0).density, false);
+    CHECK(r.min_lead_speed > 1.25 * vs);
 }

@@ -39,6 +39,7 @@ FixedWingParams fast_jet() {
     p.climb_rate_max = 150.0;
     p.descent_rate_max = 120.0;
     p.cruise_speed = 250.0;
+    p.cruise_altitude = 9144.0;                 // 30,000 ft: below it the same CAS
     p.max_speed = 410.0;  // EAS
     p.mach_max = 1.8;
     p.rotation_rate = deg2rad(6.0);
@@ -104,6 +105,7 @@ FixedWingParams airliner_jet() {
     p.climb_rate_max = 18.0;
     p.descent_rate_max = 15.0;
     p.cruise_speed = 230.0;
+    p.cruise_altitude = 10668.0;                // FL350: below it the same CAS
     p.max_speed = 180.0;  // EAS (~350 kt)
     p.mach_max = 0.82;
     p.rotation_rate = deg2rad(3.0);
@@ -169,6 +171,7 @@ FixedWingParams regional_turboprop() {
     p.climb_rate_max = 9.0;
     p.descent_rate_max = 10.0;
     p.cruise_speed = 135.0;
+    p.cruise_altitude = 5182.0;                 // FL170: below it the same CAS
     p.max_speed = 128.0;  // EAS (~250 kt)
     p.mach_max = 0.55;
     p.rotation_rate = deg2rad(3.0);
@@ -233,6 +236,7 @@ FixedWingParams light_propeller() {
     p.climb_rate_max = 4.0;
     p.descent_rate_max = 5.0;
     p.cruise_speed = 55.0;
+    p.cruise_altitude = 2438.0;                 // 8,000 ft: below it the same CAS
     p.max_speed = 75.0;  // EAS
     p.mach_max = 0.3;
     p.rotation_rate = deg2rad(4.0);
@@ -327,6 +331,7 @@ FixedWingParams single_engine_fighter() {
     p.climb_rate_max = 120.0;
     p.descent_rate_max = 100.0;
     p.cruise_speed = 240.0;            // Mach 0.8 at 30,000 ft
+    p.cruise_altitude = 9144.0;                 // 30,000 ft: below it the same CAS
     p.max_speed = 411.5;               // 800 KCAS
     p.mach_max = 2.05;
     p.rotate_speed = 65.0;             // 126 kt
@@ -396,6 +401,7 @@ FixedWingParams twin_engine_fighter() {
     p.climb_rate_max = 120.0;
     p.descent_rate_max = 100.0;
     p.cruise_speed = 250.0;
+    p.cruise_altitude = 9144.0;                 // 30,000 ft: below it the same CAS
     p.max_speed = 411.5;               // 800 KCAS
     p.mach_max = 2.5;
     p.rotate_speed = 62.0;             // 120 kt
@@ -464,6 +470,7 @@ FixedWingParams turboprop_trainer() {
     p.climb_rate_max = 22.0;
     p.descent_rate_max = 25.0;
     p.cruise_speed = 128.6;            // 250 KTAS
+    p.cruise_altitude = 3048.0;                 // 10,000 ft: below it the same CAS
     p.max_speed = 159.5;               // 310 KCAS
     p.mach_max = 0.6;
     p.rotation_rate = deg2rad(5.0);
@@ -528,6 +535,7 @@ FixedWingParams jet_uav() {
     p.climb_rate_max = 50.0;
     p.descent_rate_max = 40.0;
     p.cruise_speed = 182.0;            // Mach 0.6 at 30,000 ft
+    p.cruise_altitude = 9144.0;                 // 30,000 ft: below it the same CAS
     p.max_speed = 240.0;               // ~465 KEAS
     p.mach_max = 0.9;
     p.rotate_speed = 58.0;             // 113 kt

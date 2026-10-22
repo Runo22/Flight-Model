@@ -79,9 +79,20 @@ public:
     // only as far as the followers can follow (outside: speed and bank limit, inside:
     // minimum speed) and keeps a speed margin. Refreshed every step by the host (the Flecs
     // module does it); expires after 2 s without a refresh. 0 = not leading.
-    // `rejoining`: a follower is still far from its slot (e.g. after an interval takeoff);
-    // the leader flies at most 80% of its cruise speed so it can catch up.
-    void set_formation_lead(double lateral_extent, bool rejoining = false);
+    // Form up first, then go: `rejoin_distance` is how far the furthest follower is from
+    // its slot (m). Beyond 300 m the leader flies at most 80% of its cruise speed; beyond
+    // 2 km it holds (orbits where it is) until the followers have joined, then carries on
+    // with its task (cruise, go-to, route). `follower_speed`: what the slowest follower can
+    // hold in formation (TAS, m/s, NaN = unknown); the leader keeps below it (75% while one
+    // rejoins), but never below its own minimum speed. A follower too slow for that is not
+    // waited for: it falls behind.
+    void set_formation_lead(double lateral_extent, double rejoin_distance = 0.0,
+                            double follower_speed = kUnknown);
+    // Holding for followers to join (see set_formation_lead).
+    bool waiting_for_formation() const { return lead_hold_; }
+    // Fastest true airspeed (m/s) this aircraft can hold in formation at its altitude; NaN
+    // when not in formation.
+    double formation_speed_limit() const { return formation_speed_limit_; }
     // Vehicles around this one (not its formation partners), every step before step(): a
     // predicted conflict is resolved vertically (FixedWingParams::avoidance_*). Without
     // updates for 3 s the resolution ends.
@@ -153,6 +164,7 @@ private:
     void taxi_controls(double accel, double max_brake, const AtmosphereSample& atm,
                        Control& c) const;
     void guide_pattern(Command& cmd, const AtmosphereSample& atm, const Vec2& ground_velocity);
+    void update_lead_hold(const AtmosphereSample& atm);
     double break_radius(double speed) const;  // m, overhead break turn
     TaxiPath::Settings taxi_settings() const;
     void guide_formation(Command& cmd, const Vec2& ground_velocity, const SlotReference& ref);
@@ -178,6 +190,10 @@ private:
     double cl_max() const;
     double cd0() const;
     double loiter_radius_default() const;
+    // Speed flown without a command: the cruise schedule, or the endurance speed in orbits.
+    double default_speed(const AtmosphereSample& atm) const;
+    double cruise_speed_at(const AtmosphereSample& atm) const;  // TAS of the cruise schedule
+    double loiter_calibrated_speed() const;
     double approach_speed(double density) const;
     double min_drag_speed(double density) const;  // best climb angle, roughly
     double climb_speed(const AtmosphereSample& atm, double v_min, double v_max);
@@ -200,7 +216,15 @@ private:
     double avoid_clear_time_ = 0.0; // s without a conflict
     double lead_extent_ = 0.0;  // m, widest follower offset (formation lead)
     double lead_age_ = 0.0;     // s since the last refresh
-    bool lead_rejoin_ = false;  // a follower is rejoining: slow down
+    double lead_rejoin_distance_ = 0.0;  // m, furthest follower from its slot
+    bool lead_hold_ = false;             // orbiting until the followers have joined
+    double hold_joined_time_ = 0.0;      // s the followers have been close while holding
+    Vec2 hold_center_{};
+    double hold_radius_ = 0.0;
+    double lead_follower_speed_ = kUnknown;  // m/s TAS, slowest follower's limit
+    double formation_speed_limit_ = kUnknown;  // m/s TAS, as a follower
+    bool speed_commanded_ = false;  // false: default_speed()
+    double cruise_calibrated_ = 0.0;  // m/s, CAS of the cruise speed at the cruise altitude
     double sustained_speed_ = 0.0;
     double sustained_altitude_ = -1e9;
     double fuel_ = 0.0;       // kg
