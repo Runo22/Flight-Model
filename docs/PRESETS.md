@@ -13,6 +13,7 @@
 | `single_engine_fighter()` | F-16C Block 50 | Tek motorlu, afterburner'lı savaş uçağı |
 | `twin_engine_fighter()` | F-15C | Çift motorlu, afterburner'lı savaş uçağı |
 | `turboprop_trainer()` | TUSAŞ Hürkuş | Yüksek performanslı turboprop eğitim / hafif taarruz |
+| `jet_trainer()` | TUSAŞ Hürjet | Çift kişilik, afterburner'lı, ses üstü jet eğitim / hafif muharebe |
 | `jet_uav()` | Bayraktar Kızılelma | Jet motorlu insansız savaş uçağı (ses altı) |
 | `propeller_uav()` | TUSAŞ Anka-S | Tek motorlu, pervaneli MALE İHA |
 | `twin_propeller_uav()` | TUSAŞ Aksungur | Çift motorlu, pervaneli, yüksek faydalı yüklü MALE İHA |
@@ -117,6 +118,37 @@ stall 77 KCAS, 50 ft engeli aşarak kalkış 489 m, 50 ft'ten iniş 593 m, +7 / 
 
 Azami seyir hızı (288 KTAS) uydurmada kullanılmadı. Model 30.000 ft'te 289 kt verdi;
 bu, ayardan bağımsız bir doğrulama.
+
+### `jet_trainer()` — TUSAŞ Hürjet sınıfı, 8.200 kg (tahmin)
+
+Veri: F404-GE-102 (afterburner'la 78,7 kN, kuru 53,1 kN), azami hız Mach 1,4, servis
+tavanı 45.000 ft, tırmanma 39.000 ft/dk, +8 / -3 g, 15.000 ft'te Mach 0,9'da 5,5 g sürekli
+dönüş, menzil 2.222 km (1.200 nm), faydalı yük 2.721 kg, kanat açıklığı ~9,8 m.
+**Varsayımlar** (TUSAŞ ağırlıkları yayımlamadı): kütle 8.200 kg (temiz, dolu iç yakıt;
+aynı motoru kullanan KAI T-50'den), kanat alanı 24,5 m², iç yakıt 1.850 kg (menzile
+uyduruldu), hız sınırı 600 KCAS.
+
+`fast_jet`'ten farkı: `fast_jet` 12 t, 110 kN, tek kişilik genel bir savaş uçağıdır. Hürjet
+daha hafif ve daha az itkilidir (itki/ağırlık ~1), Mach 1,4'te kalır, kanopisi büyüktür.
+
+| | Measured | Reference |
+|---|---|---|
+| Top speed at 36,000 ft | 810 kt TAS (M1.41) | M1.4 |
+| Top speed at sea level (with limits) | 600 kt |  |
+| Best climb at sea level | 39,833 ft/min at 591 kt | 39,000 ft/min |
+| Service ceiling (100 ft/min) | 56,518 ft | 45,000 ft (operating limit) |
+| Stall speed, clean / landing flaps | 116 / 106 kt |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 312 m, 145 kt, 451 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 138 kt, 124 kt, 649 m, 1057 m |  |
+| AI turn at cruise speed, 10,000 ft | 6.5 deg/s at 70 deg bank |  |
+| Sustained turn at 15,000 ft, M0.9 | 5.50 g | 5.5 g |
+| Endurance on 1850 kg of fuel, 30,000 ft | 2 h 33 min at 467 kt, 787 kg/h full | 2,222 km range (2 h 34 min at 240 m/s) |
+
+Mach 1,4, tırmanma ve sürekli dönüş birlikte uyduruldu (`wave_drag`, `induced_drag_k`,
+itkinin irtifa ve Mach'la değişimi). 45.000 ft yayımlanmış bir işletme sınırıdır
+(kabin basınçlandırması); afterburner'la aerodinamik tavan, F-16'da olduğu gibi daha
+yüksektir. Sürekli dönüş `sustained_load_factor()` ile ölçülür: tam itkide dönüşteki
+fazla gücün sıfıra düştüğü yük faktörü.
 
 ### `jet_uav()` — Bayraktar Kızılelma sınıfı, 6.000 kg
 
@@ -372,6 +404,7 @@ Tüketim modeli:
 | F-16C sınıfı | 3.175 kg (7.000 lb, iç) | TSFC 0,76 / AB 1,95 lb/lbf/sa | İç yakıt yayımlanmış; TSFC tipik F110 değerleri |
 | F-15C sınıfı | 6.100 kg (13.455 lb, iç) | TSFC 0,73 / AB 2,1 lb/lbf/sa | İç yakıt yayımlanmış; TSFC tipik F100 değerleri |
 | Hürkuş sınıfı | 544 kg (680 l kullanılabilir) | BSFC 0,72 lb/shp/sa | Yakıt EASA tip sertifikasından; BSFC 15.000 ft'te 4 sa 15 dk'ya uyduruldu |
+| Hürjet sınıfı | 1.850 kg | TSFC 0,81 / AB 1,74 lb/lbf/sa | TSFC tipik F404 değerleri; yakıt tahmin, Mach 0,8 / 30.000 ft'te 2.222 km menzile uyduruldu |
 | Kızılelma sınıfı | 1.850 kg | TSFC 0,7 lb/lbf/sa | İkisi de tahmin; yakıt ~5 saate uyduruldu |
 | Anka-S sınıfı | 385 kg | BSFC 207 g/kWh | BSFC TEI veri sayfasından; yakıt 30 saate uyduruldu (Block-A: 400 l ile 18 sa) |
 | Aksungur sınıfı | 690 kg | BSFC 207 g/kWh | Aynı motor; yakıt 150 kg faydalı yükte 40-49 saate uyduruldu |
@@ -403,6 +436,7 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Overhead pattern | `pattern_height` (jetler 450 m, diğerleri 300 m), break yatışı `bank_max` (en çok 60°), pattern hızları iniş hızından | — |
 | Seyirde burun açısı | `cl0`, `cl_alpha` | `flat_plate_area` |
 | Dönüş | AI: `bank_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |
+| Sürekli dönüş (g) | `induced_drag_k`, transonikte `wave_drag` / `mach_critical`, itki | — |
 | İvmelenme | itki | `max_acceleration` (yalnız hız değişimi), `velocity_time_constant` |
 
 ## Kaynaklar
@@ -411,6 +445,12 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
   [TUSAŞ](https://www.tusas.com/en/product/hurkus-en),
   [EASA tip sertifikası](https://easa.europa.eu/cs/downloads/21107/en),
   [Wikipedia](https://www.wikipedia.com/wiki/TAI_Hurkus)
+* Hürjet: [Army Recognition](https://www.armyrecognition.com/military-products/air/other/trainer-aircraft/tai-hurjet),
+  [Defence Turkey](https://defenceturkey.com/news/hurjet-new-generation-ajts-cdr-phase-completed),
+  [Caliber.az](https://caliber.az/en/post/224203),
+  [NTV](https://www.ntv.com.tr/teknoloji/hurjet-nedir-istehurjetin-ozellikleri,k8hb8Tfjx0ixMlwUJCP_gg),
+  [Küre Ansiklopedi](https://test.kureansiklopedi.com/en/detay/tusas-hurjet-9af42),
+  [War Thunder forumu (açık kaynak derlemesi)](https://forum.warthunder.com/t/hurjet-pre-production-prototype/322623/1)
 * F-16C: [GlobalSecurity](https://www.globalsecurity.org/military/systems/aircraft/f-16-specs.htm),
   [USAF fact sheet](https://www.shaw.af.mil/About-Us/Fact-Sheets/Display/Article/663884/f-16c-fighting-falcon/)
 * F-15C: [MILAVIA](https://milavia.net/aircraft/f-15/f-15_specs.htm),

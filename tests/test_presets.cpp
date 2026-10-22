@@ -78,6 +78,22 @@ TEST_CASE("presets: turboprop trainer (Hurkus class)") {
     CHECK(within(ld.from_50ft, 593.0, 0.15));                         // from 50 ft
 }
 
+TEST_CASE("presets: jet trainer (Hurjet class)") {
+    const FixedWingParams p = presets::jet_trainer();
+    CHECK(within(mach_at(p, feet(36000.0)), 1.4, 0.03));               // Mach 1.4
+    CHECK(within(fpm(best_climb(p, 0.0).rate), 39000.0, 0.07));        // 39,000 ft/min
+    CHECK(ceiling_between(p, feet(45000.0), feet(60000.0)));           // 45,000 ft operating
+    const double h = feet(15000.0);
+    CHECK(within(sustained_load_factor(p, h, 0.9 * isa(h).speed_of_sound), 5.5, 0.05));
+    const double range = endurance(p, feet(30000.0), p.cruise_speed).hours * 3.6 * p.cruise_speed;
+    CHECK(within(range, 2222.0, 0.05));                                // 2,222 km at Mach 0.8
+    const Takeoff to = takeoff(p);
+    CHECK(to.ground_roll > 250.0 && to.ground_roll < 500.0);
+    const Landing ld = landing(p);
+    CHECK(ld.landed);
+    CHECK(kt(ld.approach_speed) > 125.0 && kt(ld.approach_speed) < 150.0);
+}
+
 TEST_CASE("presets: jet UAV (Kizilelma class)") {
     const FixedWingParams p = presets::jet_uav();
     CHECK(within(mach_at(p, feet(30000.0)), 0.9, 0.04));              // Mach 0.9
@@ -156,8 +172,9 @@ TEST_CASE("presets: helicopters turn banked, keep their speed and hold routes") 
 
 TEST_CASE("presets: fixed-wing presets take off, fly a route and land") {
     for (const FixedWingParams& p : {presets::single_engine_fighter(), presets::twin_engine_fighter(),
-                                     presets::turboprop_trainer(), presets::jet_uav(),
-                                     presets::propeller_uav(), presets::twin_propeller_uav()}) {
+                                     presets::turboprop_trainer(), presets::jet_trainer(),
+                                     presets::jet_uav(), presets::propeller_uav(),
+                                     presets::twin_propeller_uav()}) {
         InitialConditions ic;
         ic.on_ground = true;
         FlightAgent a(p, ic);

@@ -52,7 +52,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   eder (`FlightAgent::relocate`, Flecs'te otomatik algılama, `bind_geo_transform`).
   Küçük düzeltmeler görevi bozmaz; büyük sıçramalarda rota bacağı, düz uçuş hattı,
   yaklaşma yeni konumdan yeniden kurulur; yer/hava geçişleri ve saçma değerler ele alınır.
-- **Referans sınıfı presetler:** F-16C, F-15C, Hürkuş, Kızılelma, Anka-S, Aksungur,
+- **Referans sınıfı presetler:** F-16C, F-15C, Hürkuş, Hürjet, Kızılelma, Anka-S, Aksungur,
   T129 ATAK, AH-64D, CH-47F, TCG Anadolu sınıflarında, yayımlanmış performansa uydurulup araç uçurularak ölçülen modeller
   (`docs/PRESETS.md`, `fm_performance_report`).
 - **Helikopter kipi:** güce dayalı performans (momentum teorisi, yer etkisi, profil ve parazit
@@ -101,7 +101,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   `TrueKnots`). Komutsuz uçuşta CAS/Mach takvimi (`cruise_altitude`) ve yörüngede dayanım hızı.
   Kol lideri en yavaş takipçiye göre hız sınırlar; önce kolu toplar (bekleme yörüngesi),
   sonra göreve gider.
-- **Testler:** 108 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
+- **Testler:** 109 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
   (`sortie`, `flight`) + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 

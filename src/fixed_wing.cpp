@@ -1244,7 +1244,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     // Energy management: thrust controls total energy, flight path splits it between
     // altitude and speed (TECS-like, solved with the model inverse).
     const bool has_brake = p_.speedbrake_dcd0 > 0.0;
-    const double n_now = std::cos(gamma_) / std::max(std::cos(bank_), 0.2);
+    const double n_now = std::cos(gamma_) / std::max(std::cos(bank_), 0.05);
     const double t_max = thrust_available(v, atm);
     // Engine out (no fuel): glide at the best glide speed instead of holding the altitude.
     const bool engine_out = t_max <= 0.0;
@@ -1275,7 +1275,7 @@ FixedWingAgent::Control FixedWingAgent::autopilot(const Command& cmd, const Atmo
     gamma_cmd = std::clamp(gamma_cmd, gamma_lo, std::max(gamma_lo, gamma_hi));
     c.gamma = gamma_cmd;
 
-    const double n_cmd = std::cos(gamma_cmd) / std::max(std::cos(c.bank), 0.2);
+    const double n_cmd = std::cos(gamma_cmd) / std::max(std::cos(c.bank), 0.05);
     const double t_req = drag(v, n_cmd, atm, false) + m * (g * std::sin(gamma_cmd) + vdot_cmd);
     double throttle = t_req / std::max(t_max, 1e-6);
     if (cmd.full_thrust) throttle = 1.0;

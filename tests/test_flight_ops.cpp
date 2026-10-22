@@ -71,8 +71,8 @@ bool visited(const PatternResult& r, Stage s) {
 TEST_CASE("landing: overhead pattern for every preset, first attempt") {
     for (const FixedWingParams& p :
          {presets::single_engine_fighter(), presets::twin_engine_fighter(), presets::fast_jet(),
-          presets::turboprop_trainer(), presets::jet_uav(), presets::propeller_uav(),
-          presets::twin_propeller_uav(), presets::light_propeller()}) {
+          presets::turboprop_trainer(), presets::jet_trainer(), presets::jet_uav(),
+          presets::propeller_uav(), presets::twin_propeller_uav(), presets::light_propeller()}) {
         // Coming from the south-west, well away from the initial point.
         FixedWingAgent a(p, airborne({-6000, -15000, kGround + 1100}, 30.0, 0.8 * p.cruise_speed));
         CHECK(a.land(Runway{{0, 0, kGround}, deg2rad(90.0)}, overhead()));

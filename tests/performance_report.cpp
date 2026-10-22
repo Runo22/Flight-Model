@@ -54,6 +54,10 @@ struct FixedWingReference {
     double endurance_speed = 0.0;
     std::string endurance{};
     std::string light_endurance{};
+    // Sustained turn at this altitude (m) and Mach number (0 = not measured).
+    double turn_altitude = 0.0;
+    double turn_mach = 0.0;
+    std::string sustained_turn{};
 };
 
 std::string hours(double h) {
@@ -91,6 +95,13 @@ void report(const FixedWingParams& p, const std::string& title, const FixedWingR
          format("%.1f deg/s", rad2deg(turn.rate)) + format(" at %.0f deg bank", rad2deg(turn.bank)),
          ""},
     };
+    if (ref.turn_mach > 0.0) {
+        const double v = ref.turn_mach * isa(ref.turn_altitude).speed_of_sound;
+        rows.push_back({"Sustained turn at " + format("%.0f ft", ft(ref.turn_altitude)) +
+                            format(", M%.1f", ref.turn_mach),
+                        format("%.2f g", sustained_load_factor(p, ref.turn_altitude, v)),
+                        ref.sustained_turn});
+    }
     if (ref.light_mass > 0.0) {
         FixedWingParams light = p;
         light.mass = ref.light_mass;
@@ -209,6 +220,17 @@ int main(int argc, char** argv) {
         ref.endurance_speed = knots(188.0);  // 798 nm in 4.25 h
         ref.endurance = "4 h 15 min at 15,000 ft (798 nm)";
         report(presets::turboprop_trainer(), "turboprop_trainer: TAI Hurkus class, 3,300 kg", ref);
+    }
+    if (wanted(filter, "jet_trainer")) {
+        FixedWingReference ref{feet(36000.0), "M1.4", "", "39,000 ft/min",
+                               "45,000 ft (operating limit)", "", "", ""};
+        ref.endurance_altitude = feet(30000.0);
+        ref.endurance_speed = 240.0;  // Mach 0.8
+        ref.endurance = "2,222 km range (2 h 34 min at 240 m/s)";
+        ref.turn_altitude = feet(15000.0);
+        ref.turn_mach = 0.9;
+        ref.sustained_turn = "5.5 g";
+        report(presets::jet_trainer(), "jet_trainer: TUSAS Hurjet class, 8,200 kg (estimate)", ref);
     }
     if (wanted(filter, "jet_uav")) {
         FixedWingReference ref{feet(30000.0), "M0.9", "", "", "12,000-14,000 m", "", "", ""};

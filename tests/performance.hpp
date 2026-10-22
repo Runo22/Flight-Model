@@ -251,6 +251,31 @@ inline Turn course_reversal(const FixedWingParams& p, double altitude, double sp
     return r;
 }
 
+// Highest load factor sustained in a level turn at `altitude` and true airspeed `speed`:
+// where the specific excess power at full thrust falls to zero in the turn.
+inline double sustained_load_factor(const FixedWingParams& p, double altitude, double speed) {
+    const auto excess_power = [&](double n) {
+        FixedWingParams q = physical(p);
+        q.bank_max = std::acos(1.0 / n);
+        q.load_factor_max = n + 1.0;
+        FixedWingAgent a(q, airborne(altitude, speed));
+        // Always turning, at a speed target well above: full thrust, the energy rate is the
+        // excess power.
+        const auto turn = [&](double heading) {
+            a.hold(wrap_pi(heading + deg2rad(90.0)), altitude, speed + 200.0);
+        };
+        turn(0.0);
+        double e0 = 0.0;
+        fly(a, 8.0, kUnknown, [&](const FlightState& s, double t) {
+            turn(s.attitude.heading);
+            if (t < 6.0) e0 = energy_height(s);
+            return false;
+        });
+        return (energy_height(a.state()) - e0) / 2.0;
+    };
+    return highest(1.0, 12.0, 0.01, [&](double n) { return excess_power(n) > 0.0; });
+}
+
 struct Endurance {
     double hours = 0.0;     // until the tanks are empty
     double speed = 0.0;     // m/s TAS flown with full tanks

@@ -16,6 +16,7 @@ RotorcraftParams multirotor();         // small quadcopter
 FixedWingParams single_engine_fighter();      // F-16C Block 50 class
 FixedWingParams twin_engine_fighter();        // F-15C class
 FixedWingParams turboprop_trainer();          // TAI Hurkus class
+FixedWingParams jet_trainer();                // TUSAS Hurjet class supersonic jet trainer
 FixedWingParams jet_uav();                    // Bayraktar Kizilelma class jet UCAV
 FixedWingParams propeller_uav();              // TAI Anka-S class MALE UAV, one engine
 FixedWingParams twin_propeller_uav();         // TAI Aksungur class MALE UAV, two engines

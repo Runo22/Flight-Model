@@ -37,6 +37,7 @@ fm::VehicleParams vehicle_params(int vehicle) {
         case 12: return fm::presets::transport_helicopter();
         case 13: return fm::presets::carrier_ship();
         case 14: return fm::presets::twin_propeller_uav();
+        case 15: return fm::presets::jet_trainer();
         default: return fm::presets::multirotor();
     }
 }

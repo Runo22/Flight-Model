@@ -502,6 +502,76 @@ FixedWingParams turboprop_trainer() {
     return p;
 }
 
+FixedWingParams jet_trainer() {
+    FixedWingParams p;
+    p.name = "jet_trainer";            // TUSAS Hurjet class
+    p.mass = 8200.0;                   // clean, full internal fuel (estimate: unpublished)
+    p.wing_area = 24.5;
+    p.cl0 = 0.05;
+    p.cl_alpha = 3.6;
+    p.cl_max = 1.5;
+    p.cd0 = 0.019;                     // two-seat canopy
+    p.induced_drag_k = 0.17;           // fitted to 5.5 g sustained at 15,000 ft, Mach 0.9
+    p.mach_critical = 0.88;
+    p.wave_drag = 0.022;               // fitted to Mach 1.4
+    p.flaps_dcl0 = 0.2;
+    p.flaps_dcl_max = 0.3;
+    p.flaps_dcd0 = 0.012;
+    p.speedbrake_dcd0 = 0.04;
+    p.engine.type = EngineType::Jet;
+    p.engine.max_thrust = 78700.0;     // F404-GE-102, afterburner
+    p.engine.fuel_consumption = 2.29e-5;         // TSFC 0.81 lb/lbf/h, military power
+    p.engine.dry_thrust_fraction = 0.675;        // 53.1 kN dry
+    p.engine.afterburner_consumption = 4.93e-5;  // 1.74 lb/lbf/h
+    p.fuel_capacity = 1850.0;          // estimate, fitted to 2,222 km at Mach 0.8, 30,000 ft
+    p.engine.density_exponent = 0.8;
+    p.engine.mach_lapse = -0.08;
+    p.engine.spool_time = 1.2;
+    p.engine.idle_throttle = 0.03;
+    p.load_factor_max = 7.0;           // airframe: +8 / -3
+    p.load_factor_min = -2.0;
+    p.bank_max = deg2rad(70.0);
+    p.roll_rate_max = deg2rad(200.0);
+    p.climb_angle_max = deg2rad(25.0);
+    p.descent_angle_max = deg2rad(20.0);
+    p.climb_rate_max = 100.0;
+    p.descent_rate_max = 100.0;
+    p.cruise_speed = 240.0;            // Mach 0.8 at 30,000 ft
+    p.cruise_altitude = 9144.0;                 // 30,000 ft: below it the same CAS
+    p.max_speed = 308.7;               // 600 KCAS (estimate)
+    p.mach_max = 1.4;
+    p.rotate_speed = 62.0;             // 120 kt
+    p.rotation_pitch = deg2rad(12.0);
+    p.rotation_rate = deg2rad(8.0);
+    p.rolling_friction = 0.025;
+    p.gear_height = 1.8;
+    p.taxi_speed = 10.0;
+    p.taxi_turn_radius = 7.0;
+    p.roll_time_constant = 0.25;
+    p.gamma_time_constant = 0.9;
+    p.heading_time_constant = 1.6;
+    p.altitude_time_constant = 5.0;
+    p.speed_time_constant = 6.0;
+    p.l1_period = 10.0;
+    p.min_terrain_clearance = 150.0;
+    p.terrain_lookahead = 15.0;
+    p.takeoff_climb_height = 600.0;
+    p.flaps_up_height = 60.0;
+    p.formation_min_separation = 20.0;
+    p.retractable_gear = true;
+    p.gear_dcd0 = 0.02;
+    p.gear_up_height = 10.0;
+    p.final_approach_distance = 8000.0;
+    p.touchdown_distance = 300.0;
+    p.approach_speed_factor = 1.3;
+    p.flare_height = 6.0;
+    p.touchdown_sink_rate = 0.8;
+    p.decision_height = 60.0;
+    p.pattern_height = 450.0;           // 1500 ft overhead pattern
+    p.brake_deceleration = 3.0;
+    return p;
+}
+
 FixedWingParams jet_uav() {
     FixedWingParams p;
     p.name = "jet_uav";                // Bayraktar Kizilelma class jet UCAV
