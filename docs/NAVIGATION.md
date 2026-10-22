@@ -166,7 +166,14 @@ fm::ecs::agent(viper)->takeoff(plan);
 ```
 
 * **Yalnızca yön:** `plan.heading = yon;` (pist yok). Uçak bulunduğu yerden o yöne döner,
-  hizalanır ve kalkar. Yön de verilmezse son taksi bölümünün yönü, o da yoksa burnun yönü.
+  hizalanır ve kalkar. Yön de verilmezse son taksi bölümünün yönü, o da yoksa burnun yönü:
+
+  ```cpp
+  fm::TakeoffPlan plan;
+  plan.heading = fm::ecs::local_heading(world, 45.0, {41.00, 29.20, 0.0});  // true 045
+  plan.then = r;  // orbit after the takeoff
+  fm::ecs::agent(strip_uav)->takeoff(plan);
+  ```
 * **Hizalanma:** Burun yönü 3°'den, eksenden uzaklık 3 m'den fazlaysa uçak önce taksi hızında
   döner ve eksene oturur; tam güç ondan sonra verilir. Zaten hizalıysa koşu hemen başlar.
 * **Taksi:** Düzde `taxi_speed`, keskin köşelerden önce frenleyip yavaşlar (yanal ivme
@@ -360,7 +367,17 @@ fm::ecs::takeoff_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, plan, opti
   aralıklı sağ echelon). Lider `plan.then` rotasını uçar ve takipçiler yetişene kadar
   yavaş gider.
 * Tek uçakta aynı mekanizma: `plan.hold = true` hizalanıp bekletir,
-  `agent->release_takeoff()` koşuyu başlatır.
+  `agent->release_takeoff()` koşuyu başlatır (örn. oyun kalkış iznini verdiğinde):
+
+  ```cpp
+  fm::TakeoffPlan plan;
+  plan.runway = fm::Runway{fm::ecs::to_local(world, strip),
+                           fm::ecs::local_heading(world, 180.0, strip)};  // true 180
+  plan.hold = true;  // line up and wait
+  fm::ecs::agent(trainer)->takeoff(plan);
+  // ... later, cleared for takeoff:
+  fm::ecs::agent(trainer)->release_takeoff();
+  ```
 
 ### Overhead break ile sıralı iniş
 
@@ -383,17 +400,36 @@ fm::ecs::land_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, base_runway, 
   hizasından itibaren alçalır ve 180° base dönüşüyle 35 s'lik kısa finale girer.
 * **Yerde:** Uçaklar pistin dönüşümlü yarılarına iner. Önce inen daha ileride durur
   (`stop_spacing`, 150 m); frenleme erken biterse taksi hızında durma noktasına ilerler.
-* **Geç kalanlar:** Lider initial'e yerleştiğinde echelon slotunda olmayan (ya da kolda hiç
-  olmayan) wingman sıranın sonuna alınır. Öndeki uçak kırınca kendi overhead yaklaşmasını
-  yapar.
-* **Tek uçakta:**
-  `agent->land(runway, {.pattern = fm::LandingPattern::Overhead, .break_distance = 300.0})`.
+* **Geç kalanlar:** Lider initial'e yerleşince herkes echelon slotundaysa sıra hemen
+  kesinleşir. Değilse geride kalanlar liderin kırılmasına ~15 s kalana kadar beklenir. O
+  zaman hâlâ yerinde olmayan (ya da kolda hiç olmayan) wingman sıranın sonuna alınır ve
+  öndeki uçak kırınca kendi overhead yaklaşmasını yapar.
+* **Tek uçakta:** Hangardan kalkan uçak overhead ile döner, pistin 1200 m ilerisinde durur ve
+  hangarına burnu önde girer:
+
+  ```cpp
+  fm::LandingOptions options;
+  options.pattern = fm::LandingPattern::Overhead;
+  options.break_distance = 300.0;  // m past the threshold
+  options.stop_distance = 1200.0;  // m past the threshold
+  fm::ecs::agent(viper)->land(fm::Runway{runway_start, runway_heading}, options);
+  // once Landed:
+  const std::vector<fm::Vec3> to_hangar{airfield(1250.0, 60.0), airfield(-80.0, 60.0),
+                                        airfield(-80.0, 150.0)};
+  fm::ecs::agent(viper)->taxi(to_hangar, runway_heading + fm::kPi / 2.0);
+  ```
+
   `LandingOptions::stop_distance` her inişte koşunun nerede biteceğini belirler.
   `fixed_wing()->landing_stage()` aşamayı verir: `Initial`, `Break`, `Downwind`, `Base`,
   `Final` ...
 * **Pas geçme:** Overhead'de pas geçen uçak pattern yüksekliğine tırmanır ve pistin
   üstünden yeniden kırar (kapalı pattern).
-* `fm::ecs::flight_sequence_active(lider)` sıra sürerken `true` döner.
+* `fm::ecs::flight_sequence_active(lider)` sıra sürerken `true` döner. Örnekte kol inince
+  sığınaklarına döner: önce sığınaklara en yakın duran, 15 s arayla, her biri kendi
+  `taxi(yol, yon)` komutuyla.
+* **Flecs'siz:** `examples/scenario_runner.cpp` içindeki `flight` senaryosu aynı sırayı
+  yalnızca çekirdek API ile kurar (`hold`/`release_takeoff`, `join_formation`,
+  `land(runway, LandingOptions)`, `break_spacing`). `fm_scenarios sortie|flight` CSV iz yazar.
 
 ## 9. İlerlemeyi takip etmek
 

@@ -319,17 +319,24 @@ void step_landing(FlightSequence& seq) {
         }
     }
     if (!seq.ordered) {
-        // The leader established on the initial: on the centerline, along the runway.
+        // The leader established on the initial: on the centerline, along the runway. The
+        // order is fixed once every wingman of the formation is in its echelon slot, at the
+        // latest ~15 s before the leader's break.
         bool on_initial = !lead_fw || lead_fw->mode() != FlightMode::Land;
+        bool last_call = on_initial;
         if (!on_initial) {
             const Stage stage = lead_fw->landing_stage();
             const FlightState& l = lead_fw->state();
             const Vec2 dir = heading_vector(seq.runway.heading);
-            const double offset = dot(l.position.xy() - seq.runway.start.xy(), right_of(dir));
+            const Vec2 rel = l.position.xy() - seq.runway.start.xy();
             on_initial = stage != Stage::Positioning &&
                          (stage != Stage::Initial ||
                           (std::abs(wrap_pi(l.track - seq.runway.heading)) < deg2rad(10.0) &&
-                           std::abs(offset) < 150.0));
+                           std::abs(dot(rel, right_of(dir))) < 150.0));
+            const double decision = std::max(2000.0, 15.0 * seq.initial_speed);
+            last_call = stage != Stage::Positioning &&
+                        (stage != Stage::Initial ||
+                         dot(rel, dir) > seq.members.front().landing.break_distance - decision);
         }
         if (!on_initial) return;
         // Wingmen close to their echelon slot keep their place in the order.
@@ -342,6 +349,16 @@ void step_landing(FlightSequence& seq) {
             const Vec2 error = slot_error(mem, mem.slot);
             return error.x < std::max(100.0, 1.5 * seq.land.echelon_spacing) && error.y < 200.0;
         };
+        const auto in_formation = [&](const FlightSequence::Member& mem) {
+            const FixedWingAgent* fw = fixed_wing_of(mem.entity);
+            const FollowLeader* f = mem.entity.try_get<FollowLeader>();
+            return fw && f && f->leader == leader && fw->mode() == FlightMode::Formation;
+        };
+        const bool all_in_position =
+            std::all_of(seq.members.begin() + 1, seq.members.end(), [&](const auto& mem) {
+                return mem.started || !in_formation(mem) || in_position(mem);
+            });
+        if (!all_in_position && !last_call) return;
         std::stable_partition(seq.members.begin() + 1, seq.members.end(),
                               [&](const FlightSequence::Member& mem) {
                                   return mem.started || in_position(mem);

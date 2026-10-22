@@ -1,5 +1,7 @@
 // Headless scenarios that print a CSV trace (t, vehicle, position, attitude, speeds, mode).
-// Usage: fm_scenarios <takeoff_route|formation|drone_survey> > trace.csv
+// Usage: fm_scenarios <takeoff_route|formation|drone_survey|sortie|flight> > trace.csv
+// sortie and flight check their own result and exit with 1 when it is wrong.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -112,6 +114,181 @@ void drone_survey() {
     }
 }
 
+// Airfield of the sortie and flight scenarios: runway east from (0, 0) on flat ground.
+constexpr double kField = 100.0;
+const Runway kRunway{{0.0, 0.0, kField}, deg2rad(90.0)};
+
+// Point `along` the runway from its start and `right` of it (south: -y).
+Vec3 field(double along, double right) { return {along, -right, kField}; }
+
+Environment field_env() {
+    Environment env;
+    env.terrain_elevation = kField;
+    return env;
+}
+
+// F-16 sortie: out of its hangar along the taxiway, lined up and off, a route, back for an
+// overhead break, the landing roll ends 1500 m down the runway, back into the hangar.
+bool sortie() {
+    InitialConditions ic;
+    ic.position = field(-80, 150);  // hangar south of the runway, nose north
+    ic.heading = 0.0;
+    ic.on_ground = true;
+    FlightAgent a(presets::single_engine_fighter(), ic);
+    TakeoffPlan plan;
+    plan.taxi = {field(-80, 60), field(0, 60)};
+    plan.runway = kRunway;
+    plan.climb_height = 600.0;
+    Route r;
+    r.waypoints = {waypoint(20000, 8000, 2500), waypoint(8000, 16000, 2500)};
+    r.on_end = EndBehavior::Loiter;
+    plan.then = r;
+    a.takeoff(plan);
+    bool landing = false;
+    bool taxi_in = false;
+    for (int i = 0; i < static_cast<int>(1200.0 / kDt); ++i) {
+        a.step(kDt, field_env());
+        if (i % 60 == 0) row(i * kDt, 0, a);
+        if (!landing && a.mode() == FlightMode::Loiter) {
+            LandingOptions o;
+            o.pattern = LandingPattern::Overhead;
+            o.break_distance = 300.0;  // m past the threshold
+            o.stop_distance = 1500.0;  // m past the threshold
+            landing = a.land(kRunway, o);
+        }
+        if (landing && !taxi_in && a.state().phase == FlightPhase::Landed) {
+            const std::vector<Vec3> to_hangar{field(1550, 60), field(-80, 60), field(-80, 150)};
+            taxi_in = a.taxi(to_hangar, deg2rad(180.0));  // nose first, south
+        }
+        if (taxi_in && a.state().phase == FlightPhase::Parked) {
+            row(i * kDt, 0, a);
+            break;
+        }
+    }
+    return taxi_in && a.state().phase == FlightPhase::Parked &&
+           (a.state().position - field(-80, 150)).xy().length() < 3.0;
+}
+
+// Four F-16s with the core API only (fm::ecs::takeoff_flight / land_flight do this in
+// Flecs): taxi from their shelters, line up staggered and wait, brake releases 10 s apart,
+// rejoin in echelon, then an overhead break with touchdowns 12 s apart on alternating sides
+// of the runway.
+bool flight() {
+    const FixedWingParams p = presets::single_engine_fighter();
+    constexpr int n = 4;
+    constexpr double interval = 12.0;
+    std::vector<FlightAgent> f;
+    std::vector<Runway> lanes;  // landing: each on its half of the runway
+    for (int k = 0; k < n; ++k) {
+        const double along = (n - 1 - k) * 150.0;     // the leader furthest down the runway
+        const double side = k % 2 == 0 ? -8.0 : 8.0;  // left / right half of the runway
+        InitialConditions ic;
+        ic.position = field(along, 250);  // shelter south of its line-up point, nose north
+        ic.on_ground = true;
+        f.emplace_back(p, ic);
+        lanes.push_back(Runway{field(0, side), kRunway.heading});
+        TakeoffPlan plan;
+        plan.taxi = {field(along, 40)};
+        plan.runway = Runway{field(along, side), kRunway.heading};  // line-up point
+        plan.climb_height = 600.0;
+        plan.hold = true;  // line up and wait
+        if (k == 0) {
+            Route r;
+            r.waypoints = {waypoint(15000, 6000, 2000)};
+            r.on_end = EndBehavior::Loiter;
+            plan.then = r;
+        }
+        f.back().takeoff(plan);
+    }
+    std::vector<FormationSlot> slots;
+    for (int k = 1; k < n; ++k) slots.push_back(formation::echelon_right(k - 1, 80.0));
+    const auto slot_position = [&](int k) {
+        const FlightState& l = f[0].state();
+        const Vec2 fwd = heading_vector(l.attitude.heading);
+        const Vec3& o = slots[k - 1].offset;
+        const Vec2 at = l.position.xy() + right_of(fwd) * o.x + fwd * o.y;
+        return Vec3{at.x, at.y, l.position.z + o.z};
+    };
+    double release = -1.0;
+    bool landing = false;
+    bool wingmen_landing = false;
+    std::vector<double> touchdown(n, -1.0);
+    for (int i = 0; i < static_cast<int>(1500.0 / kDt); ++i) {
+        const double t = i * kDt;
+        // Brake releases once everybody is lined up.
+        const bool lined_up = std::all_of(f.begin(), f.end(), [](const FlightAgent& a) {
+            return a.state().phase == FlightPhase::LineUp && a.state().ground_speed < 0.3;
+        });
+        if (release < 0.0 && lined_up) release = t;
+        for (int k = 0; k < n; ++k) {
+            if (release >= 0.0 && t >= release + k * 10.0 && t < release + k * 10.0 + kDt)
+                f[k].release_takeoff();
+        }
+        // Wingmen join the leader once their takeoff is done; the leader slows for them.
+        double extent = 0.0;
+        bool rejoining = false;
+        for (int k = 1; k < n; ++k) {
+            FlightAgent& w = f[k];
+            if (!landing && w.mode() == FlightMode::Cruise && !w.state().on_ground && release >= 0.0)
+                w.join_formation(slots[k - 1]);
+            if (w.mode() != FlightMode::Formation) continue;
+            w.set_leader_state(f[0].as_leader());
+            extent = std::max(extent, std::abs(slots[k - 1].offset.x));
+            rejoining = rejoining || (w.state().position - slot_position(k)).length() > 300.0;
+        }
+        if (extent > 0.0 || rejoining) f[0].set_formation_lead(extent, rejoining);
+        // Overhead recovery once joined up (the slots are already an echelon right, so the
+        // break goes left).
+        const Runway& runway = kRunway;
+        if (!landing && t > 450.0) {
+            LandingOptions o;
+            o.pattern = LandingPattern::Overhead;
+            o.break_distance = 300.0;
+            o.initial_speed = f[0].fixed_wing()->overhead_initial_speed(runway);
+            o.initial_offset = 8.0;  // its lane is 8 m left: fly the initial on the centerline
+            o.stop_distance = 1400.0 + (n - 1) * 150.0;
+            landing = f[0].land(lanes[0], o);
+        }
+        // The wingmen leave the echelon once the leader is established on the initial.
+        if (landing && !wingmen_landing) {
+            const FixedWingAgent& lead = *f[0].fixed_wing();
+            const double offset = dot(lead.state().position.xy() - runway.start.xy(),
+                                      right_of(heading_vector(runway.heading)));
+            const bool established =
+                lead.landing_stage() == FixedWingAgent::LandingStage::Initial &&
+                std::abs(wrap_pi(lead.state().track - runway.heading)) < deg2rad(10.0) &&
+                std::abs(offset) < 150.0;
+            if (established) {
+                const double speed = lead.overhead_initial_speed(runway);
+                const double spacing = lead.break_spacing(runway, interval, speed);
+                for (int k = 1; k < n; ++k) {
+                    LandingOptions o;
+                    o.pattern = LandingPattern::Overhead;
+                    o.break_distance = 300.0 + k * spacing;  // later breaks, later touchdowns
+                    o.initial_speed = speed;
+                    o.initial_offset = slots[k - 1].offset.x - (k % 2 == 0 ? -8.0 : 8.0);
+                    o.stop_distance = 1400.0 + (n - 1 - k) * 150.0;  // one behind the other
+                    f[k].land(lanes[k], o);
+                }
+                wingmen_landing = true;
+            }
+        }
+        for (int k = 0; k < n; ++k) {
+            f[k].step(kDt, field_env());
+            if (landing && touchdown[k] < 0.0 && f[k].state().on_ground) touchdown[k] = t;
+            if (i % 60 == 0) row(t, k, f[k]);
+        }
+        const bool landed = std::all_of(f.begin(), f.end(), [](const FlightAgent& a) {
+            return a.state().phase == FlightPhase::Landed;
+        });
+        if (landing && landed) break;
+    }
+    bool ok = touchdown[0] > 0.0;
+    for (int k = 1; k < n; ++k)
+        ok = ok && std::abs(touchdown[k] - touchdown[k - 1] - interval) < 0.25 * interval;
+    return ok;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -120,8 +297,13 @@ int main(int argc, char** argv) {
     if (std::strcmp(name, "takeoff_route") == 0) takeoff_route();
     else if (std::strcmp(name, "formation") == 0) formation_flight();
     else if (std::strcmp(name, "drone_survey") == 0) drone_survey();
-    else {
-        std::fprintf(stderr, "unknown scenario '%s' (takeoff_route|formation|drone_survey)\n", name);
+    else if (std::strcmp(name, "sortie") == 0 || std::strcmp(name, "flight") == 0) {
+        const bool ok = std::strcmp(name, "sortie") == 0 ? sortie() : flight();
+        if (!ok) std::fprintf(stderr, "scenario '%s' did not end as expected\n", name);
+        return ok ? 0 : 1;
+    } else {
+        std::fprintf(stderr, "unknown scenario '%s' (takeoff_route|formation|drone_survey|"
+                             "sortie|flight)\n", name);
         return 1;
     }
     return 0;

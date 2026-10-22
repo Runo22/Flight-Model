@@ -97,7 +97,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   (echelon, overhead break, aralıklı touchdown, pistin dönüşümlü yarıları, sıralı durma).
   Çekirdekte: overhead pattern (`LandingOptions`), kalkışta bekle/serbest bırak
   (`TakeoffPlan::hold`, `release_takeoff`), inişte durma noktası.
-- **Testler:** 105 çekirdek + 28 Flecs + navigasyon örneği + 2 plugin testi;
+- **Testler:** 105 çekirdek + 28 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
+  (`sortie`, `flight`) + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
 ## 3. Sonraki fazlar

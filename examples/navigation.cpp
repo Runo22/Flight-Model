@@ -259,7 +259,8 @@ int main() {
     fm::ecs::land_on(seahawk, carrier, spot);
 
     // 12) A fighter taxis out of its hangar along the taxiway, lines up on the runway once
-    //     the shuttle has left and takes off.
+    //     the shuttle has left and takes off. Then it comes back for an overhead break, rolls
+    //     to a set stop point and taxis back into its hangar (see the loop).
     const fm::GeoPoint hangar = fm::ecs::geo(world)->to_geo(airfield(-80.0, 150.0));
     flecs::entity viper = spawn(world, "Viper", fm::presets::single_engine_fighter(),
                                 {hangar.latitude, hangar.longitude, 0.0, 0, 0, 0.0}, 0.0, true);
@@ -295,13 +296,40 @@ int main() {
         plan.runway = base_runway;
         plan.taxi = {air_base(100.0, -180.0), air_base(-20.0, -180.0), air_base(-20.0, -70.0)};
         plan.climb_height = 600.0;
-        fm::Route r;  // the leader orbits west of the base, the wingmen join it
-        r.waypoints = {wp(world, 40.92, 29.38, 2000.0)};
+        fm::Route r;  // the leader orbits east of the base, the wingmen join it
+        r.waypoints = {wp(world, 40.93, 29.64, 2000.0)};
         r.on_end = fm::EndBehavior::Loiter;
         plan.then = r;
         fm::ecs::FlightTakeoff options;
         options.interval = 10.0;
         fm::ecs::takeoff_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, plan, options);
+    }
+
+    // 14) A UAV parked on a field strip takes off towards a given heading: no runway, it
+    //     turns to true 045 at taxi speed, lines up and starts the run.
+    flecs::entity strip_uav = spawn(world, "StripUAV", fm::presets::propeller_uav(),
+                                    {41.00, 29.20, 0.0, 0, 0, 0.0}, 0.0, true);
+    {
+        fm::TakeoffPlan plan;
+        plan.heading = fm::ecs::local_heading(world, 45.0, {41.00, 29.20, 0.0});  // true 045
+        fm::Route r;
+        r.waypoints = {wp(world, 41.05, 29.27, 1200.0)};
+        r.on_end = fm::EndBehavior::Loiter;
+        plan.then = r;
+        fm::ecs::agent(strip_uav)->takeoff(plan);
+    }
+
+    // 15) A trainer lines up on a runway and waits until the game clears it for takeoff
+    //     (release_takeoff() at t = 120 s, see the loop).
+    const fm::GeoPoint strip{41.12, 28.80, game::query_hot(41.12, 28.80)};
+    flecs::entity trainer = spawn(world, "Trainer", fm::presets::turboprop_trainer(),
+                                  {strip.latitude, strip.longitude, 0.0, 0, 0, 180.0}, 0.0, true);
+    {
+        fm::TakeoffPlan plan;
+        plan.runway = fm::Runway{fm::ecs::to_local(world, strip),
+                                 fm::ecs::local_heading(world, 180.0, strip)};  // true 180
+        plan.hold = true;  // line up and wait
+        fm::ecs::agent(trainer)->takeoff(plan);
     }
 
     // Progress can be followed through the mode, the phase and the route index.
@@ -311,10 +339,21 @@ int main() {
     bool shuttle_taxi = false;
     bool viper_lined_up = false;
     bool viper_flew = false;
+    bool viper_overhead = false;  // overhead landing commanded
+    bool viper_broke = false;     // seen in the break
+    bool viper_taxi_in = false;
     bool flight_joined = false;
+    bool flight_landed = false;
+    std::vector<flecs::entity> taxi_order;  // back to the shelters in this order
+    int flight_taxi_in = 0;                 // vipers sent back to their shelters
+    int next_taxi_in = 0;                   // s, when the next one may go
     std::vector<double> flight_touchdown(4, -1.0);
+    bool strip_lined_up = false;
+    double strip_liftoff_yaw = -1.0;  // true heading when 20 m above the strip
+    bool trainer_waited = false;
+    bool trainer_flew = false;
     double cruiser_yaw_settled = 0.0;
-    for (int second = 0; second < 900; ++second) {
+    for (int second = 0; second < 1050; ++second) {
         run(world, 1.0);
         if (second == 400) cruiser_yaw_settled = transform(cruiser).yaw;
         const std::size_t index = fm::ecs::agent(uav)->fixed_wing()->route().index();
@@ -341,6 +380,57 @@ int main() {
                 flight_touchdown[k] = second;
         }
         viper_flew = viper_flew || height_above_terrain(viper) > 300.0;
+        // 12) Takeoff done: overhead landing, the roll ends 1200 m down the runway, then the
+        //     viper taxis back into its hangar, nose first.
+        if (viper_flew && !viper_overhead && pose(viper).mode == fm::FlightMode::Cruise) {
+            fm::LandingOptions options;
+            options.pattern = fm::LandingPattern::Overhead;
+            options.break_distance = 300.0;  // m past the threshold
+            options.stop_distance = 1200.0;  // m past the threshold
+            viper_overhead = fm::ecs::agent(viper)->land(fm::Runway{runway_start, runway_heading},
+                                                          options);
+        }
+        viper_broke = viper_broke || (pose(viper).mode == fm::FlightMode::Land &&
+                                      fm::ecs::agent(viper)->fixed_wing()->landing_stage() ==
+                                          fm::FixedWingAgent::LandingStage::Break);
+        if (viper_overhead && !viper_taxi_in && pose(viper).phase == fm::FlightPhase::Landed) {
+            const std::vector<fm::Vec3> to_hangar{airfield(1250.0, 60.0), airfield(-80.0, 60.0),
+                                                  airfield(-80.0, 150.0)};
+            viper_taxi_in = fm::ecs::agent(viper)->taxi(to_hangar, runway_heading + fm::kPi / 2.0);
+        }
+        // 13) Landed: back to the shelters, the last one down (nearest to them) first.
+        if (!flight_landed && second > 420 && !fm::ecs::flight_sequence_active(vipers[0]) &&
+            std::all_of(vipers.begin(), vipers.end(), [](flecs::entity v) {
+                return pose(v).phase == fm::FlightPhase::Landed;
+            })) {
+            flight_landed = true;
+            taxi_order = vipers;  // by the stop position, the one closest to the shelters first
+            std::sort(taxi_order.begin(), taxi_order.end(), [&](flecs::entity a, flecs::entity b) {
+                return distance(world, a, base.latitude, base.longitude) <
+                       distance(world, b, base.latitude, base.longitude);
+            });
+        }
+        if (flight_landed && flight_taxi_in < 4 && second >= next_taxi_in) {
+            const flecs::entity v = taxi_order[static_cast<std::size_t>(flight_taxi_in)];
+            const auto k = std::find(vipers.begin(), vipers.end(), v) - vipers.begin();
+            const fm::Vec3 here = fm::ecs::to_local(world, {transform(v).lat, transform(v).lon, 0.0});
+            const double along = dot(here.xy() - base_start.xy(), fm::heading_vector(base_heading));
+            const std::vector<fm::Vec3> to_shelter{air_base(along - 50.0, -180.0),
+                                                   air_base(100.0 + 60.0 * static_cast<double>(k), -180.0),
+                                                   air_base(100.0 + 60.0 * static_cast<double>(k), -250.0)};
+            fm::ecs::agent(v)->taxi(to_shelter, base_heading - fm::kPi / 2.0);  // nose south
+            ++flight_taxi_in;
+            next_taxi_in = second + 15;  // the next one 15 s later
+        }
+        // 14) Field strip takeoff on a heading.
+        strip_lined_up = strip_lined_up || pose(strip_uav).phase == fm::FlightPhase::LineUp;
+        if (strip_liftoff_yaw < 0.0 && height_above_terrain(strip_uav) > 20.0)
+            strip_liftoff_yaw = transform(strip_uav).yaw;
+        // 15) The game clears the trainer for takeoff.
+        if (second == 119)
+            trainer_waited = pose(trainer).on_ground && pose(trainer).phase == fm::FlightPhase::LineUp;
+        if (second == 120) fm::ecs::agent(trainer)->release_takeoff();
+        trainer_flew = trainer_flew || height_above_terrain(trainer) > 200.0;
         if (second % 150 == 0) {
             std::printf("t=%3d s  Turboprop %-7s | Jet %-6s wp %zu | Shuttle %-7s %-12s\n",
                         second, fm::to_string(pose(turboprop).mode), fm::to_string(pose(jet).mode),
@@ -390,16 +480,30 @@ int main() {
               std::abs(transform(seahawk).alt - spot.offset.z -
                        fm::presets::attack_helicopter().gear_height) < 0.1,
           "11 helicopter landed on the carrier's deck");
-    check(viper_lined_up && viper_flew, "12 fighter taxied out of the hangar, lined up, took off");
+    const fm::GeoPoint viper_hangar = fm::ecs::geo(world)->to_geo(airfield(-80.0, 150.0));
+    check(viper_lined_up && viper_flew && viper_broke && viper_taxi_in &&
+              pose(viper).phase == fm::FlightPhase::Parked &&
+              distance(world, viper, viper_hangar.latitude, viper_hangar.longitude) < 3.0 &&
+              std::abs(std::remainder(transform(viper).yaw - 180.0, 360.0)) < 5.0,
+          "12 fighter: hangar, takeoff, overhead break, landing, back into the hangar");
     std::vector<double> touchdowns = flight_touchdown;
     std::sort(touchdowns.begin(), touchdowns.end());
     bool spaced = touchdowns.front() > 0.0;
     for (std::size_t k = 1; k < touchdowns.size(); ++k)
         spaced = spaced && touchdowns[k] - touchdowns[k - 1] >= 8.0;
-    check(flight_joined && spaced &&
-              std::all_of(vipers.begin(), vipers.end(),
-                          [](flecs::entity v) { return pose(v).phase == fm::FlightPhase::Landed; }),
+    check(flight_joined && spaced && flight_landed,
           "13 flight took off in sequence, rejoined, and landed one by one after the break");
+    bool sheltered = flight_taxi_in == 4;
+    for (int k = 0; k < 4; ++k) {
+        const fm::GeoPoint shelter = fm::ecs::geo(world)->to_geo(air_base(100.0 + 60.0 * k, -250.0));
+        sheltered = sheltered && pose(vipers[k]).phase == fm::FlightPhase::Parked &&
+                    distance(world, vipers[k], shelter.latitude, shelter.longitude) < 3.0;
+    }
+    check(sheltered, "13 flight taxied back into its shelters one after another");
+    check(strip_lined_up && std::abs(std::remainder(strip_liftoff_yaw - 45.0, 360.0)) < 3.0 &&
+              pose(strip_uav).mode == fm::FlightMode::Loiter,
+          "14 UAV turned to true 045 on the strip, took off and orbits");
+    check(trainer_waited && trainer_flew, "15 trainer waited lined up until cleared, took off");
     std::printf("\n%s\n", failures == 0 ? "all examples OK" : "SOME EXAMPLES FAILED");
     return failures == 0 ? 0 : 1;
 }

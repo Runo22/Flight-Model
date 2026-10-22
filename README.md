@@ -322,7 +322,8 @@ handedness.
 ## Examples
 
 ```sh
-./build/examples/fm_scenarios takeoff_route > takeoff.csv   # also: formation, drone_survey
+./build/examples/fm_scenarios takeoff_route > takeoff.csv   # also: formation, drone_survey,
+                                                            # sortie, flight
 ./build/examples/fm_flecs_integration
 ./build/examples/fm_navigation                            # docs/NAVIGATION.md, self-checking
 ```

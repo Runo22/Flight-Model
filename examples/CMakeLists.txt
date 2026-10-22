@@ -1,6 +1,11 @@
 add_executable(fm_scenarios scenario_runner.cpp)
 target_link_libraries(fm_scenarios PRIVATE fm::core)
 target_compile_options(fm_scenarios PRIVATE ${FM_WARNINGS})
+if(FM_BUILD_TESTS)
+  # These scenarios check their own result.
+  add_test(NAME fm_scenario_sortie COMMAND fm_scenarios sortie)
+  add_test(NAME fm_scenario_flight COMMAND fm_scenarios flight)
+endif()
 
 if(TARGET fm::flecs)
   add_executable(fm_flecs_integration flecs_integration.cpp)

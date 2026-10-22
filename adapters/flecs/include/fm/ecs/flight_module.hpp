@@ -316,9 +316,9 @@ bool takeoff_flight(flecs::entity leader, const std::vector<flecs::entity>& wing
 // Overhead recovery of a flight in the air. The wingmen re-form in echelon on the side away
 // from the break, the leader flies to the initial point and along the runway, and breaks
 // over it; the wingmen break after it so that they touch down `interval` seconds apart, on
-// alternating sides of the runway, and stop one behind the other. Wingmen that are not in
-// their echelon slot when the leader is on the initial (or not in its formation at all)
-// land last: each flies the pattern on its own once the aircraft before it has broken.
+// alternating sides of the runway, and stop one behind the other. Wingmen still not in
+// their echelon slot ~15 s before the leader's break (or not in its formation at all) land
+// last: each flies the pattern on its own once the aircraft before it has broken.
 // Returns false (and commands nothing) when an aircraft has no fixed-wing agent in the air.
 bool land_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen,
                  const Runway& runway, const FlightLanding& options = {});
