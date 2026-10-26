@@ -64,6 +64,7 @@ FixedWingParams fast_jet() {
     p.final_approach_distance = 8000.0;
     p.touchdown_distance = 300.0;
     p.approach_speed_factor = 1.25;
+    p.touchdown_aoa = deg2rad(13.0);   // tail clearance
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;
@@ -84,8 +85,8 @@ FixedWingParams airliner_jet() {
     p.induced_drag_k = 0.045;
     p.mach_critical = 0.78;
     p.wave_drag = 0.03;
-    p.flaps_dcl0 = 0.45;
-    p.flaps_dcl_max = 0.65;
+    p.flaps_dcl0 = 0.8;
+    p.flaps_dcl_max = 1.25;            // landing CLmax ~2.75 (A320 class)
     p.flaps_dcd0 = 0.02;
     p.speedbrake_dcd0 = 0.02;
     p.engine.type = EngineType::Jet;
@@ -151,8 +152,8 @@ FixedWingParams regional_turboprop() {
     p.induced_drag_k = 0.038;
     p.mach_critical = 0.6;
     p.wave_drag = 0.02;
-    p.flaps_dcl0 = 0.4;
-    p.flaps_dcl_max = 0.6;
+    p.flaps_dcl0 = 0.7;
+    p.flaps_dcl_max = 1.0;             // landing CLmax ~2.6 (ATR 72 class)
     p.flaps_dcd0 = 0.02;
     p.engine.type = EngineType::Propeller;
     p.engine.max_power = 3.7e6;
@@ -360,6 +361,7 @@ FixedWingParams single_engine_fighter() {
     p.final_approach_distance = 8000.0;
     p.touchdown_distance = 300.0;
     p.approach_speed_factor = 1.27;
+    p.touchdown_aoa = deg2rad(13.0);   // approach 11 deg, touchdown 13 deg (tail clearance)
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;
@@ -430,6 +432,7 @@ FixedWingParams twin_engine_fighter() {
     p.final_approach_distance = 8000.0;
     p.touchdown_distance = 300.0;
     p.approach_speed_factor = 1.3;
+    p.touchdown_aoa = deg2rad(12.0);
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;
@@ -566,6 +569,7 @@ FixedWingParams jet_trainer() {
     p.final_approach_distance = 8000.0;
     p.touchdown_distance = 300.0;
     p.approach_speed_factor = 1.3;
+    p.touchdown_aoa = deg2rad(13.0);   // F-16 / T-50 practice
     p.flare_height = 6.0;
     p.touchdown_sink_rate = 0.8;
     p.decision_height = 60.0;

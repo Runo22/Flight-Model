@@ -203,6 +203,11 @@ if (pose(shuttle).phase == fm::FlightPhase::Landed) {
 * Doğrudan iniş: `agent->land(fm::Runway{baslangic, yon})`. Uçak piste eksen uzantısından
   yaklaşır, 3° süzülüş yolunu izler, flare yapar, frenler; dengesiz yaklaşmada pas geçip
   yeniden dener. Drone `land()` ile bulunduğu yere iner.
+* Yüksekten çağrılan `land()` (ör. seyir irtifasında, piste yakın): uçak son yaklaşma
+  noktasına normal bir alçalmayla yetişemeyecekse önce giriş noktası üzerinde tur atarak
+  alçalır, sonra son yaklaşmaya girer; süzülme yolunu yukarıdan kovalamaz.
+* Jetler hücum açısıyla iner (`touchdown_aoa`): yaklaşma ve teker koyma hızı ağırlıkla
+  değişir, burun açısı kuyruk payını aşmaz. Hızlar ve mesafeler: `docs/PRESETS.md` "İniş".
 * `Runway::start` iniş için pist başıdır (threshold); `heading` iniş yönüdür.
 
 ## 5. Düz uçuş: yön, irtifa, hız

@@ -129,6 +129,10 @@ struct FixedWingParams {
     double final_approach_distance = 6000.0;  // m from the aim point to the final approach fix
     double touchdown_distance = 150.0;     // m from the runway threshold to the aim point
     double approach_speed_factor = 1.3;    // approach speed = factor * stall speed (flaps)
+    // Jets landing on the angle of attack (tail clearance): touchdown at no more than this
+    // angle of attack, the approach about 2 deg below it, speeds from the weight. 0 = the
+    // approach speed from approach_speed_factor only.
+    double touchdown_aoa = 0.0;            // rad
     double flare_height = 6.0;             // m wheel height where the flare starts
     double touchdown_sink_rate = 0.6;      // m/s target sink rate at touchdown
     double decision_height = 40.0;         // m, approach stability check (go-around)

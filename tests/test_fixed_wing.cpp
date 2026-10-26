@@ -356,14 +356,24 @@ TEST_CASE("fixed-wing: approach and landing for every preset") {
 
 TEST_CASE("fixed-wing: unstable approach goes around and lands on the next attempt") {
     const FixedWingParams p = presets::regional_turboprop();
-    // Lined up on final but 1.5 km above the runway at 7 km: far above the glide path,
-    // cannot get down in time and must not land long.
-    FixedWingAgent a(p, airborne({-7000, 0, 200 + 1500}, 90.0, 80.0));
+    // Lined up far out on final; on short final an updraft lifts it far above the glide
+    // path: it must not land long, but go around and land on the next approach.
+    FixedWingAgent a(p, airborne({-14000, 0, 200 + 700}, 90.0, 80.0));
     a.land(Runway{{0, 0, 200}, deg2rad(90.0)});
-    const LandingResult r = fly_landing(a, 1500.0, 200.0);
-    CHECK(r.went_around);
-    CHECK(r.landed);
-    CHECK(!r.crashed);
+    bool went_around = false;
+    double touchdown_x = kUnknown;
+    for (int i = 0; i < 1500 * 60 && a.state().phase != FlightPhase::Landed; ++i) {
+        const FlightState& s = a.state();
+        Environment env;
+        env.terrain_elevation = 200.0;
+        if (!went_around && s.position.z - 200.0 < 150.0) env.wind.z = 6.0;  // wind shear
+        a.step(1.0 / 60.0, env);
+        went_around = went_around || a.state().phase == FlightPhase::GoAround;
+        if (!std::isfinite(touchdown_x) && a.state().on_ground) touchdown_x = a.state().position.x;
+    }
+    CHECK(went_around);
+    CHECK(a.state().phase == FlightPhase::Landed);
+    CHECK(touchdown_x < 2.0 * p.touchdown_distance);  // not long on the next approach
 }
 
 TEST_CASE("fixed-wing: route ending with a landing, then another takeoff") {

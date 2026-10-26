@@ -69,12 +69,15 @@ Veri: kanat alanı 300 ft² (27,87 m²), hava-hava yüklü kütle 26.463 lb, F11
 | Service ceiling (100 ft/min) | 58,728 ft | 50,000+ ft |
 | Stall speed, clean / landing flaps | 128 / 117 kt |  |
 | Takeoff: ground roll, lift-off, over 50 ft | 352 m, 162 kt, 505 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 149 kt, 131 kt, 733 m, 1143 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 168 kt, 160 kt (12.6 deg AoA), 1104 m, 1532 m |  |
+| Landing at 9778 kg (30% fuel): approach, touchdown, roll | 152 kt, 144 kt (12.6 deg AoA), 923 m | ~150-160 kt at 11 deg AoA, touchdown at 13 deg, ~3,000 ft roll |
 | AI turn at cruise speed, 10,000 ft | 6.5 deg/s at 70 deg bank |  |
 | Endurance on 3175 kg of fuel, 30,000 ft | 3 h 30 min at 467 kt, 1054 kg/h full |  |
 
 Tepe hız, gerçekçi sürükleme değerleriyle %4 düşük kaldı. Sürüklemeyi gerçek dışı küçültmek
-yerine bu bırakıldı. Kalkış afterburner'la yapılır.
+yerine bu bırakıldı. Kalkış afterburner'la yapılır. İniş hücum açısıyla uçulur
+(`touchdown_aoa` 13°): ~11° AoA ile yaklaşma, en çok 13° ile teker koyma (kuyruk payı). Hız
+ağırlıktan çıkar: dolu depoyla 168 kt, %30 yakıtla 152 kt.
 
 ### `twin_engine_fighter()` — F-15C sınıfı, 20.200 kg
 
@@ -91,11 +94,13 @@ bir başlangıç.
 | Service ceiling (100 ft/min) | 66,802 ft | 60,000-65,000 ft |
 | Stall speed, clean / landing flaps | 122 / 113 kt |  |
 | Takeoff: ground roll, lift-off, over 50 ft | 316 m, 153 kt, 465 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 147 kt, 131 kt, 724 m, 1139 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 164 kt, 157 kt (11.5 deg AoA), 1028 m, 1461 m |  |
+| Landing at 15,930 kg (30% fuel): approach, touchdown, roll | 145 kt, 139 kt (11.5 deg AoA), 834 m | ~1,070 m landing (unverified) |
 | AI turn at cruise speed, 10,000 ft | 6.2 deg/s at 70 deg bank |  |
 | Endurance on 6100 kg of fuel, 30,000 ft | 4 h 02 min at 486 kt, 1718 kg/h full |  |
 
-Tepe hız %6 düşük; sebep F-16'daki ile aynı.
+Tepe hız %6 düşük; sebep F-16'daki ile aynı. İniş hücum açısıyla, en çok 12° ile teker
+koyarak (`touchdown_aoa`).
 
 ### `turboprop_trainer()` — TUSAŞ Hürkuş sınıfı, 3.300 kg
 
@@ -112,12 +117,18 @@ stall 77 KCAS, 50 ft engeli aşarak kalkış 489 m, 50 ft'ten iniş 593 m, +7 / 
 | Service ceiling (100 ft/min) | 35,852 ft | 34,700-39,270 ft |
 | Stall speed, clean / landing flaps | 92 / 78 kt | 77 KCAS landing config |
 | Takeoff: ground roll, lift-off, over 50 ft | 319 m, 94 kt, 452 m | 489 m over 50 ft |
-| Landing: approach, touchdown, roll, from 50 ft | 99 kt, 91 kt, 377 m, 659 m | 593 m from 50 ft |
+| Landing: approach, touchdown, roll, from 50 ft | 98 kt, 91 kt (8.4 deg AoA), 372 m, 746 m |  |
+| Landing at 2919 kg (30% fuel): approach, touchdown, roll | 92 kt, 85 kt (8.5 deg AoA), 329 m |  |
+| Short-field landing (4 deg approach): from 50 ft | 681 m | 593 m from 50 ft |
 | AI turn at cruise speed, 10,000 ft | 7.6 deg/s at 60 deg bank |  |
 | Endurance on 544 kg of fuel, 15,000 ft | 4 h 16 min at 188 kt, 139 kg/h full | 4 h 15 min at 15,000 ft (798 nm) |
 
 Azami seyir hızı (288 KTAS) uydurmada kullanılmadı. Model 30.000 ft'te 289 kt verdi;
 bu, ayardan bağımsız bir doğrulama.
+
+Yayımlanan 593 m'lik iniş mesafesi kısa saha tekniğiyle ölçülür: 3°'den dik yaklaşma,
+azami fren (Cessna 172 POH'unda 50 ft'ten teker koymaya kadar 760 ft, yani ortalama ~3,8°).
+Model 4°'lik yaklaşmayla 681 m (+%15), normal 3° ILS yaklaşmasıyla 746 m verir.
 
 ### `jet_trainer()` — TUSAŞ Hürjet sınıfı, 8.200 kg (tahmin)
 
@@ -139,7 +150,8 @@ daha hafif ve daha az itkilidir (itki/ağırlık ~1), Mach 1,4'te kalır, kanopi
 | Service ceiling (100 ft/min) | 56,518 ft | 45,000 ft (operating limit) |
 | Stall speed, clean / landing flaps | 116 / 106 kt |  |
 | Takeoff: ground roll, lift-off, over 50 ft | 312 m, 145 kt, 451 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 138 kt, 124 kt, 649 m, 1057 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 148 kt, 141 kt (12.5 deg AoA), 854 m, 1273 m |  |
+| Landing at 6905 kg (30% fuel): approach, touchdown, roll | 136 kt, 129 kt (12.5 deg AoA), 733 m | T-50: Vref 130 kt, lands in 2,320 ft (707 m) |
 | AI turn at cruise speed, 10,000 ft | 6.5 deg/s at 70 deg bank |  |
 | Sustained turn at 15,000 ft, M0.9 | 5.50 g | 5.5 g |
 | Endurance on 1850 kg of fuel, 30,000 ft | 2 h 33 min at 467 kt, 787 kg/h full | 2,222 km range (2 h 34 min at 240 m/s) |
@@ -148,7 +160,8 @@ Mach 1,4, tırmanma ve sürekli dönüş birlikte uyduruldu (`wave_drag`, `induc
 itkinin irtifa ve Mach'la değişimi). 45.000 ft yayımlanmış bir işletme sınırıdır
 (kabin basınçlandırması); afterburner'la aerodinamik tavan, F-16'da olduğu gibi daha
 yüksektir. Sürekli dönüş `sustained_load_factor()` ile ölçülür: tam itkide dönüşteki
-fazla gücün sıfıra düştüğü yük faktörü.
+fazla gücün sıfıra düştüğü yük faktörü. İniş F-16 / T-50 gibi hücum açısıyla
+(`touchdown_aoa` 13°); %30 yakıtla 136 kt yaklaşma, T-50'nin Vref'i 130 kt.
 
 ### `jet_uav()` — Bayraktar Kızılelma sınıfı, 6.000 kg
 
@@ -166,7 +179,8 @@ belirsizdir.
 | Service ceiling (100 ft/min) | 41,523 ft | 12,000-14,000 m |
 | Stall speed, clean / landing flaps | 100 / 91 kt |  |
 | Takeoff: ground roll, lift-off, over 50 ft | 560 m, 128 kt, 685 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt, 642 m, 1047 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt (13.1 deg AoA), 642 m, 1047 m |  |
+| Landing at 4705 kg (30% fuel): approach, touchdown, roll | 106 kt, 97 kt (13.4 deg AoA), 509 m |  |
 | AI turn at cruise speed, 10,000 ft | 3.7 deg/s at 50 deg bank |  |
 | Endurance on 1850 kg of fuel, 30,000 ft | 5 h 10 min at 354 kt, 398 kg/h full | ~5 h |
 
@@ -196,7 +210,8 @@ gücün çoğunu kullanır, tırmanmaya az güç kalır).
 | Service ceiling (100 ft/min) | 30,085 ft | 30,000 ft |
 | Stall speed, clean / landing flaps | 63 / 57 kt |  |
 | Takeoff: ground roll, lift-off, over 50 ft | 449 m, 66 kt, 714 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 75 kt, 70 kt, 286 m, 647 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 74 kt, 70 kt (7.4 deg AoA), 286 m, 647 m |  |
+| Landing at 1430 kg (30% fuel): approach, touchdown, roll | 68 kt, 64 kt (7.4 deg AoA), 242 m |  |
 | AI turn at cruise speed, 10,000 ft | 6.8 deg/s at 30 deg bank |  |
 | Endurance on 385 kg of fuel, 20,000 ft | 29 h 44 min at 113 kt, 16 kg/h full | 30 h |
 
@@ -224,7 +239,8 @@ bir görev irtifasıdır, servis tavanı değil. Model 3.300 kg'da 33.700 ft'e t
 | Service ceiling at 2700 kg | 38,736 ft | 35,000 ft with 150 kg payload; 40,000 ft maximum |
 | Stall speed, clean / landing flaps | 66 / 59 kt |  |
 | Takeoff: ground roll, lift-off, over 50 ft | 454 m, 69 kt, 703 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 78 kt, 73 kt, 317 m, 681 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 77 kt, 73 kt (7.0 deg AoA), 317 m, 681 m |  |
+| Landing at 2817 kg (30% fuel): approach, touchdown, roll | 71 kt, 67 kt (7.1 deg AoA), 272 m |  |
 | AI turn at cruise speed, 10,000 ft | 6.4 deg/s at 30 deg bank |  |
 | Endurance on 690 kg of fuel, 20,000 ft | 31 h 32 min at 117 kt, 26 kg/h full | 12 h with 750 kg payload (TAI, a lighter fuel load) |
 | Endurance at 2700 kg, 20,000 ft | 44 h 32 min at 106 kt, 19 kg/h full | 40 h (EO payload), 49 h demonstrated |
@@ -233,6 +249,49 @@ bir görev irtifasıdır, servis tavanı değil. Model 3.300 kg'da 33.700 ft'e t
 Arazi tabanının altına düşen bir uçak artık hızını en iyi tırmanma açısı hızına düşürüp
 enerjiyi tırmanmaya verir. Bu düzeltme bütün sabit kanatlılar için geçerli; böylece %6'lık
 yamaçlar da aşılır.
+
+## İniş
+
+**Ölçüm:** `landing()` stabil bir ILS yaklaşması uçar: FAF irtifasında düz uçuş, süzülme
+yolunu (3°) alttan yakalama, deniz seviyesi, rüzgârsız. Tablolarda dolu depoyla ve %30
+yakıtla (görevden dönüş) iki iniş var; yayımlanan yaklaşma hızları genelde iniş
+ağırlığındadır.
+
+**Yaklaşma hızı:** `approach_speed_factor` × iniş düzeninde stall hızı. Jetler hücum açısıyla
+iner: `touchdown_aoa` verilirse yaklaşma en az o açıdaki hızın 1,07 katıdır (~2° AoA altı).
+Flare'de hız o açının hızına kadar düşer, sonra itkiyle tutulur; teker koyma açısı sınırı
+geçmez (kuyruk sürtmez). F-16, Hürjet ve `fast_jet` 13°, F-15 12° kullanır.
+
+**Kısa saha:** yayımlanan "50 ft'ten iniş" mesafeleri dik yaklaşma ve azami frenle ölçülür.
+Rapor bunu `landing(p, yakıt, süzülme_açısı)` ile 4°'de ayrıca ölçer (Hürkuş, hafif pervaneli).
+
+**Yüksekten gelen yaklaşma:** düz yaklaşmada uçak, FAF irtifasına 2,5°'lik normal bir
+alçalmayla yetişemeyecek kadar yüksekse, giriş noktası üzerinde 1,5 dönüş yarıçapında tur
+atarak FAF irtifasının 20 m yakınına iner, sonra son yaklaşmaya girer. Giriş noktası FAF'tan
+yavaşlama mesafesi kadar (konumlanma hızından yaklaşma hızına, ~1 m/s² ile) daha dışarıdadır;
+flap ve takım da FAF'a o mesafe kala iner. Böylece uçak FAF'ta yaklaşma hızında ve süzülme
+yolundadır, yolu yukarıdan kovalayıp karar yüksekliğinde pas geçmez. Ölçümde süzülme yolunun
+300 m üstünden ya da 3.000 m'den başlayan yaklaşmalar, ILS başlangıcıyla aynı inişi verir.
+Kısa finalde yaklaşma yine bozulursa (ör. rüzgâr kesmesi) uçak pas geçer ve yeniden dener.
+
+Tüm sabit kanatlılar, %30 yakıtla:
+
+| Preset | Kütle | Yaklaşma | Teker koyma (AoA) | Yerde koşu | Karşılaştırma |
+|---|---|---|---|---|---|
+| F-16 sınıfı | 9.778 kg | 152 kt | 144 kt (12,6°) | 923 m | ~150-160 kt 11° AoA ile, teker koyma 13°, ~3.000 ft koşu |
+| F-15 sınıfı | 15.930 kg | 145 kt | 139 kt (11,5°) | 834 m | ~1.070 m iniş (doğrulanmadı) |
+| Hürjet sınıfı | 6.905 kg | 136 kt | 129 kt (12,5°) | 733 m | T-50: Vref 130 kt, 2.320 ft (707 m) |
+| Hürkuş sınıfı | 2.919 kg | 92 kt | 85 kt (8,5°) | 329 m | 3.300 kg'da 98 kt ≈ 1,3 × 77 kt |
+| Kızılelma sınıfı | 4.705 kg | 106 kt | 97 kt (13,4°) | 509 m | — |
+| Anka-S sınıfı | 1.430 kg | 68 kt | 64 kt (7,4°) | 242 m | — |
+| Aksungur sınıfı | 2.817 kg | 71 kt | 67 kt (7,1°) | 272 m | — |
+| `fast_jet` | 9.900 kg | 149 kt | 143 kt (12,5°) | 911 m | — |
+| `airliner_jet` | 52.400 kg | 127 kt | 119 kt (9,1°) | 777 m | A320: Vref 130-140 kt (64,5 t; model 65 t'da 142 kt) |
+| `regional_turboprop` | 17.500 kg | 107 kt | 100 kt (8,1°) | 550 m | ATR 72-600: Vref 113 kt (22,35 t; model 21 t'da 117 kt) |
+| `light_propeller` | 1.023 kg | 59 kt | 54 kt (8,7°) | 173 m | C172S: 61 KIAS, 175 m koşu (tam ağırlıkta model 185 m) |
+
+`airliner_jet` ve `regional_turboprop` iniş flap kaldırmaları sınıflarına göre düşüktü
+(15-20 kt hızlı yaklaşma): iniş CLmax'ları A320 (~2,75) ve ATR 72 (~2,6) seviyesine çekildi.
 
 ## Helikopterler
 
@@ -428,9 +487,9 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Azami hız (yüksek) | `engine.density_exponent`, `engine.critical_altitude` (turbo / flat-rated), `engine.mach_lapse`, `wave_drag`, `mach_critical`; sınır `mach_max` | `power_lapse_exponent` |
 | Tırmanma | itki / güç fazlası; AI sınırı `climb_rate_max`, `climb_angle_max` | `profile_power`, `induced_power_factor`, güç |
 | Tavan | `engine.density_exponent`, `engine.critical_altitude`, `induced_drag_k`, `mass` | `power_lapse_exponent`, `profile_power` |
-| Stall / yaklaşma hızı | `cl_max`, `flaps_dcl_max`, `approach_speed_factor` | — |
+| Stall / yaklaşma hızı | `cl_max`, `flaps_dcl_max`, `approach_speed_factor`; jetlerde `touchdown_aoa` (teker koyma AoA'sı, yaklaşma ~2° altı) | — |
 | Kalkış | `rotate_speed`, `rotation_pitch`, `cl_alpha`, `cl0` + `flaps_dcl0` | yer etkisi, güç fazlası |
-| İniş mesafesi | `touchdown_distance`, `brake_deceleration`, `approach_speed_factor` | — |
+| İniş mesafesi | `touchdown_distance`, `brake_deceleration` (tekerlek sürtünmesi en çok 0,4 × tekerlere binen ağırlık: flaplı kanadın yerdeki kaldırması frenlemeyi azaltır), `approach_speed_factor` | — |
 | İniş takımı | `retractable_gear`, `gear_transit_time` (indirme/toplama süresi), `gear_dcd0` (seçildiği an tam; toplanırken pozisyonla azalır), `gear_up_height` | — |
 | Taksi | `taxi_speed` (düz taksi yolu), `taxi_turn_radius` (burun tekeri; köşe hızı √(1.5·r)) | — |
 | Komutsuz hız | `cruise_speed` + `cruise_altitude` (altında aynı CAS; negatif = her irtifada aynı TAS), yörüngede `loiter_speed` (0 = dayanım hızı) | `cruise_speed` |

@@ -44,10 +44,14 @@ TEST_CASE("presets: single-engine fighter (F-16C Block 50 class)") {
     const Takeoff to = takeoff(p);
     CHECK(to.ground_roll > 300.0 && to.ground_roll < 550.0);        // afterburner takeoff
     CHECK(kt(to.liftoff_speed) > 150.0 && kt(to.liftoff_speed) < 170.0);
-    const Landing ld = landing(p);
+    // Landing weight (30% fuel): approach at 11 deg AoA ~150-160 kt, touchdown at 13 deg
+    // (tail clearance), roll on the brakes ~3,000 ft.
+    const Landing ld = landing(p, 0.3);
     CHECK(ld.landed);
-    CHECK(kt(ld.approach_speed) > 140.0 && kt(ld.approach_speed) < 155.0);
-    CHECK(ld.ground_roll > 600.0 && ld.ground_roll < 900.0);
+    CHECK(ld.go_arounds == 0);
+    CHECK(kt(ld.approach_speed) > 145.0 && kt(ld.approach_speed) < 160.0);
+    CHECK(ld.touchdown_aoa < deg2rad(13.5));
+    CHECK(ld.ground_roll > 800.0 && ld.ground_roll < 1100.0);
 }
 
 TEST_CASE("presets: twin-engine fighter (F-15C class)") {
@@ -59,9 +63,12 @@ TEST_CASE("presets: twin-engine fighter (F-15C class)") {
     const Takeoff to = takeoff(p);
     CHECK(to.ground_roll > 250.0 && to.ground_roll < 450.0);
     CHECK(kt(to.liftoff_speed) > 140.0 && kt(to.liftoff_speed) < 165.0);
-    const Landing ld = landing(p);
+    const Landing ld = landing(p, 0.3);  // landing weight
     CHECK(ld.landed);
-    CHECK(kt(ld.approach_speed) > 135.0 && kt(ld.approach_speed) < 155.0);
+    CHECK(ld.go_arounds == 0);
+    CHECK(kt(ld.approach_speed) > 140.0 && kt(ld.approach_speed) < 160.0);
+    CHECK(ld.touchdown_aoa < deg2rad(12.5));
+    CHECK(ld.ground_roll < 1100.0);                                 // ~1,070 m landing
 }
 
 TEST_CASE("presets: turboprop trainer (Hurkus class)") {
@@ -75,7 +82,10 @@ TEST_CASE("presets: turboprop trainer (Hurkus class)") {
     CHECK(within(to.to_50ft, 489.0, 0.15));                           // over 50 ft
     const Landing ld = landing(p);
     CHECK(ld.landed);
-    CHECK(within(ld.from_50ft, 593.0, 0.15));                         // from 50 ft
+    CHECK(ld.go_arounds == 0);
+    CHECK(within(kt(ld.approach_speed), 1.3 * 77.0, 0.05));           // 1.3 Vs0
+    // The published 593 m from 50 ft is a short-field figure: steeper than 3 deg.
+    CHECK(within(landing(p, 1.0, deg2rad(4.0)).from_50ft, 593.0, 0.2));
 }
 
 TEST_CASE("presets: jet trainer (Hurjet class)") {
@@ -89,9 +99,13 @@ TEST_CASE("presets: jet trainer (Hurjet class)") {
     CHECK(within(range, 2222.0, 0.05));                                // 2,222 km at Mach 0.8
     const Takeoff to = takeoff(p);
     CHECK(to.ground_roll > 250.0 && to.ground_roll < 500.0);
-    const Landing ld = landing(p);
+    // Landing weight (30% fuel): Vref 130 kt (T-50), touchdown at 13 deg AoA at most.
+    const Landing ld = landing(p, 0.3);
     CHECK(ld.landed);
-    CHECK(kt(ld.approach_speed) > 125.0 && kt(ld.approach_speed) < 150.0);
+    CHECK(ld.go_arounds == 0);
+    CHECK(within(kt(ld.approach_speed), 130.0, 0.07));
+    CHECK(ld.touchdown_aoa < deg2rad(13.5));
+    CHECK(ld.ground_roll > 600.0 && ld.ground_roll < 850.0);           // T-50: 2,320 ft
 }
 
 TEST_CASE("presets: jet UAV (Kizilelma class)") {

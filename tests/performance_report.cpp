@@ -58,7 +58,13 @@ struct FixedWingReference {
     double turn_altitude = 0.0;
     double turn_mach = 0.0;
     std::string sustained_turn{};
+    std::string landing_weight{};    // reference for the landing with 30% fuel
+    // Short-field landing: glide slope (rad, 0 = not measured) and reference.
+    double short_field_slope = 0.0;
+    std::string short_field{};
 };
+
+constexpr double kLandingFuel = 0.3;  // fuel left for the landing-weight row
 
 std::string hours(double h) {
     const int minutes = static_cast<int>(std::lround(h * 60.0));
@@ -90,6 +96,7 @@ void report(const FixedWingParams& p, const std::string& title, const FixedWingR
              format(", %.0f m", to.to_50ft), ref.takeoff},
         {"Landing: approach, touchdown, roll, from 50 ft",
          format("%.0f kt", kt(ld.approach_speed)) + format(", %.0f kt", kt(ld.touchdown_speed)) +
+             format(" (%.1f deg AoA)", rad2deg(ld.touchdown_aoa)) +
              format(", %.0f m", ld.ground_roll) + format(", %.0f m", ld.from_50ft), ref.landing},
         {"AI turn at cruise speed, 10,000 ft",
          format("%.1f deg/s", rad2deg(turn.rate)) + format(" at %.0f deg bank", rad2deg(turn.bank)),
@@ -101,6 +108,24 @@ void report(const FixedWingParams& p, const std::string& title, const FixedWingR
                             format(", M%.1f", ref.turn_mach),
                         format("%.2f g", sustained_load_factor(p, ref.turn_altitude, v)),
                         ref.sustained_turn});
+    }
+    if (ref.short_field_slope > 0.0) {
+        const Landing sf = landing(p, 1.0, ref.short_field_slope);
+        rows.insert(rows.begin() + 7,
+                    {format("Short-field landing (%.0f deg approach): from 50 ft",
+                            rad2deg(ref.short_field_slope)),
+                     format("%.0f m", sf.from_50ft), ref.short_field});
+    }
+    if (p.fuel_capacity > 0.0) {
+        const Landing light = landing(p, kLandingFuel);
+        rows.insert(rows.begin() + 7,
+                    {format("Landing at %.0f kg (30%% fuel): approach, touchdown, roll",
+                            p.mass - (1.0 - kLandingFuel) * p.fuel_capacity),
+                     format("%.0f kt", kt(light.approach_speed)) +
+                         format(", %.0f kt", kt(light.touchdown_speed)) +
+                         format(" (%.1f deg AoA)", rad2deg(light.touchdown_aoa)) +
+                         format(", %.0f m", light.ground_roll),
+                     ref.landing_weight});
     }
     if (ref.light_mass > 0.0) {
         FixedWingParams light = p;
@@ -200,6 +225,7 @@ int main(int argc, char** argv) {
     if (wanted(filter, "single_engine_fighter")) {
         FixedWingReference ref{12192.0, "M2.05", "800 KCAS (limit)", "50,000 ft/min",
                                "50,000+ ft", "", "", ""};
+        ref.landing_weight = "~150-160 kt at 11 deg AoA, touchdown at 13 deg, ~3,000 ft roll";
         ref.endurance_altitude = feet(30000.0);
         ref.endurance_speed = 240.0;  // Mach 0.8
         report(presets::single_engine_fighter(),
@@ -208,6 +234,7 @@ int main(int argc, char** argv) {
     if (wanted(filter, "twin_engine_fighter")) {
         FixedWingReference ref{12192.0, "M2.5+", "M1.2 (800 KCAS)", "> 50,000 ft/min",
                                "60,000-65,000 ft", "", "", ""};
+        ref.landing_weight = "~1,070 m landing (unverified)";
         ref.endurance_altitude = feet(30000.0);
         ref.endurance_speed = 250.0;
         report(presets::twin_engine_fighter(), "twin_engine_fighter: F-15C class, 20,200 kg", ref);
@@ -215,7 +242,9 @@ int main(int argc, char** argv) {
     if (wanted(filter, "turboprop_trainer")) {
         FixedWingReference ref{feet(30000.0), "288 KTAS max cruise", "310 KCAS", "4,370 ft/min",
                                "34,700-39,270 ft", "77 KCAS landing config", "489 m over 50 ft",
-                               "593 m from 50 ft"};
+                               ""};
+        ref.short_field_slope = deg2rad(4.0);
+        ref.short_field = "593 m from 50 ft";
         ref.endurance_altitude = feet(15000.0);
         ref.endurance_speed = knots(188.0);  // 798 nm in 4.25 h
         ref.endurance = "4 h 15 min at 15,000 ft (798 nm)";
@@ -230,6 +259,7 @@ int main(int argc, char** argv) {
         ref.turn_altitude = feet(15000.0);
         ref.turn_mach = 0.9;
         ref.sustained_turn = "5.5 g";
+        ref.landing_weight = "T-50: Vref 130 kt, lands in 2,320 ft (707 m)";
         report(presets::jet_trainer(), "jet_trainer: TUSAS Hurjet class, 8,200 kg (estimate)", ref);
     }
     if (wanted(filter, "jet_uav")) {
@@ -262,6 +292,14 @@ int main(int argc, char** argv) {
                                   : p.name == "fast_jet"        ? 9144.0
                                   : p.name == "light_propeller" ? 2000.0
                                                                 : 6000.0;
+        // Class examples for the landing speeds and distances.
+        if (p.name == "airliner_jet") none.landing = "A320: Vref ~130-140 kt at 64.5 t";
+        if (p.name == "regional_turboprop") none.landing = "ATR 72-600: Vref 113 kt at 22.35 t";
+        if (p.name == "light_propeller") {
+            none.landing = "C172S: 61 KIAS, 175 m roll, 407 m from 50 ft (short field)";
+            none.short_field_slope = deg2rad(4.0);
+            none.short_field = "C172S: 407 m";
+        }
         if (wanted(filter, p.name)) report(p, p.name + " (generic class preset)", none);
     }
 

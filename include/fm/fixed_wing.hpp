@@ -195,6 +195,8 @@ private:
     double cruise_speed_at(const AtmosphereSample& atm) const;  // TAS of the cruise schedule
     double loiter_calibrated_speed() const;
     double approach_speed(double density) const;
+    // Slowest touchdown speed within touchdown_aoa (landing flaps); 0 without that limit.
+    double touchdown_speed_min(double density) const;
     double min_drag_speed(double density) const;  // best climb angle, roughly
     double climb_speed(const AtmosphereSample& atm, double v_min, double v_max);
     double climb_rate_at(double tas, const AtmosphereSample& atm) const;  // m/s, full power

@@ -184,34 +184,50 @@ struct Landing {
     double approach_speed = 0.0;   // m/s TAS, 2 km before the threshold
     double touchdown_speed = 0.0;  // m/s
     double sink_rate = 0.0;        // m/s at touchdown
+    double touchdown_aoa = 0.0;    // rad, angle of attack at touchdown
     double ground_roll = 0.0;      // m, touchdown to stop
     double from_50ft = 0.0;        // m, from 15 m wheel height to stop
+    int go_arounds = 0;
     bool landed = false;
 };
 
-inline Landing landing(const FixedWingParams& p) {
-    const double distance = p.final_approach_distance + 6000.0;
-    // Start south of the runway, landing northwards.
-    FixedWingAgent b(constant_mass(p), [&] {
-        InitialConditions ic = airborne(distance * std::tan(p.glide_slope) + 300.0,
-                                        1.6 * stall_speed(p, 0.0, false));
-        ic.position.y = -distance;
+// A stabilised straight-in landing on a northbound runway at sea level, like an ILS:
+// level at the final approach fix altitude, the glide path from below, with `fuel_left`
+// (share of the tanks) for the landing weight. `glide_slope` (rad, 0 = the preset's):
+// published short-field distances are flown steeper than the usual 3 deg.
+inline Landing landing(const FixedWingParams& p, double fuel_left = 1.0, double glide_slope = 0.0) {
+    FixedWingParams q = constant_mass(p);
+    q.mass -= (1.0 - fuel_left) * p.fuel_capacity;
+    if (glide_slope > 0.0) q.glide_slope = glide_slope;
+    const double speed = 1.6 * stall_speed(q, 0.0, false);
+    FixedWingAgent b(q, [&] {
+        InitialConditions ic =
+            airborne(p.final_approach_distance * std::tan(q.glide_slope) + p.gear_height, speed);
+        ic.position.y = p.touchdown_distance - p.final_approach_distance - 4000.0;
         return ic;
     }());
-    b.set_speed(1.6 * stall_speed(p, 0.0, false));  // positioning at the starting speed
+    b.set_speed(speed);  // positioning at the starting speed
     b.land(Runway{{0.0, 0.0, 0.0}, 0.0});
     Landing r;
     double last_vs = 0.0;
     double y50 = 0.0;
     bool was_airborne = true;
+    bool going_around = false;
     fly(b, 1500.0, 0.0, [&](const FlightState& s, double) {
+        if (s.phase == FlightPhase::GoAround && !going_around) {
+            ++r.go_arounds;
+            y50 = 0.0;  // measured on the approach that lands
+        }
+        going_around = s.phase == FlightPhase::GoAround;
         if (r.approach_speed == 0.0 && s.position.y > -2000.0 && s.position.x * s.position.x < 1e6)
             r.approach_speed = s.airspeed;
-        if (y50 == 0.0 && s.position.z - p.gear_height < 15.24 && s.position.y > -3000.0)
+        if (y50 == 0.0 && !going_around && s.position.z - p.gear_height < 15.24 &&
+            s.position.y > -3000.0)
             y50 = s.position.y;
         if (was_airborne && s.on_ground) {
             r.touchdown_speed = s.airspeed;
             r.sink_rate = -last_vs;
+            r.touchdown_aoa = s.angle_of_attack;
             r.ground_roll = -s.position.y;  // negative until stopped
         }
         was_airborne = !s.on_ground;

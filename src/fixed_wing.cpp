@@ -17,6 +17,18 @@ constexpr double kTakeoffBankLimit = deg2rad(15.0);
 constexpr double kWheelBrakeFriction = 0.3;
 constexpr double kStallMargin = 1.3;       // minimum speed, clean: 1.3 Vs
 constexpr double kFlapsStallMargin = 1.2;  // minimum speed with flaps: 1.2 Vs
+// Landing on the angle of attack: approach speed over the touchdown speed, about 2 deg of
+// angle of attack below the touchdown angle.
+constexpr double kAoaApproachMargin = 1.07;
+// Straight-in approach positioning: the descent planned to the final approach fix, the
+// height above it that is too high (descend in an orbit of this many turn radii first).
+constexpr double kApproachDescentAngle = deg2rad(2.5);
+constexpr double kHighApproachMargin = 20.0;  // m
+constexpr double kHighOrbitFactor = 1.5;
+// Slowing to the approach speed on final: planned deceleration, and at least this share of
+// the final approach fix distance before the fix.
+constexpr double kApproachDeceleration = 1.0;  // m/s^2
+constexpr double kMinSlowDownShare = 0.3;
 constexpr double kTurnStallMargin = 1.2;   // bank limited to keep n <= n_stall / 1.2
 constexpr double kL1TurnFactor = 0.6;      // L1 distance >= 0.6 * K * turn radius
 constexpr double kLeaderTimeout = 2.0;     // s without leader updates before giving up
@@ -831,6 +843,12 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
         std::max(1.3 * v_app, std::min(speed_target_, 1.8 * stall_speed(atm.density, false)));
     // Pilots pull more firmly in the flare than in normal flight path changes.
     const double flare_gamma_tau = std::min(p_.gamma_time_constant, 1.0);
+    // Distance to slow down from `v` to the approach speed, level with gear and flaps down:
+    // configured that far before the final approach fix, at the approach speed by the fix.
+    const auto slow_down = [&](double v) {
+        return std::max(kMinSlowDownShare * faf_distance,
+                        (v * v - v_app * v_app) / (2.0 * kApproachDeceleration));
+    };
 
     cmd.heading = runway_.heading;
     switch (landing_stage_) {
@@ -847,17 +865,33 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
                 guide_pattern(cmd, atm, vg);
                 break;
             }
-            // Entry point on the extended centerline, far enough out to turn onto final.
+            // Entry point on the extended centerline, far enough out to turn onto final and
+            // to slow down before the final approach fix.
             const double radius = turn_radius(positioning_speed);
-            const Vec2 entry = aim.xy() - dir * (faf_distance + 2.0 * radius);
+            const Vec2 entry =
+                aim.xy() - dir * (faf_distance + slow_down(positioning_speed) + 2.0 * radius);
             cmd.use_accel = true;
             cmd.lateral_accel = l1_point(entry, pos, vg, l1);
             cmd.altitude = faf_altitude;
             cmd.speed = positioning_speed;
+            // Too high for a normal descent to the final approach fix altitude on the way
+            // there: descend in an orbit over the entry point first, like a holding pattern
+            // (turning to the pattern side), down to the fix altitude itself, so that there
+            // is time to slow down to the approach speed on final.
+            const bool near_entry = (pos - entry).length() < kHighOrbitFactor * radius;
+            const double to_fix = near_entry ? 0.0 : std::max(-along - faf_distance, 0.0);
+            const bool high = position_.z - faf_altitude >
+                              kHighApproachMargin + to_fix * std::tan(kApproachDescentAngle);
+            if (high && near_entry) {
+                cmd.lateral_accel = l1_loiter(entry, kHighOrbitFactor * radius,
+                                              !landing_.left_pattern, pos, vg, l1);
+                break;
+            }
             const bool aligned = along < -0.8 * faf_distance &&
                                  std::abs(wrap_pi(heading_of(vg) - runway_.heading)) < deg2rad(60.0) &&
                                  std::abs(crosstrack) < 0.5 * -along;
-            if (aligned || (pos - entry).length() < radius) landing_stage_ = LandingStage::Final;
+            if (!high && (aligned || (pos - entry).length() < radius))
+                landing_stage_ = LandingStage::Final;
             break;
         }
         case LandingStage::Final: {
@@ -870,7 +904,7 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
             cmd.altitude = std::min(glide_altitude, faf_altitude);
             if (glide_altitude <= faf_altitude)
                 cmd.vertical_speed_ff = -std::max(dot(vg, dir), 0.0) * tan_gs;
-            if (-along < 1.3 * faf_distance) {
+            if (flaps_ || -along < faf_distance + slow_down(std::max(tas_, positioning_speed))) {
                 flaps_ = true;
                 gear_down_ = true;
                 cmd.speed = v_app;
@@ -920,6 +954,12 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
             cmd.altitude = position_.z;
             cmd.vertical_speed_ff = -std::sqrt(s1 * s1 + (s0 * s0 - s1 * s1) * fraction);
             cmd.speed = v_app;
+            // Landing on the angle of attack: slowing towards the touchdown speed, then
+            // holding it with thrust, never past the touchdown angle (tail clearance).
+            if (const double v_td = touchdown_speed_min(atm.density); v_td > 0.0) {
+                cmd.idle_thrust = false;
+                cmd.speed = v_td;
+            }
             break;
         }
         case LandingStage::GoAround: {
@@ -1748,7 +1788,15 @@ double FixedWingAgent::loiter_calibrated_speed() const {
 }
 
 double FixedWingAgent::approach_speed(double density) const {
-    return p_.approach_speed_factor * stall_speed(density, true);
+    return std::max(p_.approach_speed_factor * stall_speed(density, true),
+                    kAoaApproachMargin * touchdown_speed_min(density));
+}
+
+double FixedWingAgent::touchdown_speed_min(double density) const {
+    if (!(p_.touchdown_aoa > 0.0)) return 0.0;
+    const double cl = std::min(p_.cl0 + p_.flaps_dcl0 + p_.cl_alpha * p_.touchdown_aoa,
+                               p_.cl_max + p_.flaps_dcl_max);
+    return std::sqrt(2.0 * mass_ * kGravity / (density * p_.wing_area * cl));
 }
 
 Vec3 FixedWingAgent::aim_point() const {

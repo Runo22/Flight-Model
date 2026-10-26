@@ -93,6 +93,31 @@ TEST_CASE("landing: overhead pattern for every preset, first attempt") {
     }
 }
 
+TEST_CASE("landing: straight-in approaches started high descend first, no go-around") {
+    for (const FixedWingParams& p :
+         {presets::single_engine_fighter(), presets::twin_engine_fighter(), presets::fast_jet(),
+          presets::turboprop_trainer(), presets::jet_trainer(), presets::jet_uav(),
+          presets::propeller_uav(), presets::twin_propeller_uav(), presets::airliner_jet(),
+          presets::regional_turboprop(), presets::light_propeller()}) {
+        // On the extended centerline 300 m above the glide path, and 3,000 m above the
+        // ground off to the side; the runway heads north from (0, 0).
+        const double far = p.final_approach_distance + 6000.0;
+        for (const InitialConditions& ic :
+             {airborne({0, -far, kGround + far * std::tan(p.glide_slope) + 300.0}, 0.0, p.cruise_speed),
+              airborne({-3000, -12000, kGround + 3000.0}, 90.0, p.cruise_speed)}) {
+            FixedWingAgent a(p, ic);
+            CHECK(a.land(Runway{{0, 0, kGround}, 0.0}));
+            bool went_around = false;
+            simulate(a, 1800.0, flat, {}, [&](const FlightState& s, double) {
+                went_around = went_around || s.phase == FlightPhase::GoAround;
+            });
+            CHECK(!went_around);
+            CHECK(a.state().phase == FlightPhase::Landed);
+            CHECK_NEAR(a.state().position.x, 0.0, 3.0);
+        }
+    }
+}
+
 TEST_CASE("landing: right-hand overhead pattern from the initial leg") {
     const FixedWingParams p = presets::turboprop_trainer();
     FixedWingAgent a(p, airborne({-9000, 0, kGround + p.pattern_height}, 90.0, 100.0));
@@ -108,10 +133,16 @@ TEST_CASE("landing: breaking further on touches down later by the interval") {
     const Runway runway{{0, 0, kGround}, deg2rad(90.0)};
     for (const double interval : {8.0, 15.0}) {
         std::vector<FixedWingAgent> flight;
-        const double speed = FixedWingAgent(p, airborne({}, 0, 100)).overhead_initial_speed(runway);
+        // Back from a sortie: 30% fuel left.
+        const auto returning = [&](const Vec3& position, double speed) {
+            InitialConditions ic = airborne(position, 90.0, speed);
+            ic.fuel = 0.3 * p.fuel_capacity;
+            return ic;
+        };
+        const double speed = FixedWingAgent(p, returning({}, 100)).overhead_initial_speed(runway);
         for (int k = 0; k < 4; ++k)  // echelon right of the leader, on the initial
-            flight.emplace_back(p, airborne({-6000.0 - 40.0 * k, -40.0 * k, kGround + p.pattern_height},
-                                            90.0, speed));
+            flight.emplace_back(p, returning({-6000.0 - 40.0 * k, -40.0 * k, kGround + p.pattern_height},
+                                             speed));
         const double spacing = flight[0].break_spacing(runway, interval, speed);
         for (int k = 0; k < 4; ++k) {
             LandingOptions o = overhead();
