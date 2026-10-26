@@ -208,6 +208,8 @@ if (pose(shuttle).phase == fm::FlightPhase::Landed) {
   alçalır, sonra son yaklaşmaya girer; süzülme yolunu yukarıdan kovalamaz.
 * Jetler hücum açısıyla iner (`touchdown_aoa`): yaklaşma ve teker koyma hızı ağırlıkla
   değişir, burun açısı kuyruk payını aşmaz. Hızlar ve mesafeler: `docs/PRESETS.md` "İniş".
+* Teker koyunca frenler için kaldırma atılır: spoiler'ı olan uçakta yer spoiler'ları açılır
+  (`state().speed_brake`), olmayanda flaplar toplanır (`state().flaps`).
 * `Runway::start` iniş için pist başıdır (threshold); `heading` iniş yönüdür.
 
 ## 5. Düz uçuş: yön, irtifa, hız

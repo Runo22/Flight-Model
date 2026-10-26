@@ -85,7 +85,7 @@ TEST_CASE("presets: turboprop trainer (Hurkus class)") {
     CHECK(ld.go_arounds == 0);
     CHECK(within(kt(ld.approach_speed), 1.3 * 77.0, 0.05));           // 1.3 Vs0
     // The published 593 m from 50 ft is a short-field figure: steeper than 3 deg.
-    CHECK(within(landing(p, 1.0, deg2rad(4.0)).from_50ft, 593.0, 0.2));
+    CHECK(within(landing(p, 1.0, deg2rad(4.0)).from_50ft, 593.0, 0.1));
 }
 
 TEST_CASE("presets: jet trainer (Hurjet class)") {

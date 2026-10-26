@@ -1404,10 +1404,13 @@ void FixedWingAgent::integrate(const Control& c, const AtmosphereSample& atm, co
             return;
         }
         if (mode_ == FlightMode::Land && gentle) {
-            // Touchdown: landing roll on the centerline, spoilers out when available.
+            // Touchdown: landing roll on the centerline. The flaps' lift is dumped for the
+            // brakes: ground spoilers out where there are any, otherwise flaps up (like the
+            // short-field technique of light aircraft).
             landing_stage_ = LandingStage::Rollout;
             phase_ = FlightPhase::Rollout;
             speed_brake_ = p_.speedbrake_dcd0 > 0.0;
+            if (!speed_brake_) flaps_ = false;
             taxi_.clear();
             if (std::isfinite(landing_.stop_distance)) {
                 // Roll on to the stop point, but never stop shorter than braking allows.
@@ -1450,7 +1453,9 @@ void FixedWingAgent::integrate_ground(const Control& c, const AtmosphereSample& 
     alpha_ = ground_pitch_;
 
     const double qs = 0.5 * atm.density * v * v * p_.wing_area;
-    const double cl = std::min(cl0() + p_.cl_alpha * alpha_, cl_max());
+    double cl = std::min(cl0() + p_.cl_alpha * alpha_, cl_max());
+    // Ground spoilers on the landing roll spoil the flaps' lift.
+    if (mode_ == FlightMode::Land && speed_brake_ && flaps_) cl -= p_.flaps_dcl0;
     const double lift = qs * cl;
     double cd = cd0() + p_.induced_drag_k * cl * cl;
     if (speed_brake_) cd += p_.speedbrake_dcd0;
