@@ -143,6 +143,16 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   frekansı; `snapshot()` ile sıçramasız geçiş.
 - 1.000–10.000 ajan için benchmark, Flecs çok iş parçacıklı çalıştırma ölçümleri.
 - İsteğe bağlı deterministik mod (sabit adım, replay/multiplayer için).
+- Zaman hızlandırma (demo için ×2, ×4 ...). Henüz temiz bir yöntem seçilmedi:
+  - Flecs'in `world.set_time_scale()` ayarı modülde değişiklik gerektirmez; bütün oyunu
+    birlikte hızlandırır. Ama `max_step` sınırı ölçeklenmiş süreye uygulanır: 30 FPS'de
+    ×7,5'in üstü için `set_max_step` büyütülmeli.
+  - Yalnız uçak yapay zekâsını hızlandıran bir modül ayarı, oyunun 1× hareket ettirdiği
+    hedeflerle (`TrackedPose`, oyunun sürdüğü gemi) tutarsız olur: liderin hızı kareler
+    arası konum farkından hesaplandığı için yarıya düşer.
+  - Yapılmadan önce: helikopter ve gemi ajanlarının büyük adımda alt adımlara bölüp
+    bölmediğine bakılmalı, ×2 ve ×8 ile kol uçuşu, sıralı kalkış/iniş ve gemiye iniş test
+    edilmeli.
 
 ### Faz 5 — Çoklu ajan davranışları
 - Çarpışma önlemenin devamı: yatay çözüm (sağa dönüş), ajanı olmayan trafik (oyuncu uçağı,
