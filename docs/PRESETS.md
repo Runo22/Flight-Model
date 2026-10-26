@@ -431,6 +431,7 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Stall / yaklaşma hızı | `cl_max`, `flaps_dcl_max`, `approach_speed_factor` | — |
 | Kalkış | `rotate_speed`, `rotation_pitch`, `cl_alpha`, `cl0` + `flaps_dcl0` | yer etkisi, güç fazlası |
 | İniş mesafesi | `touchdown_distance`, `brake_deceleration`, `approach_speed_factor` | — |
+| İniş takımı | `retractable_gear`, `gear_transit_time` (indirme/toplama süresi), `gear_dcd0` (seçildiği an tam; toplanırken pozisyonla azalır), `gear_up_height` | — |
 | Taksi | `taxi_speed` (düz taksi yolu), `taxi_turn_radius` (burun tekeri; köşe hızı √(1.5·r)) | — |
 | Komutsuz hız | `cruise_speed` + `cruise_altitude` (altında aynı CAS; negatif = her irtifada aynı TAS), yörüngede `loiter_speed` (0 = dayanım hızı) | `cruise_speed` |
 | Overhead pattern | `pattern_height` (jetler 450 m, diğerleri 300 m), break yatışı `bank_max` (en çok 60°), pattern hızları iniş hızından | — |

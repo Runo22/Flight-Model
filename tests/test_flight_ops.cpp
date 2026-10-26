@@ -43,6 +43,7 @@ struct PatternResult {
     double downwind_offset = 0.0;    // m right of the runway line, on the downwind
     double touchdown_x = 0.0;
     double touchdown_time = -1.0;
+    double touchdown_gear = 0.0;     // gear position at touchdown
 };
 
 // Runway heading east from (0, 0): x along it, -y to its right.
@@ -57,6 +58,7 @@ PatternResult fly_pattern(FixedWingAgent& a, double seconds) {
         if (r.touchdown_time < 0.0 && s.on_ground) {
             r.touchdown_time = t;
             r.touchdown_x = s.position.x;
+            r.touchdown_gear = s.gear_position;
         }
         r.landed = r.landed || s.phase == FlightPhase::Landed;
     });
@@ -86,6 +88,7 @@ TEST_CASE("landing: overhead pattern for every preset, first attempt") {
         CHECK(r.downwind_offset < -500.0);  // left pattern: north of the eastbound runway
         CHECK(r.touchdown_x > 0.5 * p.touchdown_distance);
         CHECK(r.touchdown_x < 2.0 * p.touchdown_distance + 100.0);
+        CHECK(r.touchdown_gear == 1.0);  // down and locked
         CHECK_NEAR(a.state().position.y, 0.0, 3.0);
     }
 }

@@ -462,6 +462,7 @@ fm::ecs::land_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, base_runway, 
 | Araziden yükseklik | `agent->state().height_above_terrain` |
 | Hızlar | `FlightPose`: `airspeed` (TAS), `calibrated_airspeed` (IAS/CAS), `mach`, `ground_speed`, `vertical_speed`. `state()` ek olarak `equivalent_airspeed` ve `dynamic_pressure` verir |
 | Yakıt | `FlightPose::fuel` (kg; modellenmiyorsa NaN). `state()` ek olarak `fuel_flow` (kg/s) ve `mass` (kg) verir. İkmal: `agent->set_fuel(kg)` |
+| İniş takımı | `FlightPose::gear_position`: 0 yukarıda kilitli, 1 aşağıda kilitli, arada hareket ediyor (`gear_transit_time` saniyede; varsayılan 6 s, yolcu jeti 10 s). Kalkışta `gear_up_height`'ı geçince toplanır; inişte son yaklaşmaya girerken ya da downwind'de iner, pas geçişte tırmanmaya başlayınca toplanır. Sabit takımda hep 1, gemide 0. `state().gear_down` kolun konumudur: hareket başladığı anı (ses, animasyon) buradan yakalayabilirsiniz |
 | G ve açılar | `FlightPose`: `g_force` (gövde eksenlerinde hissedilen g: x ileri, y sağ, z yukarı; düz uçuşta ~{0, 0, 1}), `angle_of_attack`, `sideslip_angle`, `turn_rate` (derece). `state()` ek olarak `load_factor`, `acceleration` (m/s², ENU), `pitch_rate` ve `roll_rate` verir |
 
 ## 10. Hangi araç ne yapar

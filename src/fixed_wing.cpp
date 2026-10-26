@@ -104,6 +104,7 @@ FixedWingAgent::FixedWingAgent(FixedWingParams params, const InitialConditions& 
     runway_elevation_ = kNoGround;
     on_ground_ = ic.on_ground;
     gear_down_ = on_ground_ || !p_.retractable_gear;
+    gear_position_ = gear_down_ ? 1.0 : 0.0;
 
     const AtmosphereSample atm = isa(position_.z);
     speed_target_ = default_speed(atm);  // the initial speed is not a speed command
@@ -536,6 +537,11 @@ void FixedWingAgent::step(double dt, const Environment& input) {
         const Control c = autopilot(cmd, atm);
         integrate(c, atm, env.wind, h);
         burn_fuel(tas_, atm, h);
+        // The gear travels to the selected position.
+        const double gear_target = gear_down_ ? 1.0 : 0.0;
+        gear_position_ = p_.gear_transit_time > 0.0
+                             ? approach(gear_position_, gear_target, h / p_.gear_transit_time)
+                             : gear_target;
     }
     update_output(atm, env.wind);
     motion_.update(out_, dt);
@@ -1482,6 +1488,7 @@ void FixedWingAgent::update_output(const AtmosphereSample& atm, const Vec3& wind
     out_.speed_brake = speed_brake_;
     out_.flaps = flaps_;
     out_.gear_down = gear_down_;
+    out_.gear_position = gear_position_;
     out_.phase = phase_;
 }
 
@@ -1522,6 +1529,7 @@ void FixedWingAgent::start_flying_here() {
     flaps_ = false;
     speed_brake_ = false;
     gear_down_ = !p_.retractable_gear;
+    gear_position_ = gear_down_ ? 1.0 : 0.0;
     trim_level(isa(position_.z));
     phase_ = FlightPhase::Airborne;
     if (mode_ == FlightMode::Takeoff) {
@@ -1593,7 +1601,9 @@ double FixedWingAgent::drag(double tas, double load_factor, const AtmosphereSamp
         cd += p_.wave_drag * x * x;
     }
     if (brake) cd += p_.speedbrake_dcd0;
-    if (gear_down_ && p_.retractable_gear) cd += p_.gear_dcd0;
+    // Gear: the doors open as soon as it is selected down; while it retracts, the drag
+    // fades with its position.
+    if (p_.retractable_gear) cd += p_.gear_dcd0 * (gear_down_ ? 1.0 : gear_position_);
     return qs * cd;
 }
 

@@ -63,6 +63,7 @@ struct FixedWingParams {
     double speedbrake_dcd0 = 0.0;   // 0 = no speed brake
     bool retractable_gear = true;
     double gear_dcd0 = 0.015;       // extra drag with a retractable gear down
+    double gear_transit_time = 6.0; // s, retractable gear travel between up and down
 
     EngineParams engine;
 

@@ -187,13 +187,17 @@ TEST_CASE("presets: fixed-wing presets take off, fly a route and land") {
         a.follow_route(r);
         bool crashed = false;
         bool flew = false;
+        double touchdown_gear = -1.0;
         fmtest::simulate(a, 1500.0, [](double, double) { return 0.0; }, {},
                          [&](const FlightState& s, double) {
                              crashed = crashed || s.phase == FlightPhase::TerrainContact;
                              flew = flew || s.position.z > 700.0;
+                             if (flew && touchdown_gear < 0.0 && s.on_ground)
+                                 touchdown_gear = s.gear_position;
                          });
         CHECK(flew);
         CHECK(!crashed);
+        CHECK(touchdown_gear == 1.0);
         CHECK(a.state().phase == FlightPhase::Landed);
         CHECK(std::abs(a.state().position.x) < 5.0);  // on the centerline
     }

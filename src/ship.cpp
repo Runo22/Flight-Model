@@ -427,6 +427,7 @@ void ShipAgent::update_output() {
     out_.speed_brake = false;
     out_.flaps = false;
     out_.gear_down = false;
+    out_.gear_position = 0.0;
     out_.phase = aground_ ? FlightPhase::TerrainContact : phase_;
 }
 

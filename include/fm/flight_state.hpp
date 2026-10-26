@@ -128,7 +128,10 @@ struct FlightState {
     bool avoiding_traffic = false;  // climbing or descending away from a predicted conflict
     bool speed_brake = false;
     bool flaps = false;
-    bool gear_down = true;
+    bool gear_down = true;         // gear selected down (the lever)
+    // Gear position: 0 up and locked, 1 down and locked, in between while it travels
+    // (fixed gear: always 1).
+    double gear_position = 1.0;
     FlightPhase phase = FlightPhase::Airborne;
 };
 

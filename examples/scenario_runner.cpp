@@ -17,15 +17,16 @@ namespace {
 constexpr double kDt = 1.0 / 60.0;
 
 void header() {
-    std::printf("t,vehicle,x,y,z,heading_deg,pitch_deg,roll_deg,airspeed,vertical_speed,mode,phase\n");
+    std::printf("t,vehicle,x,y,z,heading_deg,pitch_deg,roll_deg,airspeed,vertical_speed,mode,phase,"
+                "gear\n");
 }
 
 void row(double t, int id, const FlightAgent& a) {
     const FlightState& s = a.state();
-    std::printf("%.2f,%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d\n", t, id, s.position.x,
+    std::printf("%.2f,%d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%.2f\n", t, id, s.position.x,
                 s.position.y, s.position.z, rad2deg(s.attitude.heading), rad2deg(s.attitude.pitch),
                 rad2deg(s.attitude.roll), s.airspeed, s.vertical_speed, static_cast<int>(a.mode()),
-                static_cast<int>(s.phase));
+                static_cast<int>(s.phase), s.gear_position);
 }
 
 double hilly_terrain(double x, double y) { return 100.0 + 80.0 * std::sin(x / 4000.0) * std::cos(y / 5000.0); }

@@ -127,6 +127,7 @@ FixedWingParams airliner_jet() {
     p.retractable_gear = true;
     p.gear_dcd0 = 0.02;
     p.gear_up_height = 15.0;
+    p.gear_transit_time = 10.0;        // large main gear
     p.final_approach_distance = 12000.0;
     p.touchdown_distance = 300.0;
     p.approach_speed_factor = 1.3;
@@ -193,6 +194,7 @@ FixedWingParams regional_turboprop() {
     p.retractable_gear = true;
     p.gear_dcd0 = 0.02;
     p.gear_up_height = 15.0;
+    p.gear_transit_time = 8.0;
     p.final_approach_distance = 8000.0;
     p.touchdown_distance = 250.0;
     p.approach_speed_factor = 1.3;

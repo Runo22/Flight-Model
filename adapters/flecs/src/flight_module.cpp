@@ -48,6 +48,7 @@ void write_pose(const WorldFrame& f, const FlightAgent& agent, FlightPose& pose)
     pose.sideslip_angle = rad2deg(s.sideslip_angle);
     pose.turn_rate = rad2deg(s.turn_rate);
     pose.fuel = s.fuel;
+    pose.gear_position = s.gear_position;
     pose.mode = agent.mode();
     pose.phase = s.phase;
     pose.on_ground = s.on_ground;

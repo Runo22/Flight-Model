@@ -252,6 +252,7 @@ private:
     bool flaps_ = false;
     bool speed_brake_ = false;
     bool gear_down_ = true;
+    double gear_position_ = 1.0;  // 0 up .. 1 down
     FlightPhase phase_ = FlightPhase::Airborne;
 
     // Targets

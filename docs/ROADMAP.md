@@ -68,6 +68,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   - Kuvvetler ve oranlar: ivme, gövde eksenlerinde g kuvveti, dönüş / yunuslama / yatış
     hızları.
   - Açılar: hücum açısı, yan kayma.
+  - İniş takımı: kol konumu (`gear_down`) ve 0-1 arası pozisyon (`gear_position`,
+    `gear_transit_time` saniyede hareket eder); Flecs `FlightPose` ve CSV izinde de var.
   - Hız komutları TAS, CAS ya da Mach olarak verilebilir.
 - **Yakıt ve kütle (sabit kanat):** TSFC / BSFC ile tüketim (afterburner ayrı), hafifleyen
   kütle, yakıt bitince motor durması ve en iyi süzülme hızında süzülme, ikmal (`set_fuel`).
@@ -101,7 +103,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   `TrueKnots`). Komutsuz uçuşta CAS/Mach takvimi (`cruise_altitude`) ve yörüngede dayanım hızı.
   Kol lideri en yavaş takipçiye göre hız sınırlar; önce kolu toplar (bekleme yörüngesi),
   sonra göreve gider.
-- **Testler:** 109 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
+- **Testler:** 110 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
   (`sortie`, `flight`) + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 

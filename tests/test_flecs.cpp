@@ -187,6 +187,7 @@ TEST_CASE("flecs: parked aircraft takes off when given a route") {
     flecs::entity e = world.entity();
     ecs::attach_at(e, presets::propeller_uav(), {0, 0, 0}, 0.0, 0.0, true);
     CHECK(pose_of(e).on_ground);
+    CHECK(pose_of(e).gear_position == 1.0);
     Route r;
     Waypoint wp;
     wp.position = {0, 3000, 120};  // ENU
@@ -197,6 +198,7 @@ TEST_CASE("flecs: parked aircraft takes off when given a route") {
     CHECK(!pose_of(e).on_ground);
     CHECK(pose_of(e).position.z < -1000.0);  // flew north = -Z
     CHECK(pose_of(e).position.y > 60.0);
+    CHECK(pose_of(e).gear_position == 0.0);  // retracted after lift-off
 }
 
 // --- Geodetic worlds -------------------------------------------------------------------

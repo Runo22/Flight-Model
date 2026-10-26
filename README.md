@@ -141,7 +141,7 @@ Per frame:
 * **Inputs (optional)**: `fm::ecs::TerrainHeight` (ground height under the entity, world
   units along the world up axis) or `fm::ecs::HeightAboveGround`, and `fm::ecs::Wind`.
 * **Output**: `fm::ecs::FlightPose` (world position, rotation quaternion for the asset,
-  velocity, heading/pitch/roll in degrees, speeds, mode, phase) and, in geodetic worlds,
+  velocity, heading/pitch/roll in degrees, speeds, landing gear position, mode, phase) and, in geodetic worlds,
   `fm::ecs::GeoPose`. Copy it into your own transform in a later phase.
 * **Moving an entity**: writing a new position or heading into `FlightPose` / `GeoPose`
   (or into your transform, see `bind_geo_transform`) teleports it; the agent continues

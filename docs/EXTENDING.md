@@ -474,7 +474,7 @@ ile algılar), yoksa varsayılan davranış uygulanır:
 | `airspeed`, `ground_speed`, `vertical_speed`, `track` | Hızlar ve yer izi |
 | `on_ground`, `phase` | Yer durumu ve faz (`Parked`, `Airborne`, `Landing`, `Landed` ...) |
 | `height_above_terrain` | Biliniyorsa zeminden yükseklik, yoksa NaN |
-| `flight_path_angle`, `angle_of_attack`, `load_factor`, `throttle`, `mach`, `flaps`, `gear_down`, `speed_brake` | Anlamlıysa doldurun; değilse varsayılan kalabilir |
+| `flight_path_angle`, `angle_of_attack`, `load_factor`, `throttle`, `mach`, `flaps`, `gear_down`, `gear_position`, `speed_brake` | Anlamlıysa doldurun; değilse varsayılan kalabilir (takım varsayılanı: aşağıda, 1) |
 
 Koordinatlar her zaman çekirdek çerçevesindedir (ENU, metre, radyan). Oyun motorunun
 eksenlerine ve enlem/boylama çeviri Flecs modülünde yapılır; agent'ın bunu bilmesi

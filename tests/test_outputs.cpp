@@ -101,6 +101,56 @@ TEST_CASE("outputs: hovering and sailing feel 1 g; a teleport does not show as a
     CHECK(a.state().acceleration.length() < 1.0);
 }
 
+TEST_CASE("outputs: the gear travels up after lift-off and is down before touchdown") {
+    const FixedWingParams p = presets::single_engine_fighter();
+    InitialConditions ic;
+    ic.on_ground = true;
+    FlightAgent a(p, ic);
+    CHECK(a.state().gear_down);
+    CHECK(a.state().gear_position == 1.0);
+    Route r;
+    Waypoint w;
+    w.position = {0.0, 20000.0, 1000.0};
+    r.waypoints.push_back(w);
+    r.on_end = EndBehavior::Land;
+    r.runway = Runway{{0.0, 0.0, 0.0}, 0.0};
+    a.follow_route(r);
+
+    double up_selected = -1.0, up = -1.0, down_selected = -1.0, down = -1.0;
+    double height_at_selection = 0.0, touchdown_gear = -1.0, last = 1.0;
+    bool airborne_once = false, monotonic = true;
+    simulate(a, 1500.0, [](double, double) { return 0.0; }, {},
+             [&](const FlightState& s, double t) {
+                 airborne_once = airborne_once || !s.on_ground;
+                 if (up_selected < 0.0 && !s.gear_down) {
+                     up_selected = t;
+                     height_at_selection = s.position.z - p.gear_height;
+                 }
+                 if (up < 0.0 && s.gear_position == 0.0) up = t;
+                 if (up > 0.0 && down_selected < 0.0 && s.gear_down) down_selected = t;
+                 if (down_selected > 0.0 && down < 0.0 && s.gear_position == 1.0) down = t;
+                 // Only one way at a time, never past the stops.
+                 if (s.gear_position < 0.0 || s.gear_position > 1.0) monotonic = false;
+                 if (up < 0.0 && s.gear_position > last) monotonic = false;
+                 if (down_selected > 0.0 && s.gear_position < last) monotonic = false;
+                 last = s.gear_position;
+                 if (airborne_once && touchdown_gear < 0.0 && s.on_ground) touchdown_gear = s.gear_position;
+             });
+    CHECK(height_at_selection > p.gear_up_height);
+    CHECK_NEAR(up - up_selected, p.gear_transit_time, 0.1);
+    CHECK_NEAR(down - down_selected, p.gear_transit_time, 0.1);
+    CHECK(monotonic);
+    CHECK(touchdown_gear == 1.0);
+    CHECK(a.state().phase == FlightPhase::Landed);
+
+    // Fixed gear is always down; ships have none.
+    InitialConditions cruise = airborne({0, 0, 1000}, 0.0, 50.0);
+    CHECK(FlightAgent(presets::light_propeller(), cruise).state().gear_position == 1.0);
+    CHECK(FlightAgent(presets::attack_helicopter(), cruise).state().gear_position == 1.0);
+    InitialConditions sea;
+    CHECK(FlightAgent(presets::carrier_ship(), sea).state().gear_position == 0.0);
+}
+
 TEST_CASE("outputs: sideslip and angle of attack in a crosswind") {
     const Vec3 crosswind{10.0, 0.0, 0.0};  // from the west
     // A fixed-wing aircraft crabs into the wind: no sideslip, its own angle of attack.
