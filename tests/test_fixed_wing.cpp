@@ -132,6 +132,100 @@ TEST_CASE("fixed-wing: route following and continue straight at the end") {
     CHECK_NEAR(a.state().position.z, 1200.0, 10.0);
 }
 
+namespace {
+// Takeoff to the north from (0, 0), a waypoint to the right, one to the left, landing back.
+struct RouteTurns {
+    double closest[2] = {1e9, 1e9};  // m, to each waypoint
+    double max_bank = 0.0;           // rad, while on the route
+    int reversals = 0;               // bank reversals (> 5 deg) before the first waypoint
+    double route_height = 0.0;       // m above the runway where the route started
+};
+
+RouteTurns fly_right_then_left(const FixedWingParams& p, double scale, double climb_height = 0.0) {
+    InitialConditions ic;
+    ic.on_ground = true;
+    FixedWingAgent a(p, ic);
+    const Vec3 points[] = {{4000.0 * scale, 3000.0 * scale, 800.0},
+                           {-4000.0 * scale, 6000.0 * scale, 800.0}};
+    Route r;
+    for (const Vec3& v : points) {
+        Waypoint w;
+        w.position = v;
+        r.waypoints.push_back(w);
+    }
+    r.on_end = EndBehavior::Land;
+    r.runway = Runway{{0, 0, 0}, 0.0};
+    TakeoffPlan plan;
+    plan.runway = Runway{{0, 0, 0}, 0.0};
+    plan.climb_height = climb_height;
+    plan.then = r;
+    a.takeoff(plan);
+    RouteTurns out;
+    int bank_sign = 0;
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 3000 * 60 && a.mode() != FlightMode::Land; ++i) {
+        Environment env;
+        env.terrain_elevation = 0.0;
+        a.step(dt, env);
+        const FlightState& s = a.state();
+        if (a.mode() != FlightMode::Route) continue;
+        if (out.route_height == 0.0) out.route_height = s.position.z - p.gear_height;
+        for (int k = 0; k < 2; ++k)
+            out.closest[k] = std::min(out.closest[k], (s.position.xy() - points[k].xy()).length());
+        out.max_bank = std::max(out.max_bank, std::abs(s.attitude.roll));
+        if (a.route().index() == 0 && std::abs(s.attitude.roll) > deg2rad(5.0)) {
+            const int sign = s.attitude.roll > 0.0 ? 1 : -1;
+            if (bank_sign != 0 && sign != bank_sign) ++out.reversals;
+            bank_sign = sign;
+        }
+    }
+    return out;
+}
+
+const FixedWingParams kAllFixedWing[] = {
+    presets::single_engine_fighter(), presets::twin_engine_fighter(), presets::fast_jet(),
+    presets::jet_trainer(),           presets::turboprop_trainer(),  presets::jet_uav(),
+    presets::propeller_uav(),         presets::twin_propeller_uav(), presets::airliner_jet(),
+    presets::regional_turboprop(),    presets::light_propeller()};
+}  // namespace
+
+TEST_CASE("fixed-wing: route turns at the navigation bank reach every waypoint") {
+    // A sharp corner (174 deg) is flown over rather than cut; the first leg goes straight
+    // to the waypoint from where the route starts, without an S-turn; route turns use
+    // nav_bank, not the maneuvering bank_max (a fighter at 45 deg, not 70 deg).
+    for (const FixedWingParams& p : kAllFixedWing) {
+        const RouteTurns r = fly_right_then_left(p, 4.0);
+        CHECK(r.closest[0] < 100.0);  // the waypoint miss the AI tolerates
+        CHECK(r.closest[1] < 100.0);
+        CHECK(r.max_bank < std::min(p.nav_bank > 0.0 ? p.nav_bank : deg2rad(30.0), p.bank_max) +
+                               deg2rad(1.0));
+        CHECK(r.reversals == 0);
+        // A route follows: the turn towards it starts once clean at a safe height, well
+        // before the default end of the takeoff climb.
+        CHECK(r.route_height >= std::max(p.flaps_up_height, p.min_terrain_clearance) - 1.0);
+        CHECK(r.route_height < 0.8 * p.takeoff_climb_height);
+    }
+}
+
+TEST_CASE("fixed-wing: waypoints too close for the navigation bank are made with a tighter turn") {
+    // The same route at a quarter of the size: the jets right after takeoff bank harder
+    // (up to bank_max) to make the first waypoint instead of missing it by a kilometre.
+    for (const FixedWingParams& p :
+         {presets::single_engine_fighter(), presets::jet_trainer(), presets::jet_uav()}) {
+        const RouteTurns r = fly_right_then_left(p, 1.0);
+        CHECK(r.closest[0] < 150.0);
+        CHECK(r.closest[1] < 150.0);
+        CHECK(r.max_bank > p.nav_bank + deg2rad(5.0));
+        CHECK(r.max_bank < p.bank_max + deg2rad(1.0));
+    }
+}
+
+TEST_CASE("fixed-wing: an explicit takeoff climb height is flown before the route") {
+    const FixedWingParams p = presets::propeller_uav();
+    CHECK(fly_right_then_left(p, 4.0, 300.0).route_height > 285.0);
+    CHECK(fly_right_then_left(p, 4.0).route_height < 200.0);  // default: turn at ~150 m
+}
+
 TEST_CASE("fixed-wing: go_to then loiter at the point") {
     const FixedWingParams p = presets::regional_turboprop();
     FixedWingAgent a(p, airborne({0, 0, 3000}, 0.0, p.cruise_speed));
@@ -258,7 +352,8 @@ TEST_CASE("fixed-wing: a formation leader banks only as far as a wide wingman ca
     // F-16 class pair 300 m apart; the leader reverses course to the left (the wingman is on
     // the outside), then to the right (inside).
     auto worst_error = [](bool lead_limit) {
-        const FixedWingParams p = presets::single_engine_fighter();
+        FixedWingParams p = presets::single_engine_fighter();
+        p.nav_bank = p.bank_max;  // course reversals at the maneuvering bank
         FixedWingAgent lead(p, airborne({0, 0, 3000}, 0.0, p.cruise_speed));
         FixedWingAgent wing(p, airborne({300, -100, 3000}, 0.0, p.cruise_speed));
         const FormationSlot slot{{300.0, -100.0, 0.0}};

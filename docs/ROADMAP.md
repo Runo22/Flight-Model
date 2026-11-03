@@ -103,7 +103,7 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   `TrueKnots`). Komutsuz uçuşta CAS/Mach takvimi (`cruise_altitude`) ve yörüngede dayanım hızı.
   Kol lideri en yavaş takipçiye göre hız sınırlar; önce kolu toplar (bekleme yörüngesi),
   sonra göreve gider.
-- **Testler:** 111 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
+- **Testler:** 114 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
   (`sortie`, `flight`) + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 
@@ -115,6 +115,9 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - [x] Karar yüksekliğinde stabilite kontrolü, pas geçme ve otomatik yeni deneme.
 - [x] Yüksekten gelen düz yaklaşmada giriş noktası üzerinde alçalma turu; jetlerde hücum
   açısıyla iniş (`touchdown_aoa`: yaklaşma ve teker koyma hızı ağırlıktan, kuyruk payı).
+- [x] Rota dönüşleri: seyrüsefer yatışı (`nav_bank`), 90°'den keskin köşelerin üstünden geçme,
+  ilk bacakta ve bacaktan uzaklaşınca doğrudan noktaya, ulaşılamayan noktaya sertleşme,
+  kalkıştan sonra güvenli yükseklikte rotaya dönüş.
 - [x] Gecikme telafili flare, yumuşak teker koyma (0.4–1.0 m/s), frenleme, park durumu.
 - [x] Rota sonunda iniş (`Route::runway` + `EndBehavior::Land`), inişten sonra tekrar kalkış.
 - [x] Yerde taksi: taksi yolu (waypoint listesi) üzerinde düşük hızlı hareket ve dönüş,

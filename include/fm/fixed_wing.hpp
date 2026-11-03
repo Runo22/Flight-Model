@@ -180,7 +180,10 @@ private:
 
     void hold_course(double course, const Vec2& anchor, double altitude, double speed,
                      AltitudeRef altitude_ref);
-    L1Settings l1_settings(double ground_speed) const;
+    // L1 for turns at `bank` (NaN = bank_max).
+    L1Settings l1_settings(double ground_speed, double bank = kUnknown) const;
+    double nav_bank() const;  // bank of navigation turns
+    double turn_radius(double speed, double bank) const;
     double ground_elevation() const;
     double altitude_target_now(double lookahead) const;
     double engine_lapse(const AtmosphereSample& atm) const;  // thrust / power share left
@@ -267,6 +270,7 @@ private:
     double speed_target_ = 0.0;
 
     RouteTracker route_;
+    bool direct_to_ = false;  // turning straight at the route's waypoint, off its leg
     Vec3 loiter_center_{};
     double loiter_radius_ = 0.0;
     bool loiter_clockwise_ = true;

@@ -71,6 +71,10 @@ struct FixedWingParams {
     double load_factor_max = 2.0;
     double load_factor_min = 0.0;
     double bank_max = 0.5236;          // rad, normal maneuvering bank
+    // Bank for navigation turns (routes, go-to, heading changes, approach positioning);
+    // bank_max is kept for maneuvering (formation, overhead break, loiter radii asked
+    // for). 0 = min(bank_max, 30 deg).
+    double nav_bank = 0.0;             // rad
     double roll_rate_max = 0.35;       // rad/s
     double climb_angle_max = 0.26;     // rad
     double descent_angle_max = 0.12;   // rad

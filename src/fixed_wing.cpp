@@ -30,6 +30,18 @@ constexpr double kHighOrbitFactor = 1.5;
 constexpr double kApproachDeceleration = 1.0;  // m/s^2
 constexpr double kMinSlowDownShare = 0.3;
 constexpr double kTurnStallMargin = 1.2;   // bank limited to keep n <= n_stall / 1.2
+constexpr double kDefaultNavBank = deg2rad(30.0);  // navigation turns without nav_bank
+// Routes: corners up to this course change are cut (fly-by, the turn tangent to both
+// legs); sharper ones are flown over, so the aircraft reaches the waypoint.
+constexpr double kMaxFlyByTurn = deg2rad(90.0);
+// Far off a route leg: straight to the waypoint when it is more than this many turn radii
+// ahead.
+constexpr double kDirectToRoom = 3.0;
+constexpr double kDirectToAligned = deg2rad(2.0);  // nose on the waypoint: track from here
+// A waypoint the navigation bank would miss by more than this is made with a tighter turn,
+// flown at this share of the largest radius that reaches it.
+constexpr double kWaypointMissAllowed = 100.0;  // m
+constexpr double kTightTurnShare = 0.8;
 constexpr double kL1TurnFactor = 0.6;      // L1 distance >= 0.6 * K * turn radius
 constexpr double kLeaderTimeout = 2.0;     // s without leader updates before giving up
 constexpr double kFormationSpeedTau = 3.0; // s, speed response while station keeping
@@ -206,6 +218,7 @@ void FixedWingAgent::follow_route(Route route) {
         return;
     }
     route_.start(std::move(route), position_, resolved_altitude_target_);
+    direct_to_ = true;  // the first leg starts where the aircraft is: straight to its waypoint
     mode_ = FlightMode::Route;
 }
 
@@ -596,8 +609,9 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
     switch (mode_) {
         case FlightMode::Cruise:
             cmd.use_accel = true;
+            cmd.bank_limit = nav_bank();
             cmd.lateral_accel = l1_line(course_anchor_, heading_vector(course_target_),
-                                        position_.xy(), vg, l1_settings(gs));
+                                        position_.xy(), vg, l1_settings(gs, nav_bank()));
             cmd.altitude = altitude_target_now(lookahead);
             cmd.climb_mode = true;
             break;
@@ -662,18 +676,21 @@ FixedWingAgent::Command FixedWingAgent::guidance(const AtmosphereSample& atm, co
 void FixedWingAgent::guide_route(Command& cmd, const Vec2& vg, double lookahead) {
     const double gs = std::max(vg.length(), 1.0);
     const Vec2 pos = position_.xy();
+    double bank = nav_bank();
+    double radius = turn_radius(gs, bank);
     LegProgress lp = route_.progress(pos);
 
     const Waypoint& wp = route_.target();
     const Waypoint* next = route_.next();
     double switch_distance = 0.0;
     if (next != nullptr && !wp.fly_over) {
-        // Fly-by: start the turn early so the turn is tangent to both legs.
+        // Fly-by: start the turn early so the turn is tangent to both legs. Sharper corners
+        // are flown over: cutting them would miss the waypoint by more than a turn radius.
         const Vec2 next_leg = next->position.xy() - wp.position.xy();
-        const double turn =
-            std::min(std::abs(angle_right(lp.direction, next_leg.normalized())), deg2rad(150.0));
-        switch_distance = std::min({turn_radius(gs) * std::tan(turn / 2.0), 0.5 * lp.length,
-                                    0.5 * next_leg.length()});
+        const double turn = std::abs(angle_right(lp.direction, next_leg.normalized()));
+        if (turn <= kMaxFlyByTurn)
+            switch_distance = std::min(
+                {radius * std::tan(turn / 2.0), 0.5 * lp.length, 0.5 * next_leg.length()});
     }
     if (lp.remaining() <= switch_distance) {
         const EndBehavior end = route_.route().on_end;
@@ -681,13 +698,45 @@ void FixedWingAgent::guide_route(Command& cmd, const Vec2& vg, double lookahead)
             finish_route(end);
             return;
         }
+        direct_to_ = false;
+        lp = route_.progress(pos);
+    }
+
+    // Far off the leg (the first leg from where the route was started, after a corner flown
+    // over, or blown off): straight to the waypoint, instead of intercepting the old line
+    // with an S-turn. The leg starts where the aircraft is until its nose points at the
+    // waypoint, then from there. Not when close to the waypoint: the leg stays put, so that
+    // passing the waypoint abeam ends it (no circling around a waypoint out of reach).
+    const bool room = lp.remaining() > kDirectToRoom * radius;
+    if (std::abs(lp.crosstrack) > radius && room) direct_to_ = true;
+    if (direct_to_) {
+        const Vec2 to_wp = route_.leg_end() - pos;
+        if (std::abs(angle_right(vg, to_wp)) < kDirectToAligned || !room) direct_to_ = false;
+        route_.restart_leg(position_, resolved_altitude_target_);
         lp = route_.progress(pos);
     }
 
     const Waypoint& target = route_.target();
+    // The waypoint inside the turn at the navigation bank, missed by more than a little:
+    // turn straight at it, banking harder (up to bank_max) on a turn that still makes it.
+    // The largest turn radius reaching it is d / (2 sin(angle off the nose)); the turn at
+    // the navigation bank, centred one radius to that side, misses it by how much the
+    // waypoint lies inside.
+    const Vec2 to_wp = target.position.xy() - pos;
+    const double off = angle_right(vg, to_wp);
+    const double reach = to_wp.length() / (2.0 * std::max(std::sin(std::abs(off)), 1e-6));
+    const Vec2 centre = right_of(vg / gs) * (off >= 0.0 ? radius : -radius);
+    const bool tighten =
+        reach < radius && radius - (to_wp - centre).length() > kWaypointMissAllowed;
+    if (tighten) {
+        bank = std::min(p_.bank_max, std::atan(gs * gs / (kGravity * kTightTurnShare * reach)));
+    }
     set_speed(target.speed, target.speed_ref);
     cmd.use_accel = true;
-    cmd.lateral_accel = l1_leg(route_.leg_start(), route_.leg_end(), pos, vg, l1_settings(gs));
+    cmd.bank_limit = bank;
+    cmd.lateral_accel =
+        tighten ? l1_point(target.position.xy(), pos, vg, l1_settings(gs, bank))
+                : l1_leg(route_.leg_start(), route_.leg_end(), pos, vg, l1_settings(gs, bank));
     cmd.altitude = route_.altitude_target(lp, terrain_, lookahead, resolved_altitude_target_);
 }
 
@@ -779,6 +828,11 @@ void FixedWingAgent::guide_takeoff(Command& cmd, const AtmosphereSample& atm) {
     if (height >= climb_height - 15.0) {
         // Never back down when placed above the climb height (relocation).
         finish_takeoff(std::max(runway_elevation_ + climb_height, position_.z));
+    } else if (takeoff_.then && !(takeoff_.climb_height > 0.0) && !flaps_ &&
+               height >= std::max(p_.flaps_up_height, p_.min_terrain_clearance)) {
+        // A route follows: clean and at a safe height, turn towards it and climb on along it
+        // (an explicit climb height is flown first).
+        finish_takeoff(position_.z);
     }
 }
 
@@ -837,7 +891,11 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
     const double faf_altitude = aim.z + faf_distance * tan_gs;
     const double glide_altitude = aim.z + std::max(-along, 0.0) * tan_gs;
     const double wheel_height = position_.z - p_.gear_height - runway_.start.z;
-    const L1Settings l1 = l1_settings(gs);
+    // A straight-in approach is flown with navigation turns; the overhead pattern (its short
+    // final included) with the maneuvering bank.
+    const double approach_bank =
+        landing_.pattern == LandingPattern::Overhead ? p_.bank_max : nav_bank();
+    const L1Settings l1 = l1_settings(gs, approach_bank);
     // Speed while positioning: between approach speed and a moderate clean speed.
     const double positioning_speed =
         std::max(1.3 * v_app, std::min(speed_target_, 1.8 * stall_speed(atm.density, false)));
@@ -867,7 +925,8 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
             }
             // Entry point on the extended centerline, far enough out to turn onto final and
             // to slow down before the final approach fix.
-            const double radius = turn_radius(positioning_speed);
+            const double radius = turn_radius(positioning_speed, approach_bank);
+            cmd.bank_limit = approach_bank;
             const Vec2 entry =
                 aim.xy() - dir * (faf_distance + slow_down(positioning_speed) + 2.0 * radius);
             cmd.use_accel = true;
@@ -897,6 +956,7 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
         case LandingStage::Final: {
             phase_ = FlightPhase::Approach;
             cmd.use_accel = true;
+            cmd.bank_limit = approach_bank;
             cmd.lateral_accel = l1_line(aim.xy(), dir, pos, vg, l1);
             cmd.terrain_floor = false;  // the glide path leads down to the runway
             // Level at the final approach fix altitude until the glide path is reached
@@ -965,6 +1025,7 @@ void FixedWingAgent::guide_landing(Command& cmd, const AtmosphereSample& atm, co
         case LandingStage::GoAround: {
             phase_ = FlightPhase::GoAround;
             cmd.use_accel = true;
+            cmd.bank_limit = approach_bank;
             cmd.lateral_accel = l1_line(aim.xy(), dir, pos, vg, l1);
             const double height = position_.z - p_.gear_height - runway_.start.z;
             const bool overhead = landing_.pattern == LandingPattern::Overhead;
@@ -1598,10 +1659,15 @@ void FixedWingAgent::trim_level(const AtmosphereSample& atm) {
     alpha_ = (mass_ * kGravity / qs - cl0()) / p_.cl_alpha;
 }
 
-L1Settings FixedWingAgent::l1_settings(double ground_speed) const {
+L1Settings FixedWingAgent::l1_settings(double ground_speed, double bank) const {
     L1Settings s{p_.l1_period, p_.l1_damping, 0.0};
-    s.min_distance = kL1TurnFactor * l1_distance_for_turn_radius(s, turn_radius(ground_speed));
+    const double radius = turn_radius(ground_speed, std::isfinite(bank) ? bank : p_.bank_max);
+    s.min_distance = kL1TurnFactor * l1_distance_for_turn_radius(s, radius);
     return s;
+}
+
+double FixedWingAgent::nav_bank() const {
+    return std::min(p_.nav_bank > 0.0 ? p_.nav_bank : kDefaultNavBank, p_.bank_max);
 }
 
 double FixedWingAgent::ground_elevation() const {
@@ -1752,8 +1818,10 @@ double FixedWingAgent::climb_speed(const AtmosphereSample& atm, double v_min, do
     return std::clamp(best_climb_speed_, v_min, v_max);
 }
 
-double FixedWingAgent::turn_radius(double speed) const {
-    return speed * speed / (kGravity * std::tan(std::max(p_.bank_max, deg2rad(5.0))));
+double FixedWingAgent::turn_radius(double speed) const { return turn_radius(speed, p_.bank_max); }
+
+double FixedWingAgent::turn_radius(double speed, double bank) const {
+    return speed * speed / (kGravity * std::tan(std::max(bank, deg2rad(5.0))));
 }
 
 double FixedWingAgent::rotate_speed(double density) const {

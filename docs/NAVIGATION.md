@@ -98,8 +98,29 @@ fm::ecs::agent(jet)->follow_route(r);
 | `position` | Yerel konum; z `altitude_ref`'e göre okunur |
 | `altitude_ref` | `Absolute`, `AboveTerrain` (araziden yükseklik) ya da `Keep` (irtifayı değiştirme) |
 | `speed`, `speed_ref` | Bu waypoint'ten itibaren hız; NaN = değiştirme. `speed_ref` ile TAS, CAS (m/s ya da knot) ya da Mach |
-| `fly_over` | `false` (varsayılan): köşeyi keserek dön (fly-by). `true`: tam üstünden geç |
+| `fly_over` | `false` (varsayılan): 90°'ye kadar köşeleri keserek dön (fly-by), daha keskin köşelerin üstünden geç. `true`: her zaman tam üstünden geç |
 | `hold_time` | Drone: burada bu kadar saniye bekle |
+
+Sabit kanatlıda rota dönüşleri:
+
+* **Yatış:** seyrüsefer dönüşleri (rota, `go_to`, `hold`, düz yaklaşmaya konumlanma)
+  `nav_bank` ile uçulur: savaş uçakları ve Hürjet / Hürkuş 45°, Anka / Aksungur 25°, yolcu
+  uçakları 25°, diğerleri 30°. `bank_max` manevralar içindir: kol uçuşu, overhead break,
+  istenen dar tur yarıçapları.
+* **Köşeler:** 90°'ye kadar köşe kesilir; dönüş iki bacağa teğettir, noktadan en çok ~0,4
+  dönüş yarıçapı içeriden geçilir. Daha keskin köşede (ör. geri dönüş) uçak noktanın
+  üstünden geçip öyle döner.
+* **Doğrudan noktaya:** rotanın ilk bacağı uçağın bulunduğu yerden başlar: uçak burnu noktaya
+  dönene kadar ona yönelir, sonra o çizgiyi izler; dönerken S çizmez. Bir bacaktan dönüş
+  yarıçapından fazla uzaklaşırsa (keskin köşe sonrası, rüzgâr, ışınlama) aynı şekilde
+  doğrudan noktaya gider.
+* **Sertleşme:** nokta seyrüsefer yatışıyla ulaşılamayacak kadar dönüşün içinde kalırsa
+  (100 m'den fazla ıskalanacaksa) uçak `bank_max`'a kadar sertleşerek noktaya döner. Bununla
+  da ulaşılamıyorsa noktanın yanından geçip sıradakine devam eder; noktanın etrafında
+  dönmez.
+* **Kalkıştan sonra:** `TakeoffPlan::then` ile rota varsa uçak flaplar toplanıp güvenli
+  yüksekliğe çıkınca (`flaps_up_height` ile `min_terrain_clearance`'ın büyüğü) rotaya döner,
+  kalan tırmanışı rotada yapar. `TakeoffPlan::climb_height` verilmişse önce ona tırmanır.
 
 | `Route` alanı | Anlamı |
 |---|---|

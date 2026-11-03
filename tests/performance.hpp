@@ -273,6 +273,7 @@ inline double sustained_load_factor(const FixedWingParams& p, double altitude, d
     const auto excess_power = [&](double n) {
         FixedWingParams q = physical(p);
         q.bank_max = std::acos(1.0 / n);
+        q.nav_bank = q.bank_max;  // the airframe, not the AI's navigation turns
         q.load_factor_max = n + 1.0;
         FixedWingAgent a(q, airborne(altitude, speed));
         // Always turning, at a speed target well above: full thrust, the energy rate is the

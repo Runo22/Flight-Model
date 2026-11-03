@@ -51,7 +51,10 @@ belirler. Örneğin savaş uçakları 9 g'ye dayanır ama AI 7 g ve 70° yatış
 F-16 50.000 ft/dk tırmanabilir ama irtifa değiştirirken 25° ve 120 m/s ile tırmanır.
 Bu sınırlar (`load_factor_max`, `bank_max`, `climb_angle_max`, `climb_rate_max`,
 `descent_*`) oyunun ihtiyacına göre değiştirilebilir. Ölçülen performans değişmez,
-yalnızca AI'nin davranışı değişir.
+yalnızca AI'nin davranışı değişir. Sıradan seyrüseferde (rota, hedefe gitme, yön değiştirme)
+uçaklar sınırlarına yatmaz: `nav_bank` kullanılır (savaş uçakları 45°, yani ~1,4 g; İHA'lar
+25°). `bank_max` kol uçuşu, overhead break ve ancak sert dönüşle ulaşılabilen noktalar
+içindir.
 
 ## Sabit kanat
 
@@ -71,7 +74,7 @@ Veri: kanat alanı 300 ft² (27,87 m²), hava-hava yüklü kütle 26.463 lb, F11
 | Takeoff: ground roll, lift-off, over 50 ft | 352 m, 162 kt, 505 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 168 kt, 160 kt (12.6 deg AoA), 1102 m, 1531 m |  |
 | Landing at 9778 kg (30% fuel): approach, touchdown, roll | 152 kt, 144 kt (12.6 deg AoA), 921 m | ~150-160 kt at 11 deg AoA, touchdown at 13 deg, ~3,000 ft roll |
-| AI turn at cruise speed, 10,000 ft | 6.5 deg/s at 70 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 2.3 deg/s at 45 deg bank |  |
 | Endurance on 3175 kg of fuel, 30,000 ft | 3 h 30 min at 467 kt, 1054 kg/h full |  |
 
 Tepe hız, gerçekçi sürükleme değerleriyle %4 düşük kaldı. Sürüklemeyi gerçek dışı küçültmek
@@ -96,7 +99,7 @@ bir başlangıç.
 | Takeoff: ground roll, lift-off, over 50 ft | 316 m, 153 kt, 465 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 164 kt, 157 kt (11.5 deg AoA), 1024 m, 1457 m |  |
 | Landing at 15,930 kg (30% fuel): approach, touchdown, roll | 145 kt, 139 kt (11.5 deg AoA), 830 m | ~1,070 m landing (unverified) |
-| AI turn at cruise speed, 10,000 ft | 6.2 deg/s at 70 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 2.2 deg/s at 45 deg bank |  |
 | Endurance on 6100 kg of fuel, 30,000 ft | 4 h 02 min at 486 kt, 1718 kg/h full |  |
 
 Tepe hız %6 düşük; sebep F-16'daki ile aynı. İniş hücum açısıyla, en çok 12° ile teker
@@ -120,7 +123,7 @@ stall 77 KCAS, 50 ft engeli aşarak kalkış 489 m, 50 ft'ten iniş 593 m, +7 / 
 | Landing: approach, touchdown, roll, from 50 ft | 98 kt, 91 kt (8.4 deg AoA), 316 m, 690 m |  |
 | Landing at 2919 kg (30% fuel): approach, touchdown, roll | 92 kt, 85 kt (8.5 deg AoA), 281 m |  |
 | Short-field landing (4 deg approach): from 50 ft | 623 m | 593 m from 50 ft |
-| AI turn at cruise speed, 10,000 ft | 7.6 deg/s at 60 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 4.4 deg/s at 45 deg bank |  |
 | Endurance on 544 kg of fuel, 15,000 ft | 4 h 16 min at 188 kt, 139 kg/h full | 4 h 15 min at 15,000 ft (798 nm) |
 
 Azami seyir hızı (288 KTAS) uydurmada kullanılmadı. Model 30.000 ft'te 289 kt verdi;
@@ -152,7 +155,7 @@ daha hafif ve daha az itkilidir (itki/ağırlık ~1), Mach 1,4'te kalır, kanopi
 | Takeoff: ground roll, lift-off, over 50 ft | 312 m, 145 kt, 451 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 148 kt, 141 kt (12.5 deg AoA), 848 m, 1267 m |  |
 | Landing at 6905 kg (30% fuel): approach, touchdown, roll | 136 kt, 129 kt (12.5 deg AoA), 727 m | T-50: Vref 130 kt, lands in 2,320 ft (707 m) |
-| AI turn at cruise speed, 10,000 ft | 6.5 deg/s at 70 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 2.3 deg/s at 45 deg bank |  |
 | Sustained turn at 15,000 ft, M0.9 | 5.50 g | 5.5 g |
 | Endurance on 1850 kg of fuel, 30,000 ft | 2 h 33 min at 467 kt, 787 kg/h full | 2,222 km range (2 h 34 min at 240 m/s) |
 
@@ -181,7 +184,7 @@ belirsizdir.
 | Takeoff: ground roll, lift-off, over 50 ft | 560 m, 128 kt, 685 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt (13.1 deg AoA), 644 m, 1049 m |  |
 | Landing at 4705 kg (30% fuel): approach, touchdown, roll | 106 kt, 97 kt (13.4 deg AoA), 509 m |  |
-| AI turn at cruise speed, 10,000 ft | 3.7 deg/s at 50 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 1.8 deg/s at 30 deg bank |  |
 | Endurance on 1850 kg of fuel, 30,000 ft | 5 h 10 min at 354 kt, 398 kg/h full | ~5 h |
 
 ### `propeller_uav()` — TUSAŞ Anka-S sınıfı, 1.700 kg
@@ -212,7 +215,7 @@ gücün çoğunu kullanır, tırmanmaya az güç kalır).
 | Takeoff: ground roll, lift-off, over 50 ft | 449 m, 66 kt, 714 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 74 kt, 70 kt (7.4 deg AoA), 281 m, 643 m |  |
 | Landing at 1430 kg (30% fuel): approach, touchdown, roll | 68 kt, 64 kt (7.4 deg AoA), 237 m |  |
-| AI turn at cruise speed, 10,000 ft | 6.8 deg/s at 30 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 5.5 deg/s at 25 deg bank |  |
 | Endurance on 385 kg of fuel, 20,000 ft | 29 h 44 min at 113 kt, 16 kg/h full | 30 h |
 
 ### `twin_propeller_uav()` — TUSAŞ Aksungur sınıfı, 3.300 kg
@@ -241,7 +244,7 @@ bir görev irtifasıdır, servis tavanı değil. Model 3.300 kg'da 33.700 ft'e t
 | Takeoff: ground roll, lift-off, over 50 ft | 454 m, 69 kt, 703 m |  |
 | Landing: approach, touchdown, roll, from 50 ft | 77 kt, 73 kt (7.0 deg AoA), 313 m, 676 m |  |
 | Landing at 2817 kg (30% fuel): approach, touchdown, roll | 71 kt, 67 kt (7.1 deg AoA), 268 m |  |
-| AI turn at cruise speed, 10,000 ft | 6.4 deg/s at 30 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 5.2 deg/s at 25 deg bank |  |
 | Endurance on 690 kg of fuel, 20,000 ft | 31 h 32 min at 117 kt, 26 kg/h full | 12 h with 750 kg payload (TAI, a lighter fuel load) |
 | Endurance at 2700 kg, 20,000 ft | 44 h 32 min at 106 kt, 19 kg/h full | 40 h (EO payload), 49 h demonstrated |
 
@@ -502,7 +505,7 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Komutsuz hız | `cruise_speed` + `cruise_altitude` (altında aynı CAS; negatif = her irtifada aynı TAS), yörüngede `loiter_speed` (0 = dayanım hızı) | `cruise_speed` |
 | Overhead pattern | `pattern_height` (jetler 450 m, diğerleri 300 m), break yatışı `bank_max` (en çok 60°), pattern hızları iniş hızından | — |
 | Seyirde burun açısı | `cl0`, `cl_alpha` | `flat_plate_area` |
-| Dönüş | AI: `bank_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |
+| Dönüş | AI: rota dönüşlerinde `nav_bank` (0 = en çok 30°), manevrada `bank_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |
 | Sürekli dönüş (g) | `induced_drag_k`, transonikte `wave_drag` / `mach_critical`, itki | — |
 | İvmelenme | itki | `max_acceleration` (yalnız hız değişimi), `velocity_time_constant` |
 

@@ -33,6 +33,7 @@ FixedWingParams fast_jet() {
     p.load_factor_max = 7.0;
     p.load_factor_min = -1.5;
     p.bank_max = deg2rad(75.0);
+    p.nav_bank = deg2rad(45.0);
     p.roll_rate_max = deg2rad(180.0);
     p.climb_angle_max = deg2rad(30.0);
     p.descent_angle_max = deg2rad(25.0);
@@ -328,6 +329,7 @@ FixedWingParams single_engine_fighter() {
     p.load_factor_max = 7.0;           // airframe: +9
     p.load_factor_min = -2.0;
     p.bank_max = deg2rad(70.0);
+    p.nav_bank = deg2rad(45.0);        // route turns; 70 deg when maneuvering
     p.roll_rate_max = deg2rad(240.0);
     p.climb_angle_max = deg2rad(25.0);
     p.descent_angle_max = deg2rad(20.0);
@@ -399,6 +401,7 @@ FixedWingParams twin_engine_fighter() {
     p.load_factor_max = 7.0;           // airframe: +9
     p.load_factor_min = -2.0;
     p.bank_max = deg2rad(70.0);
+    p.nav_bank = deg2rad(45.0);        // route turns; 70 deg when maneuvering
     p.roll_rate_max = deg2rad(180.0);
     p.climb_angle_max = deg2rad(25.0);
     p.descent_angle_max = deg2rad(20.0);
@@ -469,6 +472,7 @@ FixedWingParams turboprop_trainer() {
     p.load_factor_max = 4.5;           // airframe: +7 / -3.5
     p.load_factor_min = -1.5;
     p.bank_max = deg2rad(60.0);
+    p.nav_bank = deg2rad(45.0);
     p.roll_rate_max = deg2rad(150.0);
     p.climb_angle_max = deg2rad(12.0);
     p.descent_angle_max = deg2rad(12.0);
@@ -536,6 +540,7 @@ FixedWingParams jet_trainer() {
     p.load_factor_max = 7.0;           // airframe: +8 / -3
     p.load_factor_min = -2.0;
     p.bank_max = deg2rad(70.0);
+    p.nav_bank = deg2rad(45.0);        // route turns; 70 deg when maneuvering
     p.roll_rate_max = deg2rad(200.0);
     p.climb_angle_max = deg2rad(25.0);
     p.descent_angle_max = deg2rad(20.0);
@@ -671,6 +676,7 @@ FixedWingParams male_uav_common() {
     p.load_factor_max = 2.5;
     p.load_factor_min = 0.0;
     p.bank_max = deg2rad(30.0);
+    p.nav_bank = deg2rad(25.0);        // autopilot route turns
     p.roll_rate_max = deg2rad(25.0);
     p.climb_angle_max = deg2rad(8.0);
     p.descent_angle_max = deg2rad(6.0);
