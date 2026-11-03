@@ -80,6 +80,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   minimum hız. Flecs bunu `follow` ilişkilerinden otomatik yapar.
 - **Çarpışma önleme (sabit kanat):**
   - TCAS benzeri dikey çözüm: en yakın geçiş tahmini, zıt yönlü tırmanış / alçalış.
+  - Çoklu tehditte en acil tehditten uzağa: başka uçaklar için aynı yöne tırmanmış /
+    alçalmış iki uçak karşılaşınca alttaki yön değiştirir (TCAS'taki gibi ters çevirme).
   - Yere yakın ve kalkış/inişte devre dışı; arazi tabanı korunur.
   - Flecs'te ızgarayla komşu bulan trafik sistemi; kol üyeleri birbirinden kaçmaz.
 - **Gemi:** TCG Anadolu sınıfı LHD (helikopter / İHA gemisi). Güç ve bollard pull sınırlı
@@ -103,7 +105,8 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
   `TrueKnots`). Komutsuz uçuşta CAS/Mach takvimi (`cruise_altitude`) ve yörüngede dayanım hızı.
   Kol lideri en yavaş takipçiye göre hız sınırlar; önce kolu toplar (bekleme yörüngesi),
   sonra göreve gider.
-- **Testler:** 114 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + 2 CSV senaryosu
+- **Testler:** 115 çekirdek + 30 Flecs + navigasyon örneği (15 senaryo) + Ankara demoları
+  (9 test) + 2 CSV senaryosu
   (`sortie`, `flight`) + 2 plugin testi;
   AddressSanitizer/UBSan temiz.
 

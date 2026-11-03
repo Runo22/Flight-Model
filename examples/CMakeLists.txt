@@ -19,6 +19,16 @@ if(TARGET fm::flecs)
   if(FM_BUILD_TESTS)
     add_test(NAME fm_navigation_example COMMAND fm_navigation)
   endif()
+
+  # Flight demos around Ankara; each checks its own results.
+  add_executable(fm_ankara_demos ankara_demos.cpp)
+  target_link_libraries(fm_ankara_demos PRIVATE fm::flecs)
+  target_compile_options(fm_ankara_demos PRIVATE ${FM_WARNINGS})
+  if(FM_BUILD_TESTS)
+    foreach(demo rejoin circuit waypoints flypast traffic lowlevel recovery relief escort)
+      add_test(NAME fm_ankara_${demo} COMMAND fm_ankara_demos ${demo})
+    endforeach()
+  endif()
 endif()
 
 # The plugin example needs Flecs as a shared library (configure with FM_FLECS_SHARED=ON or

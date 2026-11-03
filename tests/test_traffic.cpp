@@ -98,6 +98,52 @@ TEST_CASE("traffic: crossing jets and an aircraft above") {
     }
 }
 
+TEST_CASE("traffic: four converging at once, the slow ones reverse instead of chasing each other") {
+    // From the four directions to one point at the same altitude, all arriving together. The
+    // two slow UAVs first climb or descend for the faster aircraft; meeting each other with
+    // the same sense, the lower one reverses (it used to follow the upper one up, 18 m
+    // apart). Each sees the other three as traffic.
+    struct Inbound {
+        FixedWingParams params;
+        double bearing;  // deg, from the point to the start
+        double speed;
+    };
+    const Inbound inbound[] = {{presets::turboprop_trainer(), 0.0, 110.0},
+                               {presets::jet_uav(), 90.0, 150.0},
+                               {presets::propeller_uav(), 180.0, 50.0},
+                               {presets::twin_propeller_uav(), 270.0, 52.0}};
+    for (const bool avoid : {false, true}) {
+        std::vector<FlightAgent> agents;
+        for (const Inbound& in : inbound) {
+            const Vec2 dir = heading_vector(deg2rad(in.bearing));
+            const Vec2 at = dir * (in.speed * 150.0);
+            agents.emplace_back(in.params, airborne({at.x, at.y, 2500.0}, in.bearing + 180.0, in.speed));
+            GoToOptions o;
+            o.speed = in.speed;
+            agents.back().go_to({0.0, 0.0, 2500.0}, o);
+        }
+        double closest = 1e9;
+        std::vector<Traffic> others;
+        for (int i = 0; i < static_cast<int>(300.0 / kDt); ++i) {
+            for (std::size_t k = 0; k < agents.size(); ++k) {
+                others.clear();
+                for (std::size_t j = 0; j < agents.size(); ++j)
+                    if (j != k) others.push_back({agents[j].state().position, agents[j].state().velocity});
+                if (avoid) agents[k].set_traffic(others);
+            }
+            for (FlightAgent& a : agents) a.step(kDt, {});
+            for (std::size_t k = 0; k < agents.size(); ++k)
+                for (std::size_t j = k + 1; j < agents.size(); ++j)
+                    closest = std::min(closest, (agents[k].state().position - agents[j].state().position).length());
+        }
+        if (avoid) {
+            CHECK(closest > 100.0);
+        } else {
+            CHECK(closest < 30.0);
+        }
+    }
+}
+
 TEST_CASE("traffic: no resolutions close to the ground; parallel traffic is no conflict") {
     const FixedWingParams p = presets::light_propeller();
     {

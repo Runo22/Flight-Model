@@ -64,11 +64,12 @@ include/fm/, src/          Flecs-independent core (C++20, builds as C++23 too)
   geo                       WGS-84 latitude/longitude/altitude <-> local frame
 adapters/flecs/             Flecs module (the only code that includes flecs.h)
 tests/                      core and Flecs tests (no external test framework)
-examples/                   headless CSV scenarios, Flecs integration example
+examples/                   headless CSV scenarios, Flecs integration, Ankara demos
 docs/ROADMAP.md             roadmap (Turkish)
 docs/EXTENDING.md           adding a new vehicle type (Turkish)
 docs/NAVIGATION.md          go to / loiter / routes / takeoff and landing examples (Turkish)
 docs/PRESETS.md             presets: references, measured performance, tuning (Turkish)
+docs/DEMOS.md               flight demos around Ankara (Turkish)
 ```
 
 Every agent runs the same pipeline each step:
@@ -326,10 +327,18 @@ handedness.
                                                             # sortie, flight
 ./build/examples/fm_flecs_integration
 ./build/examples/fm_navigation                            # docs/NAVIGATION.md, self-checking
+./build/examples/fm_ankara_demos --kml ankara.kml          # flight demos around Ankara
 ```
+
+[`examples/ankara_demos.cpp`](examples/ankara_demos.cpp) flies nine self-checking demos
+around Ankara: a formation that forms up and splits (two land, one orbits), a runway circuit
+with taxiing, a waypoint tour, a four-ship flypast over Anitkabir, converging traffic, a
+low-level helicopter flight, landings from high above the field, a UAV station relief and a
+convoy escort. `--csv` / `--kml` write the tracks (the KML plays in Google Earth). See
+[`docs/DEMOS.md`](docs/DEMOS.md) (Turkish).
 
 ## Limitations
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md). Notably: no taxiing, no sideslip (coordinated
+See [`docs/ROADMAP.md`](docs/ROADMAP.md). Notably: no sideslip (coordinated
 flight, the aircraft crabs into crosswind until touchdown), wind is ignored on the ground,
 ISA atmosphere up to 32 km.

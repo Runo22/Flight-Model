@@ -410,15 +410,15 @@ void FixedWingAgent::set_traffic(std::span<const Traffic> traffic) {
     }
     if (!threat) return;
     conflict_now_ = true;
-    if (avoid_sense_ == 0) {
-        // Move away vertically; level with each other, decide by the relative position so
-        // that both aircraft pick opposite senses.
+    // Move away vertically from the most urgent threat: below it, descend; above it, climb
+    // (also reversing a sense chosen against an earlier threat, so that two aircraft that
+    // both climbed or descended for others do not chase each other). Level with each other,
+    // decide once by the relative position, so that both pick opposite senses.
+    if (std::abs(miss.z) > kAvoidLevel) {
+        avoid_sense_ = miss.z > 0.0 ? -1 : 1;
+    } else if (avoid_sense_ == 0) {
         const Vec3 r = threat->position - position_;
-        if (std::abs(miss.z) > kAvoidLevel) {
-            avoid_sense_ = miss.z > 0.0 ? -1 : 1;
-        } else {
-            avoid_sense_ = (std::abs(r.x) > 1e-3 ? r.x : r.y) > 0.0 ? 1 : -1;
-        }
+        avoid_sense_ = (std::abs(r.x) > 1e-3 ? r.x : r.y) > 0.0 ? 1 : -1;
     }
     const double needed = p_.avoidance_height + kAvoidMargin;
     const double other_altitude = threat->position.z + threat->velocity.z * earliest;
