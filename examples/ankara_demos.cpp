@@ -33,12 +33,12 @@
 namespace game {
 
 struct Transform {
-    double lat = 0.0;    // deg
-    double lon = 0.0;    // deg
-    double alt = 0.0;    // m
-    double roll = 0.0;   // deg
-    double pitch = 0.0;  // deg
-    double yaw = 0.0;    // deg, true heading
+    double latitude_deg = 0.0;
+    double longitude_deg = 0.0;
+    double alt_m = 0.0;
+    double roll_deg = 0.0;
+    double pitch_deg = 0.0;
+    double yaw_deg = 0.0;  // true heading
 };
 
 struct Hot {
@@ -145,11 +145,11 @@ public:
             const std::string name = e.name().c_str();
             if (csv_) {
                 std::fprintf(csv_, "%s,%.0f,%s,%.6f,%.6f,%.1f,%.1f,%.1f,%.1f,%.0f,%s,%s,%.2f\n",
-                             demo_.c_str(), t, name.c_str(), tr.lat, tr.lon, tr.alt, tr.roll,
-                             tr.pitch, tr.yaw, p.calibrated_airspeed / 0.514444,
+                             demo_.c_str(), t, name.c_str(), tr.latitude_deg, tr.longitude_deg, tr.alt_m, tr.roll_deg,
+                             tr.pitch_deg, tr.yaw_deg, p.calibrated_airspeed / 0.514444,
                              fm::to_string(p.mode), fm::to_string(p.phase), p.gear_position);
             }
-            if (kml_) demos_.back().tracks[name].push_back({offset_ + t, tr.lat, tr.lon, tr.alt});
+            if (kml_) demos_.back().tracks[name].push_back({offset_ + t, tr.latitude_deg, tr.longitude_deg, tr.alt_m});
         });
         end_ = std::max(end_, offset_ + t);
     }
@@ -225,7 +225,7 @@ flecs::world make_world() {
     fm::ecs::set_geo_origin(world, 39.93, 32.80);  // Ankara
     world.system<const game::Transform, game::Hot>("game::HotSystem")
         .kind(flecs::PreUpdate)
-        .each([](const game::Transform& t, game::Hot& hot) { hot.height = ankara::terrain(t.lat, t.lon); });
+        .each([](const game::Transform& t, game::Hot& hot) { hot.height = ankara::terrain(t.latitude_deg, t.longitude_deg); });
     world.system<const game::Hot, fm::ecs::TerrainHeight>("TerrainIn")
         .kind(flecs::PreUpdate)
         .each([](const game::Hot& hot, fm::ecs::TerrainHeight& t) { t.value = hot.height; });
@@ -236,13 +236,13 @@ flecs::world make_world() {
 // An aircraft at a latitude/longitude; on the ground `alt` is ignored.
 flecs::entity spawn(flecs::world& world, const char* name, const fm::VehicleParams& params,
                     game::Transform t, double speed, bool on_ground) {
-    if (on_ground) t.alt = ankara::terrain(t.lat, t.lon);
-    const double hot = ankara::terrain(t.lat, t.lon);
+    if (on_ground) t.alt_m = ankara::terrain(t.latitude_deg, t.longitude_deg);
+    const double hot = ankara::terrain(t.latitude_deg, t.longitude_deg);
     flecs::entity e = world.entity(name)
                           .set<game::Transform>(t)
                           .set<game::Hot>({hot})
                           .set<fm::ecs::TerrainHeight>({hot});
-    fm::ecs::attach_geo(e, params, {t.lat, t.lon, t.alt}, t.yaw, speed, on_ground);
+    fm::ecs::attach_geo(e, params, {t.latitude_deg, t.longitude_deg, t.alt_m}, t.yaw_deg, speed, on_ground);
     return e;
 }
 
@@ -282,7 +282,7 @@ const fm::ecs::FlightPose& pose(flecs::entity e) { return *e.try_get<fm::ecs::Fl
 
 fm::Vec3 position(flecs::world& world, flecs::entity e) {
     const game::Transform& t = transform(e);
-    return local(world, t.lat, t.lon, t.alt);
+    return local(world, t.latitude_deg, t.longitude_deg, t.alt_m);
 }
 
 double distance(flecs::world& world, flecs::entity e, double lat, double lon) {
@@ -294,7 +294,7 @@ double distance(flecs::world& world, flecs::entity e, const ankara::Place& p) {
 
 double height_above_terrain(flecs::entity e) {
     const game::Transform& t = transform(e);
-    return t.alt - ankara::terrain(t.lat, t.lon);
+    return t.alt_m - ankara::terrain(t.latitude_deg, t.longitude_deg);
 }
 
 // Where `e` is on runway `r`: meters along it from the threshold, meters right of it.
@@ -398,7 +398,7 @@ void demo_rejoin(Trace& trace) {
           "Kizilelma-1 touched down after the Hurjet");
     check(pose(uav2).mode == fm::FlightMode::Loiter &&
               std::abs(distance(world, uav2, ankara::kMogan) - 4000.0) < 400.0 &&
-              std::abs(transform(uav2).alt - 3600.0) < 30.0,
+              std::abs(transform(uav2).alt_m - 3600.0) < 30.0,
           "Kizilelma-2 orbits Mogan lake at 3,600 m");
 }
 
@@ -508,7 +508,7 @@ void demo_waypoints(Trace& trace) {
             if (leg == 2 && distance(world, anka, east) > 5000.0 &&
                 distance(world, anka, ankara::kElmadag) > 15000.0)
                 kcas_on_leg = p.calibrated_airspeed / 0.514444;
-            max_bank = std::max(max_bank, std::abs(transform(anka).roll));
+            max_bank = std::max(max_bank, std::abs(transform(anka).roll_deg));
         }
         if (p.phase == fm::FlightPhase::Landed) break;
     }
@@ -797,17 +797,17 @@ void demo_escort(Trace& trace) {
         .kind(flecs::OnUpdate)
         .each([](flecs::iter& it, size_t, game::Transform& t, const Vehicle& v) {
             const double d = v.speed * it.delta_time();
-            const double yaw = fm::deg2rad(t.yaw);
-            t.lat += d * std::cos(yaw) / 111132.0;
-            t.lon += d * std::sin(yaw) / (111320.0 * std::cos(fm::deg2rad(t.lat)));
-            t.alt = ankara::terrain(t.lat, t.lon);
+            const double yaw = fm::deg2rad(t.yaw_deg);
+            t.latitude_deg += d * std::cos(yaw) / 111132.0;
+            t.longitude_deg += d * std::sin(yaw) / (111320.0 * std::cos(fm::deg2rad(t.latitude_deg)));
+            t.alt_m = ankara::terrain(t.latitude_deg, t.longitude_deg);
         });
     // The game publishes the convoy's position for its escorts.
     world.system<const game::Transform, fm::ecs::TrackedGeoPose>("bridge::TrackedIn")
         .kind(flecs::PreUpdate)
         .each([](const game::Transform& t, fm::ecs::TrackedGeoPose& tracked) {
-            tracked.position = {t.lat, t.lon, t.alt};
-            tracked.yaw = t.yaw;
+            tracked.position = {t.latitude_deg, t.longitude_deg, t.alt_m};
+            tracked.yaw = t.yaw_deg;
         });
     const double lat0 = 39.9000, lon0 = 32.7600;
     flecs::entity convoy = world.entity("Convoy")
@@ -825,8 +825,8 @@ void demo_escort(Trace& trace) {
     fm::ecs::follow(drone, convoy, beside);
     const auto slot_error_of = [&](flecs::entity e, const fm::FormationSlot& slot) {
         const game::Transform& c = transform(convoy);
-        const fm::Vec3 l = local(world, c.lat, c.lon, c.alt);
-        const fm::Vec2 fwd = fm::heading_vector(fm::ecs::local_heading(world, c.yaw, {c.lat, c.lon, c.alt}));
+        const fm::Vec3 l = local(world, c.latitude_deg, c.longitude_deg, c.alt_m);
+        const fm::Vec2 fwd = fm::heading_vector(fm::ecs::local_heading(world, c.yaw_deg, {c.latitude_deg, c.longitude_deg, c.alt_m}));
         const fm::Vec2 at = l.xy() + fm::right_of(fwd) * slot.offset.x + fwd * slot.offset.y;
         return (fm::Vec3{at.x, at.y, l.z + slot.offset.z} - position(world, e)).length();
     };
@@ -839,7 +839,7 @@ void demo_escort(Trace& trace) {
             worst[1] = std::max(worst[1], slot_error_of(drone, beside));
         }
     }
-    const double driven = ankara::metres(transform(convoy).lat, transform(convoy).lon, lat0, lon0);
+    const double driven = ankara::metres(transform(convoy).latitude_deg, transform(convoy).longitude_deg, lat0, lon0);
     std::printf("  convoy drove %.1f km; worst slot error T129 %.0f m, drone %.0f m\n",
                 driven / 1000.0, worst[0], worst[1]);
     check(driven > 13000.0, "the convoy drove west along the road");

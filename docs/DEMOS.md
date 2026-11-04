@@ -3,7 +3,8 @@
 `examples/ankara_demos.cpp`, Ankara çevresinde uçuş ağırlıklı dokuz senaryo uçurur. Her biri
 kendi dünyasını kurar, sonucunu kendisi kontrol eder ve ayrı bir test olarak çalışır
 (`fm_ankara_<demo>`). Dünya coğrafidir (enlem/boylam); oyun tarafı `navigation.cpp`'deki
-gibi: `Transform` (lat, lon, alt, roll, pitch, yaw), HOT sorgusu, `bind_geo_transform`.
+gibi: `Transform` (`latitude_deg`, `longitude_deg`, `alt_m`, `roll_deg`, `pitch_deg`,
+`yaw_deg`), HOT sorgusu, `bind_geo_transform`.
 
 ```sh
 ./build/examples/fm_ankara_demos                        # hepsi

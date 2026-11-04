@@ -442,12 +442,12 @@ TEST_CASE("flecs: the game turns an entity by writing its rotation") {
 
 namespace {
 struct GameTransform {  // like a game's own transform component
-    double lat = 0.0;
-    double lon = 0.0;
-    double alt = 0.0;
-    double roll = 0.0;
-    double pitch = 0.0;
-    double yaw = 0.0;
+    double latitude_deg = 0.0;
+    double longitude_deg = 0.0;
+    double alt_m = 0.0;
+    double roll_deg = 0.0;
+    double pitch_deg = 0.0;
+    double yaw_deg = 0.0;
 };
 static_assert(ecs::GeoTransform<GameTransform>);
 }  // namespace
@@ -471,35 +471,35 @@ TEST_CASE("flecs geo: bind_geo_transform takes over moves made by the game") {
     const auto transform = [&] { return *plane.try_get<GameTransform>(); };
 
     for (; frame < 300; ++frame) world.progress(kDt);
-    CHECK(transform().lon > 29.002);  // flew east, written to the game's transform
-    CHECK_NEAR(transform().yaw, 90.0, 0.5);
+    CHECK(transform().longitude_deg > 29.002);  // flew east, written to the game's transform
+    CHECK_NEAR(transform().yaw_deg, 90.0, 0.5);
 
     world.progress(kDt);  // frame 300: the game teleports after FlightSystem ran
     ++frame;
-    CHECK_NEAR(transform().lat, teleport.lat, 1e-12);  // not overwritten
-    CHECK_NEAR(transform().lon, teleport.lon, 1e-12);
+    CHECK_NEAR(transform().latitude_deg, teleport.latitude_deg, 1e-12);  // not overwritten
+    CHECK_NEAR(transform().longitude_deg, teleport.longitude_deg, 1e-12);
     run(world, 30.0);
-    CHECK(transform().lat < teleport.lat - 0.005);     // flies south from there
-    CHECK_NEAR(transform().lon, teleport.lon, 1e-4);
-    CHECK_NEAR(transform().alt, teleport.alt, 10.0);
-    CHECK_NEAR(transform().yaw, 180.0, 1.0);
+    CHECK(transform().latitude_deg < teleport.latitude_deg - 0.005);     // flies south from there
+    CHECK_NEAR(transform().longitude_deg, teleport.longitude_deg, 1e-4);
+    CHECK_NEAR(transform().alt_m, teleport.alt_m, 10.0);
+    CHECK_NEAR(transform().yaw_deg, 180.0, 1.0);
 
     // Moved between frames while paused: continues from there after resuming.
     ecs::set_paused(world, true);
     plane.set<GameTransform>({41.1, 28.9, 1500.0, 0.0, 0.0, 0.0});
     run(world, 1.0);
-    CHECK_NEAR(transform().lat, 41.1, 1e-12);
+    CHECK_NEAR(transform().latitude_deg, 41.1, 1e-12);
     ecs::set_paused(world, false);
     run(world, 10.0);
-    CHECK(transform().lat > 41.1 + 0.003);  // north
-    CHECK_NEAR(transform().lon, 28.9, 1e-4);
-    CHECK_NEAR(transform().alt, 1500.0, 5.0);
+    CHECK(transform().latitude_deg > 41.1 + 0.003);  // north
+    CHECK_NEAR(transform().longitude_deg, 28.9, 1e-4);
+    CHECK_NEAR(transform().alt_m, 1500.0, 5.0);
 
     // An absurd transform is refused and replaced by the agent's pose.
     const GameTransform before = transform();
     plane.set<GameTransform>({95.0, 28.9, 1500.0, 0.0, 0.0, 0.0});
     world.progress(kDt);
-    CHECK_NEAR(transform().lat, before.lat, 1e-3);
+    CHECK_NEAR(transform().latitude_deg, before.latitude_deg, 1e-3);
     CHECK(ecs::agent(plane)->mode() == FlightMode::Cruise);
 }
 
@@ -528,10 +528,10 @@ TEST_CASE("flecs geo: a ship sails a route, stops and is moved by the game") {
     for (int i = 0; i < static_cast<int>(1800.0 / kDt); ++i) {
         ship.set<ecs::TerrainHeight>({0.0});  // the game's HOT at sea: the sea surface
         world.progress(kDt);
-        max_alt = std::max(max_alt, std::abs(transform().alt));
+        max_alt = std::max(max_alt, std::abs(transform().alt_m));
     }
     const GeoProjection& proj = *ecs::geo(world);
-    const auto local = [&] { return proj.to_local({transform().lat, transform().lon, 0.0}); };
+    const auto local = [&] { return proj.to_local({transform().latitude_deg, transform().longitude_deg, 0.0}); };
     CHECK(max_alt < 1e-6);
     CHECK((local() - proj.to_local(stop_at)).xy().length() < 30.0);
     CHECK(ecs::agent(ship)->mode() == FlightMode::Hover);
@@ -541,7 +541,7 @@ TEST_CASE("flecs geo: a ship sails a route, stops and is moved by the game") {
     // was given and sails back.
     ship.set<GameTransform>({stop_at.latitude, stop_at.longitude + 0.012, 50.0, 0, 0, 0});
     world.progress(kDt);
-    CHECK(std::abs(transform().alt) < 1e-6);
+    CHECK(std::abs(transform().alt_m) < 1e-6);
     for (int i = 0; i < static_cast<int>(1200.0 / kDt); ++i) world.progress(kDt);
     CHECK((local() - proj.to_local(stop_at)).xy().length() < 30.0);
 }

@@ -53,15 +53,15 @@ void register_systems(flecs::world& world) {
             // Parked when it is on the ground and was not asked to start moving. After a
             // plugin reload the Transform is all that is left: an aircraft found in the air
             // resumes flying (speed 0 = the vehicle's cruise speed).
-            const bool on_ground = hot && t.alt - hot->height < 5.0 && r.speed <= 0.0;
-            const double altitude = on_ground ? hot->height : t.alt;
+            const bool on_ground = hot && t.alt_m - hot->height < 5.0 && r.speed <= 0.0;
+            const double altitude = on_ground ? hot->height : t.alt_m;
             fm::Vec3 destination{};
             const bool has_destination = r.dest_lat != 0.0 || r.dest_lon != 0.0;
             if (has_destination)
                 destination = fm::ecs::to_local(w, {r.dest_lat, r.dest_lon, r.dest_alt});
             // Commands go through the setup callback: in a system the component is only
             // added at the end of the frame.
-            fm::ecs::attach_geo(e, vehicle_params(r.vehicle), {t.lat, t.lon, altitude}, t.yaw,
+            fm::ecs::attach_geo(e, vehicle_params(r.vehicle), {t.latitude_deg, t.longitude_deg, altitude}, t.yaw_deg,
                                 r.speed, on_ground, [&](fm::FlightAgent& agent) {
                                     if (!has_destination) return;
                                     fm::GoToOptions opt;

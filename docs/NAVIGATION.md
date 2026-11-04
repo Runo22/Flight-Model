@@ -8,7 +8,8 @@ kendisi kontrol eder ve test olarak çalışır:
 ./build/examples/fm_navigation      # ya da: ctest -R fm_navigation_example
 ```
 
-Örnekler, oyunun kendi `game::Transform { lat, lon, alt, roll, pitch, yaw }` component'ini
+Örnekler, oyunun kendi `game::Transform { latitude_deg, longitude_deg, alt_m, roll_deg,
+pitch_deg, yaw_deg }` component'ini (`fm::ecs::GeoTransform` concept'i)
 `fm::ecs::bind_geo_transform<game::Transform>(world)` ile bağladığı kurulumu varsayar.
 
 ## 0. Temel kurallar
@@ -236,7 +237,7 @@ if (pose(shuttle).phase == fm::FlightPhase::Landed) {
 ## 5. Düz uçuş: yön, irtifa, hız
 
 ```cpp
-const double course = fm::ecs::local_heading(world, 45.0, {t.lat, t.lon, t.alt});
+const double course = fm::ecs::local_heading(world, 45.0, {t.latitude_deg, t.longitude_deg, t.alt_m});
 fm::ecs::agent(e)->hold(course, 7000.0, 230.0);  // true course 045, 7000 m, 230 m/s
 fm::ecs::agent(e)->set_speed(200.0);             // only the speed
 fm::ecs::agent(e)->cruise();                     // keep going straight as now

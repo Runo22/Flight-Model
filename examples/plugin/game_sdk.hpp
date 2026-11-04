@@ -7,12 +7,12 @@
 namespace game {
 
 struct Transform {
-    double lat = 0.0;    // deg
-    double lon = 0.0;    // deg
-    double alt = 0.0;    // m
-    double roll = 0.0;   // deg, right wing down positive
-    double pitch = 0.0;  // deg, nose up positive
-    double yaw = 0.0;    // deg, true heading clockwise from North
+    double latitude_deg = 0.0;
+    double longitude_deg = 0.0;
+    double alt_m = 0.0;
+    double roll_deg = 0.0;   // right wing down positive
+    double pitch_deg = 0.0;  // nose up positive
+    double yaw_deg = 0.0;    // true heading clockwise from North
 };
 
 // Height of terrain under the entity (m), filled by the game.

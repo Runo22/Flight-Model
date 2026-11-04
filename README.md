@@ -190,7 +190,7 @@ from the new pose (`FlightAgent::relocate`, also usable without Flecs):
 With a geodetic transform component, `bind_geo_transform` creates the bridge both ways:
 
 ```cpp
-// game::Transform { double lat, lon, alt, roll, pitch, yaw; }  (degrees, alt in meters)
+// game::Transform { double latitude_deg, longitude_deg, alt_m, roll_deg, pitch_deg, yaw_deg; }
 fm::ecs::bind_geo_transform<game::Transform>(world);
 ```
 
@@ -225,13 +225,15 @@ fm::ecs::agent(plane)->hold(fm::ecs::local_heading(world, 180.0, here), 2500.0, 
 * Output: `fm::ecs::GeoPose { latitude, longitude, altitude, roll, pitch, yaw }` (degrees,
   meters, yaw = true heading).
 * Followable non-flying entities provide `fm::ecs::TrackedGeoPose`.
-* A game transform with `lat, lon, alt, roll, pitch, yaw` is bound with
+* A game transform with `latitude_deg, longitude_deg, alt_m, roll_deg, pitch_deg, yaw_deg`
+  (the `fm::ecs::GeoTransform` concept; yaw = true heading) is bound with
   `fm::ecs::bind_geo_transform<T>(world)` (both directions, teleports included).
 * Accuracy: exact round trip; horizontal scale error 0.01% at 100 km and 0.1% at 300 km
   from the origin.
 
 [`examples/flecs_integration.cpp`](examples/flecs_integration.cpp) shows a complete game
-setup with a `Transform { lat, lon, alt, roll, pitch, yaw }` component, a height-of-terrain
+setup with a `Transform { latitude_deg, longitude_deg, alt_m, roll_deg, pitch_deg, yaw_deg }`
+component, a height-of-terrain
 system, bridge systems, a runway takeoff, a jet formation (one wingman is teleported by the
 game and rejoins) and a drone following a truck.
 

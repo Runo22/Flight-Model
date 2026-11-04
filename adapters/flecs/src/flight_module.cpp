@@ -14,6 +14,10 @@ namespace {
 
 constexpr double kLeaderVelocityTau = 0.3;  // s, smoothing of estimated leader velocity
 constexpr double kMaxLeaderSpeed = 1500.0;  // m/s, faster position changes are jumps
+// Traffic neighbours: grid cell (larger than any conflict radius) and the height difference
+// beyond which aircraft are not traffic for each other.
+constexpr double kTrafficCell = 3000.0;      // m
+constexpr double kTrafficMaxHeight = 1500.0; // m
 
 const FrameConfig& config_or_default(const FrameConfig* config) {
     static const FrameConfig default_config{};
@@ -555,9 +559,9 @@ FlightModule::FlightModule(flecs::world& world) {
                 }
             }
             // Neighbours from a uniform grid over the ground plane.
-            constexpr double kCell = 3000.0;    // m, larger than any conflict radius
-            constexpr double kMaxHeight = 1500.0;
-            auto cell = [&](double v) { return static_cast<std::int64_t>(std::floor(v / kCell)); };
+            auto cell = [](double v) {
+                return static_cast<std::int64_t>(std::floor(v / kTrafficCell));
+            };
             auto key = [](std::int64_t x, std::int64_t y) {
                 return (static_cast<std::uint64_t>(x) << 32) ^
                        (static_cast<std::uint64_t>(y) & 0xffffffffu);
@@ -582,7 +586,7 @@ FlightModule::FlightModule(flecs::world& world) {
                             const bool partners = a.leader == b.entity || b.leader == a.entity ||
                                                   (a.leader && a.leader == b.leader);
                             if (j == i || partners ||
-                                std::abs(b.traffic.position.z - a.traffic.position.z) > kMaxHeight)
+                                std::abs(b.traffic.position.z - a.traffic.position.z) > kTrafficMaxHeight)
                                 continue;
                             near.push_back(b.traffic);
                         }

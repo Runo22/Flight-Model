@@ -346,16 +346,16 @@ inline bool geo_moved(const GeoPose& pose, const GeoPose& reference) {
 }
 }  // namespace detail
 
-// A game transform component with a geodetic position and attitude: lat, lon, roll, pitch
-// and yaw in degrees (yaw = true heading), alt in meters.
+// A game transform component with a geodetic position and attitude: latitude, longitude,
+// roll, pitch and yaw in degrees (yaw = true heading), alt in meters.
 template <typename T>
 concept GeoTransform = requires(T t) {
-    t.lat = 0.0;
-    t.lon = 0.0;
-    t.alt = 0.0;
-    t.roll = 0.0;
-    t.pitch = 0.0;
-    t.yaw = 0.0;
+    t.latitude_deg = 0.0;
+    t.longitude_deg = 0.0;
+    t.alt_m = 0.0;
+    t.roll_deg = 0.0;
+    t.pitch_deg = 0.0;
+    t.yaw_deg = 0.0;
 };
 
 // Binds the game's transform component T to the flight AI, both ways:
@@ -369,7 +369,7 @@ concept GeoTransform = requires(T t) {
 template <GeoTransform T>
 void bind_geo_transform(flecs::world& world) {
     const auto pose_of = [](const T& t) {
-        return GeoPose{t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw};
+        return GeoPose{t.latitude_deg, t.longitude_deg, t.alt_m, t.roll_deg, t.pitch_deg, t.yaw_deg};
     };
     const flecs::entity previous_scope = world.set_scope(module_entity(world));
     world.system<const T, GeoPose, TransformLink>("GeoTransformIn")
@@ -390,12 +390,12 @@ void bind_geo_transform(flecs::world& world) {
         .each([pose_of](flecs::entity e, const GeoPose& pose, T& t, TransformLink* link) {
             // Moved by the game during this frame: left for GeoTransformIn.
             if (link && detail::geo_moved(pose_of(t), link->written)) return;
-            t.lat = pose.latitude;
-            t.lon = pose.longitude;
-            t.alt = pose.altitude;
-            t.roll = pose.roll;
-            t.pitch = pose.pitch;
-            t.yaw = pose.yaw;
+            t.latitude_deg = pose.latitude;
+            t.longitude_deg = pose.longitude;
+            t.alt_m = pose.altitude;
+            t.roll_deg = pose.roll;
+            t.pitch_deg = pose.pitch;
+            t.yaw_deg = pose.yaw;
             if (link) {
                 link->written = pose;
             } else {

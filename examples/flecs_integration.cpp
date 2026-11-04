@@ -22,12 +22,12 @@
 namespace game {
 
 struct Transform {
-    double lat = 0.0;    // deg
-    double lon = 0.0;    // deg
-    double alt = 0.0;    // m
-    double roll = 0.0;   // deg, right wing down positive
-    double pitch = 0.0;  // deg, nose up positive
-    double yaw = 0.0;    // deg, true heading clockwise from North
+    double latitude_deg = 0.0;
+    double longitude_deg = 0.0;
+    double alt_m = 0.0;
+    double roll_deg = 0.0;   // right wing down positive
+    double pitch_deg = 0.0;  // nose up positive
+    double yaw_deg = 0.0;    // true heading clockwise from North
 };
 
 struct Hot {
@@ -51,7 +51,7 @@ namespace {
 void register_bridges(flecs::world& world) {
     world.system<const game::Transform, game::Hot>("game::HotSystem")
         .kind(flecs::PreUpdate)
-        .each([](const game::Transform& t, game::Hot& hot) { hot.height = game::query_hot(t.lat, t.lon); });
+        .each([](const game::Transform& t, game::Hot& hot) { hot.height = game::query_hot(t.latitude_deg, t.longitude_deg); });
 
     world.system<const game::Hot, fm::ecs::TerrainHeight>("bridge::TerrainIn")
         .kind(flecs::PreUpdate)
@@ -60,8 +60,8 @@ void register_bridges(flecs::world& world) {
     world.system<const game::Transform, fm::ecs::TrackedGeoPose>("bridge::TrackedIn")
         .kind(flecs::PreUpdate)
         .each([](const game::Transform& t, fm::ecs::TrackedGeoPose& tracked) {
-            tracked.position = {t.lat, t.lon, t.alt};
-            tracked.yaw = t.yaw;
+            tracked.position = {t.latitude_deg, t.longitude_deg, t.alt_m};
+            tracked.yaw = t.yaw_deg;
         });
 
     fm::ecs::bind_geo_transform<game::Transform>(world);
@@ -71,23 +71,23 @@ void register_bridges(flecs::world& world) {
         .kind(flecs::OnUpdate)
         .each([](flecs::iter& it, size_t, game::Transform& t, const game::GroundVehicle& v) {
             const double d = v.speed * it.delta_time();
-            const double yaw = fm::deg2rad(t.yaw);
-            t.lat += d * std::cos(yaw) / 111132.0;
-            t.lon += d * std::sin(yaw) / (111320.0 * std::cos(fm::deg2rad(t.lat)));
-            t.alt = game::query_hot(t.lat, t.lon);
+            const double yaw = fm::deg2rad(t.yaw_deg);
+            t.latitude_deg += d * std::cos(yaw) / 111132.0;
+            t.longitude_deg += d * std::sin(yaw) / (111320.0 * std::cos(fm::deg2rad(t.latitude_deg)));
+            t.alt_m = game::query_hot(t.latitude_deg, t.longitude_deg);
         });
 }
 
 // Creates an entity with the game's components and gives it a flight AI. For a parked
-// aircraft, `t.alt` is ignored and the ground height is used.
+// aircraft, `t.alt_m` is ignored and the ground height is used.
 flecs::entity spawn_aircraft(flecs::world& world, const char* name, const fm::VehicleParams& params,
                              game::Transform t, double speed, bool on_ground) {
-    if (on_ground) t.alt = game::query_hot(t.lat, t.lon);
+    if (on_ground) t.alt_m = game::query_hot(t.latitude_deg, t.longitude_deg);
     flecs::entity e = world.entity(name)
                           .set<game::Transform>(t)
-                          .set<game::Hot>({game::query_hot(t.lat, t.lon)})
-                          .set<fm::ecs::TerrainHeight>({game::query_hot(t.lat, t.lon)});
-    fm::ecs::attach_geo(e, params, {t.lat, t.lon, t.alt}, t.yaw, speed, on_ground);
+                          .set<game::Hot>({game::query_hot(t.latitude_deg, t.longitude_deg)})
+                          .set<fm::ecs::TerrainHeight>({game::query_hot(t.latitude_deg, t.longitude_deg)});
+    fm::ecs::attach_geo(e, params, {t.latitude_deg, t.longitude_deg, t.alt_m}, t.yaw_deg, speed, on_ground);
     return e;
 }
 
@@ -105,7 +105,7 @@ void print(flecs::world& world, int seconds) {
     world.each([](flecs::entity e, const game::Transform& t) {
         const auto* pose = e.try_get<fm::ecs::FlightPose>();
         std::printf("%-10s lat %9.5f lon %9.5f alt %7.1f m | roll %6.1f pitch %5.1f yaw %6.1f | %s\n",
-                    e.name().c_str(), t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw,
+                    e.name().c_str(), t.latitude_deg, t.longitude_deg, t.alt_m, t.roll_deg, t.pitch_deg, t.yaw_deg,
                     pose ? fm::to_string(pose->phase) : "game logic");
     });
 }
@@ -161,14 +161,14 @@ int main() {
         // At t = 60 s the lead turns to true course 180 at 2500 m; the wingmen follow.
         if (frame == 60 * 60) {
             const game::Transform& t = *lead.try_get<game::Transform>();
-            const double course = fm::ecs::local_heading(world, 180.0, {t.lat, t.lon, t.alt});
+            const double course = fm::ecs::local_heading(world, 180.0, {t.latitude_deg, t.longitude_deg, t.alt_m});
             fm::ecs::agent(lead)->hold(course, 2500.0, 220.0);
         }
         // At t = 200 s the game teleports Wing2 (e.g. a respawn) just by writing its
         // Transform: it continues from there and rejoins the formation.
         if (frame == 60 * 200) {
             const game::Transform& t = *lead.try_get<game::Transform>();
-            wing2.set<game::Transform>({t.lat + 0.1, t.lon - 0.1, 3500.0, 0.0, 0.0, 180.0});
+            wing2.set<game::Transform>({t.latitude_deg + 0.1, t.longitude_deg - 0.1, 3500.0, 0.0, 0.0, 180.0});
         }
         world.progress(1.0f / 60.0f);
         if (frame % (60 * 90) == 0) print(world, seconds);

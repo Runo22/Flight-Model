@@ -71,7 +71,7 @@ void print(flecs::world& world, const char* title) {
     std::printf("--- %s\n", title);
     world.each([](flecs::entity e, const game::Transform& t) {
         std::printf("  %-6s lat %9.5f lon %9.5f alt %7.1f | roll %6.1f pitch %5.1f yaw %6.1f\n",
-                    e.name().c_str(), t.lat, t.lon, t.alt, t.roll, t.pitch, t.yaw);
+                    e.name().c_str(), t.latitude_deg, t.longitude_deg, t.alt_m, t.roll_deg, t.pitch_deg, t.yaw_deg);
     });
 }
 
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     world.component<game::FlightRequest>();
     world.system<const game::Transform, game::Hot>("HotSystem")
         .kind(flecs::PreUpdate)
-        .each([](const game::Transform& t, game::Hot& hot) { hot.height = query_hot(t.lat, t.lon); });
+        .each([](const game::Transform& t, game::Hot& hot) { hot.height = query_hot(t.latitude_deg, t.longitude_deg); });
 
     const double ground = query_hot(41.02, 28.95);
     world.entity("TK1")
@@ -133,12 +133,12 @@ int main(int argc, char** argv) {
         run(world, 60.0);
         print(world, cycle == 0 ? "plugin loaded, 60 s" : "plugin reloaded, 60 s");
         const game::Transform after = read<game::Transform>(world, "UAV1");
-        if (!(after.lat < before.lat - 0.005)) {
+        if (!(after.latitude_deg < before.latitude_deg - 0.005)) {
             std::printf("FAIL: UAV1 did not fly south\n");
             ++failures;
         }
         const game::Transform ship_after = read<game::Transform>(world, "TCG1");
-        if (!(ship_after.lon > ship_before.lon + 0.004 && ship_after.alt == 0.0)) {
+        if (!(ship_after.longitude_deg > ship_before.longitude_deg + 0.004 && ship_after.alt_m == 0.0)) {
             std::printf("FAIL: TCG1 did not sail east on the sea surface\n");
             ++failures;
         }
@@ -148,8 +148,8 @@ int main(int argc, char** argv) {
         world.entity("UAV1").set<game::Transform>(teleport);
         run(world, 20.0);
         const game::Transform moved = read<game::Transform>(world, "UAV1");
-        if (!(moved.lat < teleport.lat - 0.002 && std::abs(moved.lon - teleport.lon) < 1e-3 &&
-              std::abs(moved.alt - teleport.alt) < 20.0)) {
+        if (!(moved.latitude_deg < teleport.latitude_deg - 0.002 && std::abs(moved.longitude_deg - teleport.longitude_deg) < 1e-3 &&
+              std::abs(moved.alt_m - teleport.alt_m) < 20.0)) {
             std::printf("FAIL: UAV1 did not continue from where the game put it\n");
             ++failures;
         }
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
         const game::Transform frozen = read<game::Transform>(world, "UAV1");
         run(world, 5.0);
         const game::Transform still = read<game::Transform>(world, "UAV1");
-        if (still.lat != frozen.lat || still.lon != frozen.lon) {
+        if (still.latitude_deg != frozen.latitude_deg || still.longitude_deg != frozen.longitude_deg) {
             std::printf("FAIL: something still moves the aircraft after unload\n");
             ++failures;
         }
