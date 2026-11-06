@@ -525,51 +525,6 @@ namespace demo
         });
     }
 
-    void escort()
-    {
-        flecs::world world = sim_world();
-        const double lat0 = 39.9000, lon0 = 32.7600, yaw = 245.0; // west along the road
-        const double speed = 15.0;                                 // m/s
-        const double drive_time = 1500.0;                          // s, then the convoy stops
-        const resim::core::Transform start { lat0, lon0, ankara::terrain(lat0, lon0), 0, 0, yaw };
-        // TODO: the game's ground vehicle prefab, e.g. e.is_a(resim::core::get_core_prefab(...))
-        flecs::entity convoy = world.entity("Convoy")
-                                   .set<resim::core::Transform>(start)
-                                   .set<fm::ecs::TrackedGeoPose>({ { start.latitude_deg, start.longitude_deg, start.alt_m }, start.yaw_deg });
-        flecs::entity behind = spawn("T129 Escort-1", PlatformType::T129, { 39.94, 32.74, 1300.0, 0, 0, 200.0 }, 40.0);
-        flecs::entity beside = spawn("T129 Escort-2", PlatformType::T129, { 39.92, 32.79, 1200.0, 0, 0, 245.0 }, 40.0);
-        const fm::FormationSlot behind_slot { { 0.0, -300.0, 150.0 } };
-        const fm::FormationSlot beside_slot { { 80.0, -20.0, 60.0 } };
-        fm::ecs::follow(behind, convoy, behind_slot);
-        fm::ecs::follow(beside, convoy, beside_slot);
-
-        every_frame("escort", { convoy, behind, beside }, [=, last = 0.0, worst = std::array<double, 2> { 0.0, 0.0 }](double t) mutable {
-            const double dt = t - last;
-            last = t;
-            // Game logic: the convoy drives on along its yaw, on the ground, and publishes its
-            // position for its escorts.
-            resim::core::Transform c = transform(convoy);
-            const double d = speed * dt;
-            const double heading = fm::deg2rad(c.yaw_deg);
-            c.latitude_deg += d * std::cos(heading) / 111132.0;
-            c.longitude_deg += d * std::sin(heading) / (111320.0 * std::cos(fm::deg2rad(c.latitude_deg)));
-            c.alt_m = ankara::terrain(c.latitude_deg, c.longitude_deg);
-            convoy.set<resim::core::Transform>(c);
-            convoy.set<fm::ecs::TrackedGeoPose>({ { c.latitude_deg, c.longitude_deg, c.alt_m }, c.yaw_deg });
-            if (t > 240.0)
-            { // joined up
-                worst[0] = std::max(worst[0], slot_error(behind, convoy, behind_slot));
-                worst[1] = std::max(worst[1], slot_error(beside, convoy, beside_slot));
-            }
-            if (t >= drive_time)
-            {
-                RESIM_LOG(agent_demo, info, "[escort] t={:.0f}s the convoy stops after {:.1f} km; worst slot error {:.0f} m behind, {:.0f} m beside", t, ankara::metres(c.latitude_deg, c.longitude_deg, lat0, lon0) / 1000.0, worst[0], worst[1]);
-                return true; // the escorts stay over the stopped convoy
-            }
-            return false;
-        });
-    }
-
     bool run_scenario(const char* name)
     {
         for (const Scenario& s : demo_scenarios)

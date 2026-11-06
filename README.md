@@ -344,8 +344,8 @@ handedness.
 [`examples/resim/`](examples/resim) holds the live demos of the resim plugin, shown at normal
 speed in the game: a formation that forms up and splits (two land, one orbits), a runway
 circuit with taxiing, a waypoint tour, a four-ship flypast over Anitkabir, converging traffic,
-a low-level helicopter flight, landings from high above the field, a UAV station relief, a
-convoy escort and more. Each scenario gives its first commands and registers logic that runs
+a low-level helicopter flight, landings from high above the field, a UAV station relief and
+more. Each scenario gives its first commands and registers logic that runs
 every frame for the later ones. They need the game's headers and are not built here. See
 [`docs/DEMOS.md`](docs/DEMOS.md) (Turkish).
 

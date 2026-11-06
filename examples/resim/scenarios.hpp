@@ -69,10 +69,6 @@ namespace demo
     // four minutes, the Anka leaves and lands back at Akinci.
     void relief();
 
-    // A convoy drives west along the Eskisehir road (scenario logic, not the flight model).
-    // One T129 keeps 300 m behind it and 150 m above, another 80 m to its right, 60 m above.
-    void escort();
-
 #pragma endregion
 
     inline constexpr Scenario demo_scenarios[] = {
@@ -87,7 +83,6 @@ namespace demo
         { "lowlevel", "T129 low level to Elmadag, hover over the summit, landing on a ridge", lowlevel },
         { "recovery", "Landings from high overhead: A400M at Esenboga, Aksungur at Akinci", recovery },
         { "relief", "Station relief: Aksungur takes over the orbit, Anka lands at Akinci", relief },
-        { "escort", "Two T129 escort a convoy on the Eskisehir road", escort },
     };
 
     // Runs the scenario called `name`; false when there is none.

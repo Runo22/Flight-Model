@@ -52,7 +52,7 @@ siler:
 | Sistem | Faz | İş |
 |---|---|---|
 | `DemoScenarios` | `PreStore`, immediate | Senaryo mantıkları. Uçuş modeli adım attıktan ve `Transform` yazıldıktan sonra çalışır; komutlar hemen etkili olur |
-| `DemoRouteDisplay` | `PostUpdate` | `resim::core::WaypointList`, her ajanın uçtuğu rotayı (rota, `go_to`, kalkıştan sonraki rota) ve `current_index` ile hedef noktayı gösterir. Rota yalnızca değiştiğinde bir kere dönüştürülür; sonra sadece indeks güncellenir. Rota olmayan şeyler (tur merkezi) için `show_waypoints()` |
+| `DemoRouteDisplay` | `PostUpdate` | `resim::core::WaypointList`, her ajanın uçtuğu rotayı (rota, `go_to`, kalkıştan sonraki rota), `current_index` ile hedef noktayı ve `loop` ile rotanın döngü olup olmadığını gösterir. Rota yalnızca değiştiğinde bir kere dönüştürülür; sonra sadece indeks güncellenir. Rota olmayan şeyler (tur merkezi) için `show_waypoints()` |
 | `DemoTerrain` | `PreUpdate` | `fm::ecs::TerrainHeight`, `ankara::terrain()` ile doldurulur (`DemoSetup::synthetic_terrain`) |
 
 ## Senaryo mantığı
@@ -85,7 +85,6 @@ varlık adları birbirinden farklıdır; bu sayede iki senaryo birbirinin uçakl
 | `lowlevel` | T129 Güvercinlik'ten kalkar, araziden 40 m yukarıda Eymir üzerinden Elmadağ'a uçar, zirvede bir dakika havada asılı kalır ve doğudaki sırta iner | Helikopterde arazi takibi, `hold_time` |
 | `recovery` | Esenboğa'nın 2.500 m üstündeki A400M ve Akıncı'nın 2.000 m üstündeki Aksungur iniş alır; önce alçalma turu atarlar, sonra stabil yaklaşmayla inerler | Yüksekten `land()` |
 | `relief` | Batıdaki görev noktasında Anka tur atar. Aksungur Akıncı'dan kalkar ve 300 m yukarıda görevi devralır. Dört dakika birlikte tur attıktan sonra Anka dönüp iner | Görev devri, yükseklik ayrımı |
-| `escort` | Eskişehir yolunda batıya giden bir konvoyu iki T129 izler: biri 300 m geriden ve 150 m yukarıdan, diğeri sağından ve 60 m yukarıdan. Konvoy 25 dakika sonra durur | `TrackedGeoPose` ile oyunun hareket ettirdiği varlığı takip. Konvoyun prefab'ı yok (TODO) |
 
 Repoda resim API'sinin bir taklidiyle (stub) başsız olarak, 60 Hz'de çalıştırıldığında
 günlükler (özet):

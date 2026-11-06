@@ -157,9 +157,11 @@ namespace
         return nullptr;
     }
 
-    std::size_t signature(const std::vector<fm::Waypoint>& waypoints)
+    // Changes when the agent starts another route.
+    std::size_t signature(const fm::Route& route)
     {
-        std::size_t h = waypoints.size() + 1;
+        const std::vector<fm::Waypoint>& waypoints = route.waypoints;
+        std::size_t h = 2 * waypoints.size() + (route.loop ? 1 : 0) + 1;
         const auto mix = [&h](double v) { h ^= std::hash<double> {}(v) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
         for (const fm::Waypoint& w : waypoints)
         {
@@ -172,23 +174,30 @@ namespace
 
     resim::core::Waypoint game_waypoint(const fm::GeoPoint& p)
     {
-        return resim::core::Waypoint { p.latitude, p.longitude, p.altitude };
+        resim::core::Waypoint w;
+        w.latitude_deg = p.latitude;
+        w.longitude_deg = p.longitude;
+        w.altitude_m = p.altitude;
+        return w;
     }
 
     void show_route(flecs::entity e, const fm::RouteTracker& tracker, const RouteShown* shown)
     {
-        const std::vector<fm::Waypoint>& waypoints = tracker.route().waypoints;
-        const std::size_t sig = signature(waypoints);
+        const fm::Route& route = tracker.route();
+        const std::vector<fm::Waypoint>& waypoints = route.waypoints;
+        const std::size_t sig = signature(route);
         const std::size_t index = tracker.index();
         if (!shown || shown->signature != sig)
         {
             // A new route: converted once, then only the index follows.
             resim::core::WaypointList list;
+            list.waypoints.reserve(waypoints.size());
             for (const fm::Waypoint& w : waypoints)
             {
                 list.waypoints.push_back(game_waypoint(bound.projection.to_geo(w.position)));
             }
             list.current_index = index;
+            list.loop = route.loop;
             e.set<resim::core::WaypointList>(std::move(list));
             e.set<RouteShown>({ sig, index, false });
             return;
@@ -455,11 +464,13 @@ const fm::ecs::FlightPose& pose(flecs::entity e)
 void show_waypoints(flecs::entity e, std::initializer_list<fm::GeoPoint> points)
 {
     resim::core::WaypointList list;
+    list.waypoints.reserve(points.size());
     for (const fm::GeoPoint& p : points)
     {
         list.waypoints.push_back(game_waypoint(p));
     }
     list.current_index = 0;
+    list.loop = false;
     e.set<resim::core::WaypointList>(std::move(list));
     // Kept until the agent flies a route other than the current one.
     RouteShown shown;
@@ -468,7 +479,7 @@ void show_waypoints(flecs::entity e, std::initializer_list<fm::GeoPoint> points)
     {
         if (const fm::RouteTracker* tracker = route_of(*a); tracker && tracker->active())
         {
-            shown.signature = signature(tracker->route().waypoints);
+            shown.signature = signature(tracker->route());
         }
     }
     e.set<RouteShown>(shown);
