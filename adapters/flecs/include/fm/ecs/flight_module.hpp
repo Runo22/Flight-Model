@@ -20,7 +20,13 @@
 #include <optional>
 #include <vector>
 
+// Projects that reach Flecs through their own header define FM_FLECS_HEADER, e.g.
+// FM_FLECS_HEADER=<flecs_includer.h> (CMake: the FM_FLECS_HEADER cache variable).
+#ifdef FM_FLECS_HEADER
+#include FM_FLECS_HEADER
+#else
 #include <flecs.h>
+#endif
 
 #include "fm/flight_agent.hpp"
 #include "fm/frames.hpp"
@@ -40,8 +46,8 @@ struct FrameConfig {
 
 // World singleton: runtime settings of the module.
 struct FlightSettings {
-    bool paused = false;    // true: no agent is stepped; the rest of the world keeps running
-    double max_step = 0.25; // s, longest simulated time per frame (hitches, debugger stops)
+    bool paused = false;     // true: no agent is stepped; the rest of the world keeps running
+    double max_step = 0.25;  // s, longest simulated time per frame (hitches, debugger stops)
     // Agents see each other as traffic and resolve predicted conflicts (fixed-wing).
     bool collision_avoidance = true;
 };
@@ -94,22 +100,22 @@ struct GeoPose {
 };
 
 struct FlightPose {
-    Vec3 position{};       // world units
-    Quat rotation{};       // asset local axes -> world
-    Vec3 velocity{};       // world units / s
-    double heading = 0.0;  // deg, clockwise from North
-    double pitch = 0.0;    // deg, nose up positive
-    double roll = 0.0;     // deg, right wing down positive
-    double airspeed = 0.0;        // m/s, true airspeed
+    Vec3 position{};                   // world units
+    Quat rotation{};                   // asset local axes -> world
+    Vec3 velocity{};                   // world units / s
+    double heading = 0.0;              // deg, clockwise from North
+    double pitch = 0.0;                // deg, nose up positive
+    double roll = 0.0;                 // deg, right wing down positive
+    double airspeed = 0.0;             // m/s, true airspeed
     double calibrated_airspeed = 0.0;  // m/s, what the airspeed indicator shows
     double mach = 0.0;
     double ground_speed = 0.0;    // m/s
     double vertical_speed = 0.0;  // m/s
     double throttle = 0.0;
-    Vec3 g_force{0.0, 0.0, 1.0};  // g felt on board, body axes: x forward, y right, z up
-    double angle_of_attack = 0.0; // deg
-    double sideslip_angle = 0.0;  // deg, positive = relative wind from the right
-    double turn_rate = 0.0;       // deg/s, positive = right
+    Vec3 g_force{0.0, 0.0, 1.0};   // g felt on board, body axes: x forward, y right, z up
+    double angle_of_attack = 0.0;  // deg
+    double sideslip_angle = 0.0;   // deg, positive = relative wind from the right
+    double turn_rate = 0.0;        // deg/s, positive = right
     double fuel = std::numeric_limits<double>::quiet_NaN();  // kg left, NaN = not modelled
     // Landing gear: 0 up, 1 down, in between while it travels (fixed gear: 1, ships: 0).
     double gear_position = 1.0;
@@ -162,47 +168,47 @@ struct FlightTakeoff {
 };
 
 struct FlightLanding {
-    double interval = 12.0;          // s between touchdowns
+    double interval = 12.0;  // s between touchdowns
     // Break direction; empty = away from the wingmen (left when they fly on the right).
     std::optional<bool> left_pattern;
-    double break_distance = 300.0;   // m past the runway start where the leader breaks
-    double side_offset = 8.0;        // m left / right of the centerline, alternating
-    double stop_spacing = 150.0;     // m between the stop positions (the leader stops furthest)
-    double echelon_spacing = 80.0;   // m, wingmen re-form in echelon for the break
+    double break_distance = 300.0;  // m past the runway start where the leader breaks
+    double side_offset = 8.0;       // m left / right of the centerline, alternating
+    double stop_spacing = 150.0;    // m between the stop positions (the leader stops furthest)
+    double echelon_spacing = 80.0;  // m, wingmen re-form in echelon for the break
 };
 
 // Bookkeeping of a flight sequence, on the leader entity. Removed when the sequence ends.
 struct FlightSequence {
     struct Member {
         flecs::entity entity;
-        TakeoffPlan plan{};       // takeoff
-        Runway runway{};          // landing (shifted to its side of the runway)
+        TakeoffPlan plan{};  // takeoff
+        Runway runway{};     // landing (shifted to its side of the runway)
         LandingOptions landing{};
-        FormationSlot slot{};     // rejoin slot after takeoff / echelon slot before the break
+        FormationSlot slot{};  // rejoin slot after takeoff / echelon slot before the break
         // Landing: wingmen on the break side first drop back behind the echelon here, then
         // move to their slot at its outer end, so nobody crosses another's path.
         FormationSlot transit{};
         bool in_transit = false;
-        int row = 0;              // takeoff: line-up row, released row * interval after row 0
-        bool shared_taxi = false; // takeoff: taxis along the leader's path
+        int row = 0;                // takeoff: line-up row, released row * interval after row 0
+        bool shared_taxi = false;   // takeoff: taxis along the leader's path
         bool passed_entry = false;  // takeoff: reached the first point of the shared path
-        bool started = false;     // takeoff command / landing command given
+        bool started = false;       // takeoff command / landing command given
         bool released = false;
-        bool done = false;        // rejoined / landed, or dropped (deleted, no agent)
+        bool done = false;  // rejoined / landed, or dropped (deleted, no agent)
     };
     bool landing = false;
     std::vector<Member> members;  // [0] = leader; landing: in landing order
     FlightTakeoff takeoff{};
     FlightLanding land{};
-    double clock = 0.0;           // s since the sequence started
-    double release_time = -1.0;   // clock when the first row was released
+    double clock = 0.0;          // s since the sequence started
+    double release_time = -1.0;  // clock when the first row was released
     // Landing: pattern shared by the flight.
     Runway runway{};
     bool left_pattern = true;
-    double initial_speed = 0.0;   // m/s
-    double break_spacing = 0.0;   // m between successive break points
-    double natural_stop = 0.0;    // m, longest landing roll of the flight
-    bool ordered = false;         // landing order fixed once the leader is on the initial
+    double initial_speed = 0.0;  // m/s
+    double break_spacing = 0.0;  // m between successive break points
+    double natural_stop = 0.0;   // m, longest landing roll of the flight
+    bool ordered = false;        // landing order fixed once the leader is on the initial
 };
 
 // --- Module ----------------------------------------------------------------------------
@@ -246,7 +252,7 @@ using AgentSetup = std::function<void(FlightAgent&)>;
 // spent paused is not simulated. Paused leaders report zero velocity to their followers.
 void set_paused(flecs::world& world, bool paused);  // all agents
 bool is_paused(const flecs::world& world);
-void pause(flecs::entity e);   // one agent
+void pause(flecs::entity e);  // one agent
 void resume(flecs::entity e);
 bool is_paused(flecs::entity e);
 // Longest time advanced per frame; longer frames (hitches) run slower instead of jumping.
@@ -369,7 +375,8 @@ concept GeoTransform = requires(T t) {
 template <GeoTransform T>
 void bind_geo_transform(flecs::world& world) {
     const auto pose_of = [](const T& t) {
-        return GeoPose{t.latitude_deg, t.longitude_deg, t.alt_m, t.roll_deg, t.pitch_deg, t.yaw_deg};
+        return GeoPose{t.latitude_deg, t.longitude_deg, t.alt_m,
+                       t.roll_deg,     t.pitch_deg,     t.yaw_deg};
     };
     const flecs::entity previous_scope = world.set_scope(module_entity(world));
     world.system<const T, GeoPose, TransformLink>("GeoTransformIn")

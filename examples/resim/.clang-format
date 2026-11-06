@@ -1,0 +1,3 @@
+# These files follow the resim project's style and are copied into the plugin as they are:
+# not reformatted here (the repository style in ../../.clang-format would rewrite them).
+DisableFormat: true

@@ -6,6 +6,9 @@
 #                    prebuilt flecs.dll. Empty = automatic (see below).
 #   FM_FLECS_SHARED  when Flecs is fetched: build and link it as a shared library.
 set(FM_FLECS_TARGET "" CACHE STRING "Flecs target to link (must be the host's Flecs). Empty = auto")
+# Header that brings in Flecs, for projects with their own wrapper, e.g. <flecs_includer.h>.
+# Empty = <flecs.h>.
+set(FM_FLECS_HEADER "" CACHE STRING "Header that includes Flecs, e.g. <flecs_includer.h>. Empty = <flecs.h>")
 option(FM_FLECS_SHARED "Fetch and link Flecs as a shared library (for plugin DLLs)" OFF)
 
 if(FM_FLECS_TARGET)
@@ -55,6 +58,9 @@ target_include_directories(flight_model_flecs PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(flight_model_flecs PUBLIC fm::core ${FM_FLECS_LINK})
+if(FM_FLECS_HEADER)
+  target_compile_definitions(flight_model_flecs PUBLIC "FM_FLECS_HEADER=${FM_FLECS_HEADER}")
+endif()
 target_compile_options(flight_model_flecs PRIVATE ${FM_WARNINGS})
 # Linked into plugin shared libraries.
 set_target_properties(flight_model_flecs PROPERTIES POSITION_INDEPENDENT_CODE ON)

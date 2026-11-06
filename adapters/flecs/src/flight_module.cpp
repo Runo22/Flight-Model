@@ -16,8 +16,8 @@ constexpr double kLeaderVelocityTau = 0.3;  // s, smoothing of estimated leader 
 constexpr double kMaxLeaderSpeed = 1500.0;  // m/s, faster position changes are jumps
 // Traffic neighbours: grid cell (larger than any conflict radius) and the height difference
 // beyond which aircraft are not traffic for each other.
-constexpr double kTrafficCell = 3000.0;      // m
-constexpr double kTrafficMaxHeight = 1500.0; // m
+constexpr double kTrafficCell = 3000.0;       // m
+constexpr double kTrafficMaxHeight = 1500.0;  // m
 
 const FrameConfig& config_or_default(const FrameConfig* config) {
     static const FrameConfig default_config{};
@@ -71,8 +71,8 @@ void write_geo_pose(const GeoProjection& proj, const FlightAgent& agent, GeoPose
 }
 
 // Writes the agent's pose to the output components and remembers what was written.
-void publish(const WorldFrame& f, const GeoProjection* proj, FlightController& fc,
-             FlightPose& pose, GeoPose* geo_pose) {
+void publish(const WorldFrame& f, const GeoProjection* proj, FlightController& fc, FlightPose& pose,
+             GeoPose* geo_pose) {
     write_pose(f, *fc.agent, pose);
     fc.written.position = pose.position;
     fc.written.rotation = pose.rotation;
@@ -85,8 +85,7 @@ void publish(const WorldFrame& f, const GeoProjection* proj, FlightController& f
 }
 
 bool valid_geo(const GeoPoint& p) {
-    return std::abs(p.latitude) <= 90.0 && std::isfinite(p.longitude) &&
-           std::isfinite(p.altitude);
+    return std::abs(p.latitude) <= 90.0 && std::isfinite(p.longitude) && std::isfinite(p.altitude);
 }
 
 // Within a meter of each other on the Earth's surface.
@@ -358,15 +357,13 @@ void step_landing(FlightSequence& seq) {
             const FollowLeader* f = mem.entity.try_get<FollowLeader>();
             return fw && f && f->leader == leader && fw->mode() == FlightMode::Formation;
         };
-        const bool all_in_position =
-            std::all_of(seq.members.begin() + 1, seq.members.end(), [&](const auto& mem) {
-                return mem.started || !in_formation(mem) || in_position(mem);
-            });
+        const bool all_in_position = std::all_of(
+            seq.members.begin() + 1, seq.members.end(),
+            [&](const auto& mem) { return mem.started || !in_formation(mem) || in_position(mem); });
         if (!all_in_position && !last_call) return;
-        std::stable_partition(seq.members.begin() + 1, seq.members.end(),
-                              [&](const FlightSequence::Member& mem) {
-                                  return mem.started || in_position(mem);
-                              });
+        std::stable_partition(
+            seq.members.begin() + 1, seq.members.end(),
+            [&](const FlightSequence::Member& mem) { return mem.started || in_position(mem); });
         for (std::size_t m = 1; m < seq.members.size(); ++m) {
             FlightSequence::Member& mem = seq.members[m];
             if (mem.started) continue;
@@ -586,7 +583,8 @@ FlightModule::FlightModule(flecs::world& world) {
                             const bool partners = a.leader == b.entity || b.leader == a.entity ||
                                                   (a.leader && a.leader == b.leader);
                             if (j == i || partners ||
-                                std::abs(b.traffic.position.z - a.traffic.position.z) > kTrafficMaxHeight)
+                                std::abs(b.traffic.position.z - a.traffic.position.z) >
+                                    kTrafficMaxHeight)
                                 continue;
                             near.push_back(b.traffic);
                         }
@@ -597,8 +595,9 @@ FlightModule::FlightModule(flecs::world& world) {
         });
 
     // Every agent only touches its own components: safe to run on worker threads.
-    world.system<FlightController, FlightPose, const TerrainHeight*, const HeightAboveGround*,
-                 const Wind*, GeoPose*>("FlightSystem")
+    world
+        .system<FlightController, FlightPose, const TerrainHeight*, const HeightAboveGround*,
+                const Wind*, GeoPose*>("FlightSystem")
         .kind(flecs::OnUpdate)
         .without<Paused>()
         .multi_threaded()
@@ -632,8 +631,8 @@ FlightModule::FlightModule(flecs::world& world) {
                     if (terrain) {
                         env.terrain_elevation = f.height_to_enu(terrain[i].value);
                     } else if (height) {
-                        env.terrain_elevation = fc.agent->state().position.z -
-                                                height[i].value / f.units_per_meter;
+                        env.terrain_elevation =
+                            fc.agent->state().position.z - height[i].value / f.units_per_meter;
                     }
                     if (wind) env.wind = f.vector_to_enu(wind[i].velocity);
                     fc.agent->step(dt, env);
@@ -643,16 +642,16 @@ FlightModule::FlightModule(flecs::world& world) {
         });
 }
 
-flecs::entity load(flecs::world& world) { return world.import<FlightModule>(); }
+flecs::entity load(flecs::world& world) { return world.import <FlightModule>(); }
 
 void unload(flecs::world& world) {
     // Deleting the module entity deletes its children: the systems, everything created in
     // its scope and the components, which flecs removes from all entities first.
     if (flecs::entity module = module_entity(world)) module.destruct();
     // This binary may stay loaded and call load() again: forget the cached ids.
-    reset_cached_ids<FlightModule, FrameConfig, FlightController, TerrainHeight,
-                     HeightAboveGround, Wind, TrackedPose, TrackedGeoPose, FlightPose, GeoPose,
-                     FollowLeader, TransformLink, FlightSettings, Paused, FlightSequence>();
+    reset_cached_ids<FlightModule, FrameConfig, FlightController, TerrainHeight, HeightAboveGround,
+                     Wind, TrackedPose, TrackedGeoPose, FlightPose, GeoPose, FollowLeader,
+                     TransformLink, FlightSettings, Paused, FlightSequence>();
 }
 
 flecs::entity module_entity(const flecs::world& world) {
@@ -718,8 +717,8 @@ double heading_from_world_forward(const flecs::world& world, const Vec3& world_f
 
 void set_geo_origin(flecs::world& world, double latitude, double longitude) {
     if (!valid_geo({latitude, longitude, 0.0})) {
-        std::fprintf(stderr, "fm::ecs::set_geo_origin: invalid origin %g, %g ignored\n",
-                     latitude, longitude);
+        std::fprintf(stderr, "fm::ecs::set_geo_origin: invalid origin %g, %g ignored\n", latitude,
+                     longitude);
         return;
     }
     world.set<FrameConfig>({WorldFrame::enu(), GeoProjection(latitude, longitude)});
@@ -823,8 +822,9 @@ bool takeoff_flight(flecs::entity leader, const std::vector<flecs::entity>& wing
             mem.plan.then.reset();
             mem.plan.taxi = own ? options.taxi[w] : plan.taxi;
             mem.shared_taxi = !own && !plan.taxi.empty();
-            mem.slot = w < options.slots.size() ? options.slots[w]
-                                                : formation::echelon_right(static_cast<int>(w), 50.0);
+            mem.slot = w < options.slots.size()
+                           ? options.slots[w]
+                           : formation::echelon_right(static_cast<int>(w), 50.0);
         }
         // Without a path: straight to the line-up point.
         if (mem.plan.taxi.empty()) mem.plan.taxi = {runway.start};
@@ -836,8 +836,8 @@ bool takeoff_flight(flecs::entity leader, const std::vector<flecs::entity>& wing
 
 bool land_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen,
                  const Runway& runway, const FlightLanding& options) {
-    if (!is_finite(runway.start) || !std::isfinite(runway.heading) ||
-        !(options.interval > 0.0) || !std::isfinite(options.break_distance))
+    if (!is_finite(runway.start) || !std::isfinite(runway.heading) || !(options.interval > 0.0) ||
+        !std::isfinite(options.break_distance))
         return false;
     std::vector<flecs::entity> all{leader};
     all.insert(all.end(), wingmen.begin(), wingmen.end());
@@ -846,9 +846,10 @@ bool land_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen
         const FixedWingAgent* fw = fixed_wing_of(all[m]);
         if (!fw || fw->state().on_ground || (m > 0 && all[m] == leader)) return false;
         const double v_app = 0.5 * fw->overhead_initial_speed(runway);
-        natural_stop = std::max(natural_stop, fw->params().touchdown_distance + 100.0 +
-                                                  v_app * v_app /
-                                                      (2.0 * std::max(fw->params().brake_deceleration, 0.1)));
+        natural_stop =
+            std::max(natural_stop,
+                     fw->params().touchdown_distance + 100.0 +
+                         v_app * v_app / (2.0 * std::max(fw->params().brake_deceleration, 0.1)));
     }
     // Break away from the wingmen of the leader's formation.
     bool left = true;
@@ -910,9 +911,10 @@ bool land_flight(flecs::entity leader, const std::vector<flecs::entity>& wingmen
                         : formation::echelon_left(index, options.echelon_spacing);
         if (echelon[k].crossing) {
             // Straight back on its own side, behind the whole echelon.
-            mem.transit.offset = {echelon[k].offset.x,
-                                  -(static_cast<double>(echelon.size()) + 2.0 + crossing_index) * step,
-                                  echelon[k].offset.z};
+            mem.transit.offset = {
+                echelon[k].offset.x,
+                -(static_cast<double>(echelon.size()) + 2.0 + crossing_index) * step,
+                echelon[k].offset.z};
             mem.in_transit = true;
             ++crossing_index;
         }

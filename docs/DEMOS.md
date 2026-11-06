@@ -1,55 +1,105 @@
-# Ankara demoları
+# Ankara demoları (canlı, resim eklentisi)
 
-`examples/ankara_demos.cpp`, Ankara çevresinde uçuş ağırlıklı dokuz senaryo uçurur. Her biri
-kendi dünyasını kurar, sonucunu kendisi kontrol eder ve ayrı bir test olarak çalışır
-(`fm_ankara_<demo>`). Dünya coğrafidir (enlem/boylam); oyun tarafı `navigation.cpp`'deki
-gibi: `Transform` (`latitude_deg`, `longitude_deg`, `alt_m`, `roll_deg`, `pitch_deg`,
-`yaw_deg`), HOT sorgusu, `bind_geo_transform`.
+`examples/resim/` altındaki senaryolar, resim eklentisinde normal hızda, oyunun kendi
+karelerinde canlı gösterilir. Senaryolar dünyayı kendileri ilerletmez: oyun `world.progress()`
+çağırır. Her senaryo uçaklarını koyar, ilk komutları verir ve kendi mantığını kaydeder
+(`every_frame`). Bu mantık her karede çalışır, sonraki komutları verir (ayrılma, iniş, apron'a
+taksi) ve önemli anları `RESIM_LOG` ile yazar.
 
-```sh
-./build/examples/fm_ankara_demos                        # hepsi
-./build/examples/fm_ankara_demos rejoin flypast         # seçilenler
-./build/examples/fm_ankara_demos --list
-./build/examples/fm_ankara_demos --csv iz.csv --kml iz.kml
-```
+Dosyalar resim başlıklarına bağlı olduğu için repo içinde derlenmez; eklentiye olduğu gibi
+eklenir. Biçimlendirme resim projesinin stilindedir (`examples/resim/.clang-format` bu klasörü
+biçimlendirmeye kapatır).
+
+| Dosya | İçerik |
+|---|---|
+| `helpers.hpp/.cpp` | Ankara yerleri ve havaalanları, sentetik arazi, dünyaya bağlanma, `every_frame`, `spawn`, enlem/boylam ↔ yerel dönüşümler, pist, ölçümler |
+| `scenarios.hpp/.cpp` | Senaryolar ve `demo_scenarios` listesi (ad, başlık, fonksiyon) |
 
 > **Not:** Arazi gerçek yükseklik verisi değildir. ~900 m'lik Ankara havzası, çevre tepeleri
 > ve Elmadağ (~1.850 m) olan, havaalanlarında düzleşen sentetik bir yüzeydir. Havaalanı ve yer
-> koordinatları, rakımlar ve pist yönleri yaklaşıktır.
+> koordinatları, rakımlar ve pist yönleri yaklaşıktır. HOT eklentisi gelince
+> `DemoSetup::synthetic_terrain = false` yapılır.
+
+## Eklentiye bağlama
+
+```cpp
+// Yüklerken
+fm::ecs::load(world);
+fm::ecs::set_geo_origin(world, 39.93, 32.80);               // isteğe bağlı: yoksa bind_world koyar
+fm::ecs::bind_geo_transform<resim::core::Transform>(world);
+bind_world(world);                                          // DemoSetup ile ayarlanabilir
+
+demo::run_scenario("flypast");                              // ya da demo_scenarios[i].run()
+
+// Kaldırırken
+unbind_world();
+fm::ecs::unload(world);
+```
+
+`bind_world()` tek dünyayı bir kere bağlar; sonra hiçbir yardımcı `world` parametresi almaz:
+
+* Varlık alan yardımcılar dünyayı `e.world()` ile bulur (ücretsizdir, her zaman doğrudur).
+* Enlem/boylam dönüşümleri bağlanırken saklanan `GeoProjection` ile yapılır: ECS sorgusu ve
+  kopya yoktur, yalnızca matematik vardır.
+* Dünya ham işaretçi (`ecs_world_t*`) olarak saklanır. Saklanan bir `flecs::world` referans
+  sayacını tutar ve oyunun dünyası kapanırken yok edilmesini engeller.
+* `bind_world()` çağrılmazsa ilk kullanımda `resim::core::get_world()` ile kendiliğinden
+  bağlanır.
+
+`bind_world()` üç sistemi uçuş modülünün kapsamına ekler, böylece `fm::ecs::unload()` onları da
+siler:
+
+| Sistem | Faz | İş |
+|---|---|---|
+| `DemoScenarios` | `PreStore`, immediate | Senaryo mantıkları. Uçuş modeli adım attıktan ve `Transform` yazıldıktan sonra çalışır; komutlar hemen etkili olur |
+| `DemoRouteDisplay` | `PostUpdate` | `resim::core::WaypointList`, her ajanın uçtuğu rotayı (rota, `go_to`, kalkıştan sonraki rota) ve `current_index` ile hedef noktayı gösterir. Rota yalnızca değiştiğinde bir kere dönüştürülür; sonra sadece indeks güncellenir. Rota olmayan şeyler (tur merkezi) için `show_waypoints()` |
+| `DemoTerrain` | `PreUpdate` | `fm::ecs::TerrainHeight`, `ankara::terrain()` ile doldurulur (`DemoSetup::synthetic_terrain`) |
+
+## Senaryo mantığı
+
+```cpp
+every_frame("ad", { aktörler }, [=, durum = ...](double t) mutable {
+    // t: senaryonun başından beri geçen s (duraklatılan süre sayılmaz)
+    return bitti_mi;
+}, /* on_stop, isteğe bağlı */);
+```
+
+Senaryo mantığı şu durumlarda biter: `true` döndüğünde, aktörlerden biri silindiğinde (sahne
+sıfırlama), aynı adla tekrar başlatıldığında ya da `stop_scenario(ad)` / `stop_scenarios()`
+çağrıldığında. Bittiğinde uçaklar son komutlarını uçmaya devam eder. `spawn()` aynı adlı varlığı
+yeniden kullanır, bu yüzden bir senaryoyu tekrar çalıştırmak onu baştan başlatır. Senaryolardaki
+varlık adları birbirinden farklıdır; bu sayede iki senaryo birbirinin uçaklarını almaz.
 
 ## Senaryolar
 
-| Demo | Ne olur | Gösterdiği |
+| Ad | Ne olur | Gösterdiği |
 |---|---|---|
-| `rejoin` | Polatlı tarafında dağınık bir Hürjet ve iki Kızılelma kola girer, Mogan Gölü üzerine gider ve orada tur atar. Kol konumdayken ayrılır: Kızılelma-2 göl üzerinde 3.600 m'de beklemede kalır, Hürjet ve Kızılelma-1 Akıncı'ya overhead break ile sırayla iner | `follow`, "önce kol, sonra git" (lider takipçiler gelene kadar tur atar), `stop_following`, `loiter`, `land_flight` |
-| `circuit` | Hürkuş apron'dan taksiyle piste çıkar, kalkar, Kahramankazan ve Etimesgut üzerinden kısa bir tur atar, overhead break ile iner, pistte 1.500 m'de durur ve apron'a geri taksi yapar | `TakeoffPlan::taxi`, `TakeoffPlan::then`, `LandingOptions` (overhead, durma noktası), `taxi` |
-| `waypoints` | Anka Akıncı'dan kalkar. Kahramankazan'da köşeyi keser, Esenboğa'nın doğusundan sonra 110 KCAS uçar (knot ile), Elmadağ'ı araziden 400 m yukarıda geçer, Mogan Gölü'nün tam üstünden geçer, keskin dönüşün üstünden geçip Akıncı'ya iner | Köşe kesme ve üstünden geçme, `SpeedRef::CalibratedKnots`, `AltitudeRef::AboveTerrain`, `nav_bank` (25°), rota sonunda iniş |
-| `flypast` | 29 Ekim: dört F-16 sığınaklarından taksi yapar, 10 s arayla kalkar, elmas düzende toplanır, 300 KCAS ile Anıtkabir üzerinden geçer, overhead break ile sırayla iner | `takeoff_flight` (taksi, sıralı kalkış, `FlightTakeoff::slots` ile elmas), `land_flight` |
-| `traffic` | Hürkuş, Kızılelma, Anka ve Aksungur dört yönden aynı anda, aynı irtifada Kızılay'a gelir. Çarpışma kaçınma dikey olarak ayırır; aynı karşılaşma kaçınma kapalıyken de uçulur | Çarpışma kaçınma (çoklu tehdit: kaçınma açıkken en yakın geçiş ~104 m, kapalıyken ~1 m) |
-| `lowlevel` | T129 Güvercinlik'ten kalkar, Eymir Gölü üzerinden Elmadağ'a araziden 40 m yukarıda uçar, zirvede bir dakika havada asılı kalır, doğudaki sırta iner | Helikopterde arazi takibi, `hold_time`, rota sonunda iniş |
-| `recovery` | Esenboğa'nın 2.500 m üstündeki bir yolcu jetine ve Akıncı'nın 2.000 m üstündeki bir Aksungur'a iniş verilir. İkisi de önce son yaklaşma noktasının dışında tur atarak alçalır, sonra stabil yaklaşmayla iner | Yüksekten `land()`: alçalma turu, pas geçmeden iniş |
-| `relief` | Batıdaki görev noktasında Anka tur atar. Aksungur Akıncı'dan kalkıp gelir ve 300 m yukarıda görevi devralır, Anka dönüp iner | Görev devri: `TakeoffPlan::then` ile görev noktasına `Loiter`, yükseklik ayrımı |
-| `escort` | Eskişehir yolunda batıya giden bir konvoyu (oyun mantığı) T129 300 m geriden ve 150 m yukarıdan, bir drone 60 m yukarıdan yanında izler | Oyunun hareket ettirdiği varlığı takip: `TrackedGeoPose`, `follow` |
+| `anka3_tour` | Akıncı pist 03 başındaki Anka-3 kalkar, iki noktalı rotayı uçar ve aynı piste iner | Park hâlinde `follow_route` (önce kalkış), rota sonunda iniş, eşik + yönden pist |
+| `formation_goto` | Kaan ve iki Anka-3 V düzeninde 320 knot ile Akıncı'ya gider ve orada tur atar; bir Hürkuş Gölbaşı üzerinde tur atar | `formation::vic`, `go_to` (`TrueKnots`, `Keep`, `Loiter`), `loiter` |
+| `syria_orbit` | Hürjet Kuzey Suriye üzerinde tur atar | Projeksiyon merkezinden ~650 km uzakta `loiter` |
+| `rejoin` | Dağınık bir Hürjet, bir Anka-3 ve bir Kızılelma kola girer, Mogan Gölü üzerine gider ve orada tur atar. Kol konumdayken ayrılır: Kızılelma göl üzerinde kalır, Hürjet ve Anka-3 Akıncı'ya overhead break ile sırayla iner | `follow`, "önce kol, sonra git", `stop_following`, `land_flight` |
+| `circuit` | Hürkuş apron'dan taksi yapar, kalkar, Kahramankazan ve Etimesgut üzerinden tur atar, overhead break ile iner, 1.500 m'de durur ve apron'a geri taksi yapar | `TakeoffPlan::taxi/then`, `LandingOptions`, `taxi` |
+| `waypoints` | Anka Akıncı'dan kalkar, köşe keser, 110 KCAS uçar, Elmadağ'ı araziden 400 m yukarıda geçer, Mogan Gölü'nün üstünden geçer ve iner | Köşe kesme / üstünden geçme, `CalibratedKnots`, `AboveTerrain`, 25° seyrüsefer yatışı |
+| `flypast` | 29 Ekim: dört F-16 sığınaklarından taksi yapar, 10 s arayla kalkar, elmas düzende 300 KCAS ile Anıtkabir üzerinden geçer, overhead break ile sırayla iner | `takeoff_flight`, `FlightTakeoff::slots`, `land_flight` |
+| `traffic` | Dört uçak aynı anda, aynı irtifada Kızılay'a gelir: önce çarpışma kaçınma kapalı (~1 m), sonra aynı karşılaşma açık (~100 m, dikey ayrım) | `set_collision_avoidance`. Ayar dünya genelidir: ilk geçiş sırasında diğer senaryolar da kaçınmasız uçar. Bitince ya da durdurulunca açılır |
+| `lowlevel` | T129 Güvercinlik'ten kalkar, araziden 40 m yukarıda Eymir üzerinden Elmadağ'a uçar, zirvede bir dakika havada asılı kalır ve doğudaki sırta iner | Helikopterde arazi takibi, `hold_time` |
+| `recovery` | Esenboğa'nın 2.500 m üstündeki A400M ve Akıncı'nın 2.000 m üstündeki Aksungur iniş alır; önce alçalma turu atarlar, sonra stabil yaklaşmayla inerler | Yüksekten `land()` |
+| `relief` | Batıdaki görev noktasında Anka tur atar. Aksungur Akıncı'dan kalkar ve 300 m yukarıda görevi devralır. Dört dakika birlikte tur attıktan sonra Anka dönüp iner | Görev devri, yükseklik ayrımı |
+| `escort` | Eskişehir yolunda batıya giden bir konvoyu iki T129 izler: biri 300 m geriden ve 150 m yukarıdan, diğeri sağından ve 60 m yukarıdan. Konvoy 25 dakika sonra durur | `TrackedGeoPose` ile oyunun hareket ettirdiği varlığı takip. Konvoyun prefab'ı yok (TODO) |
 
-## Çıktılar
+Repoda resim API'sinin bir taklidiyle (stub) başsız olarak, 60 Hz'de çalıştırıldığında
+günlükler (özet):
 
-**CSV** (`--csv`): her uçak için saniyede bir satır.
-
-| Sütun | Anlamı |
-|---|---|
-| `demo`, `t`, `name` | Demo, demo içindeki zaman (s), varlık adı |
-| `lat`, `lon`, `alt` | Derece, derece, m (deniz seviyesinden) |
-| `roll`, `pitch`, `yaw` | Derece; `yaw` gerçek yön |
-| `kcas` | Gösterge hızı (knot) |
-| `mode`, `phase` | `FlightMode`, `FlightPhase` |
-| `gear` | İniş takımı pozisyonu (0 yukarıda, 1 aşağıda) |
-
-**KML** (`--kml`): Google Earth'te açılır (Dosya → Aç). Her demo ayrı bir klasördür,
-uçaklar zamanlı izdir (`gx:Track`); zaman kaydırıcısıyla oynatılır. Demolar 29 Ekim 2026
-08:00 UTC'den başlayarak art arda oynar (geçiş töreni 09:30 UTC, Ankara saatiyle 12:30).
-"Places" klasöründe havaalanları ve yer işaretleri vardır. İrtifalar deniz seviyesinden
-mutlaktır; arazi sentetik olduğu için alçak uçuşta iz yer yer Google Earth'ün gerçek
-arazisinin altında ya da çok üstünde görünebilir.
+```
+[rejoin]   t=457s formed up over Mogan lake (worst slot 0 m, the Hurjet waited for the UAVs): split
+[rejoin]   t=1052s Hurjet and Anka-3 landed at Akinci, 58 s apart; Kizilelma orbits Mogan lake
+[circuit]  t=1291s parked, 0.0 m from its spot
+[flypast]  t=598s over Anitkabir: leader 12 m off, worst slot 3 m
+[flypast]  t=1251s all four landed, touchdowns at least 11 s apart
+[traffic]  closest approach without collision avoidance: 1 m
+[traffic]  closest approach with collision avoidance: 104 m (climbed / descended away)
+[lowlevel] t=901s landed on the ridge, 0.2 m from the point
+```
 
 ## Konumlar (yaklaşık)
 
@@ -67,9 +117,8 @@ arazisinin altında ya da çok üstünde görünebilir.
 
 ## Yeni senaryo eklemek
 
-1. `demo_...(Trace&)` adlı bir fonksiyon yaz: `make_world()` ile dünyayı kur, `spawn()` ile
-   uçakları koy, komutları ver.
-2. Döngüde `run(world, 1.0)` ve `trace.sample(world, t)` çağır; durumu `pose()`,
-   `transform()`, `distance()`, `landed_on()`, `slot_error()` ile izle.
-3. Sonunda `check(koşul, "açıklama")` ile sonucu doğrula.
-4. `kDemos` listesine ve `examples/CMakeLists.txt`'teki test listesine ekle.
+1. `scenarios.hpp`'de fonksiyonu bildir, `demo_scenarios` listesine ad ve başlıkla ekle.
+2. Fonksiyonda `spawn()` ile uçakları koy (adlar diğer senaryolardan farklı olmalı), ilk
+   komutları ver.
+3. Sonraki adımlar varsa `every_frame()` ile mantığı kaydet; durumu `pose()`, `distance()`,
+   `landed_on()`, `slot_error()` ile izle, önemli anları `RESIM_LOG` ile yaz.

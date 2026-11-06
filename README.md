@@ -64,12 +64,13 @@ include/fm/, src/          Flecs-independent core (C++20, builds as C++23 too)
   geo                       WGS-84 latitude/longitude/altitude <-> local frame
 adapters/flecs/             Flecs module (the only code that includes flecs.h)
 tests/                      core and Flecs tests (no external test framework)
-examples/                   headless CSV scenarios, Flecs integration, Ankara demos
+examples/                   headless CSV scenarios, Flecs integration, navigation snippets
+examples/resim/             live Ankara demos of the resim plugin (needs the game's headers)
 docs/ROADMAP.md             roadmap (Turkish)
 docs/EXTENDING.md           adding a new vehicle type (Turkish)
 docs/NAVIGATION.md          go to / loiter / routes / takeoff and landing examples (Turkish)
 docs/PRESETS.md             presets: references, measured performance, tuning (Turkish)
-docs/DEMOS.md               flight demos around Ankara (Turkish)
+docs/DEMOS.md               live flight demos around Ankara (Turkish)
 ```
 
 Every agent runs the same pipeline each step:
@@ -98,6 +99,7 @@ Options:
 | `FM_FLECS_TARGET` | empty | Flecs target to link, e.g. your project's `flecs_library`; must be the Flecs the host uses |
 | `FM_FETCH_FLECS` | top-level only | fetch Flecs (`FM_FLECS_TAG`, default `v4.1.2`) when no Flecs target exists; never when added with `add_subdirectory` |
 | `FM_FLECS_SHARED` | `OFF` | build fetched Flecs as a shared library |
+| `FM_FLECS_HEADER` | empty | header that brings in Flecs when the project has its own wrapper, e.g. `<flecs_includer.h>`; empty = `<flecs.h>` |
 | `FM_BUILD_TESTS`, `FM_BUILD_EXAMPLES` | top-level only | |
 
 As a subdirectory of a game that already has Flecs, name its Flecs target (a target
@@ -105,9 +107,17 @@ called `flecs::flecs` or `flecs::flecs_static` is picked up automatically):
 
 ```cmake
 set(FM_FLECS_TARGET flecs_library CACHE STRING "" FORCE)   # your Flecs target
+set(FM_FLECS_HEADER "<flecs_includer.h>" CACHE STRING "" FORCE)  # only with a wrapper header
 add_subdirectory(external/flight-model)
 target_link_libraries(game PRIVATE fm::flecs)   # or fm::core without Flecs
 ```
+
+Use the sources from here (submodule, `add_subdirectory`) rather than a copy: then an update is
+a `git pull`, not a merge. Projects that do not build with CMake add the sources and define
+`FM_FLECS_HEADER` themselves. Customisations go next to the module instead of into it: bridge
+systems in the module scope (see [Plugin DLLs](#plugin-dlls-load--unload-at-runtime)), commands
+through `fm::ecs::agent(e)`. The repository's `.clang-format` keeps format-on-save in this
+style when the sources sit inside a project that has its own.
 
 ## Using it with Flecs
 
@@ -329,14 +339,14 @@ handedness.
                                                             # sortie, flight
 ./build/examples/fm_flecs_integration
 ./build/examples/fm_navigation                            # docs/NAVIGATION.md, self-checking
-./build/examples/fm_ankara_demos --kml ankara.kml          # flight demos around Ankara
 ```
 
-[`examples/ankara_demos.cpp`](examples/ankara_demos.cpp) flies nine self-checking demos
-around Ankara: a formation that forms up and splits (two land, one orbits), a runway circuit
-with taxiing, a waypoint tour, a four-ship flypast over Anitkabir, converging traffic, a
-low-level helicopter flight, landings from high above the field, a UAV station relief and a
-convoy escort. `--csv` / `--kml` write the tracks (the KML plays in Google Earth). See
+[`examples/resim/`](examples/resim) holds the live demos of the resim plugin, shown at normal
+speed in the game: a formation that forms up and splits (two land, one orbits), a runway
+circuit with taxiing, a waypoint tour, a four-ship flypast over Anitkabir, converging traffic,
+a low-level helicopter flight, landings from high above the field, a UAV station relief, a
+convoy escort and more. Each scenario gives its first commands and registers logic that runs
+every frame for the later ones. They need the game's headers and are not built here. See
 [`docs/DEMOS.md`](docs/DEMOS.md) (Turkish).
 
 ## Limitations

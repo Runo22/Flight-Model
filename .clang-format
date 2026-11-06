@@ -1,0 +1,18 @@
+# Style of this repository. Keeps the files in their style when they are edited inside a
+# project with another .clang-format (clang-format uses the nearest one up the tree), so
+# format-on-save does not turn every edit into a diff of the whole file.
+BasedOnStyle: Google
+Standard: c++17   # c++20 would read `world.import<T>()` as a module import
+IndentWidth: 4
+ColumnLimit: 100
+AccessModifierOffset: -4
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: true
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Preserve
+SortIncludes: Never
+ReflowComments: false
