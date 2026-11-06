@@ -113,13 +113,16 @@ void every_frame(const char* name, std::vector<flecs::entity> actors, ScenarioSt
 // setup, so that a restart does not undo the new setup.
 void stop_scenario(const char* name);
 void stop_scenarios();
+// Whether the scenario logic called `name` still runs.
+bool scenario_running(const char* name);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Entities
 
 // Creates an entity with the game's components and gives it a flight AI. For a parked
 // aircraft `t.alt_m` is ignored and the ground height is used. An existing entity with the
-// same name is reused (running a scenario again restarts it).
+// same name is reused and starts clean (running a scenario again restarts it): its formation,
+// flight sequence and route display from the last run are removed.
 flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, resim::core::Transform t, double speed, bool on_ground = false);
 
 const resim::core::Transform& transform(flecs::entity e);

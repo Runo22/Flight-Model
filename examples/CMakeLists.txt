@@ -20,7 +20,8 @@ if(TARGET fm::flecs)
     add_test(NAME fm_navigation_example COMMAND fm_navigation)
   endif()
 
-  # examples/resim (live demos of the resim plugin) needs the game's headers: not built here.
+  # examples/resim (live demos of the resim plugin) needs the game's headers: built only by
+  # tests/ (fm_resim_*), against a stand-in of them.
 endif()
 
 # The plugin example needs Flecs as a shared library (configure with FM_FLECS_SHARED=ON or

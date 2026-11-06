@@ -6,8 +6,11 @@ karelerinde canlı gösterilir. Senaryolar dünyayı kendileri ilerletmez: oyun 
 (`every_frame`). Bu mantık her karede çalışır, sonraki komutları verir (ayrılma, iniş, apron'a
 taksi) ve önemli anları `RESIM_LOG` ile yazar.
 
-Dosyalar resim başlıklarına bağlı olduğu için repo içinde derlenmez; eklentiye olduğu gibi
-eklenir. Biçimlendirme resim projesinin stilindedir (`examples/resim/.clang-format` bu klasörü
+Dosyalar resim başlıklarına bağlıdır ve eklentiye olduğu gibi eklenir. Repo içinde yalnızca
+testler derler: `tests/resim/stub/` resim API'sinin küçük bir taklididir (kullanılan
+bileşenler oyundaki tanımlarıyla aynı tutulur). `fm_resim_<senaryo>` testleri her senaryoyu
+60 Hz'de uçurur ve sonucunu kontrol eder. `fm_resim_restart` yarıda yeniden başlatmayı,
+`fm_resim_all_at_once` on iki senaryonun aynı dünyada birlikte uçuşunu sınar. Biçimlendirme resim projesinin stilindedir (`examples/resim/.clang-format` bu klasörü
 biçimlendirmeye kapatır).
 
 | Dosya | İçerik |
@@ -67,7 +70,9 @@ every_frame("ad", { aktörler }, [=, durum = ...](double t) mutable {
 Senaryo mantığı şu durumlarda biter: `true` döndüğünde, aktörlerden biri silindiğinde (sahne
 sıfırlama), aynı adla tekrar başlatıldığında ya da `stop_scenario(ad)` / `stop_scenarios()`
 çağrıldığında. Bittiğinde uçaklar son komutlarını uçmaya devam eder. `spawn()` aynı adlı varlığı
-yeniden kullanır, bu yüzden bir senaryoyu tekrar çalıştırmak onu baştan başlatır. Senaryolardaki
+yeniden kullanır ve temizler (kol, uçuş dizisi, rota gösterimi silinir), bu yüzden bir
+senaryoyu tekrar çalıştırmak onu baştan başlatır; yarıda kalmış eski bir iniş dizisi yeni
+uçaklara komut veremez. `scenario_running(ad)`, mantığın hâlâ çalışıp çalışmadığını söyler. Senaryolardaki
 varlık adları birbirinden farklıdır; bu sayede iki senaryo birbirinin uçaklarını almaz.
 
 ## Senaryolar
@@ -75,7 +80,7 @@ varlık adları birbirinden farklıdır; bu sayede iki senaryo birbirinin uçakl
 | Ad | Ne olur | Gösterdiği |
 |---|---|---|
 | `anka3_tour` | Akıncı pist 03 başındaki Anka-3 kalkar, iki noktalı rotayı uçar ve aynı piste iner | Park hâlinde `follow_route` (önce kalkış), rota sonunda iniş, eşik + yönden pist |
-| `formation_goto` | Kaan ve iki Anka-3 V düzeninde 320 knot ile Akıncı'ya gider ve orada tur atar; bir Hürkuş Gölbaşı üzerinde tur atar | `formation::vic`, `go_to` (`TrueKnots`, `Keep`, `Loiter`), `loiter` |
+| `formation_goto` | Kaan ve iki Anka-3 V düzeninde 320 knot ile Akıncı'ya gider ve orada tur atar; bir Hürkuş Gölbaşı üzerinde 6.000 m'de, 2 km yarıçapla tur atar | `formation::vic`, `go_to` (`TrueKnots`, `Keep`, `Loiter`), `loiter` |
 | `syria_orbit` | Hürjet Kuzey Suriye üzerinde tur atar | Projeksiyon merkezinden ~650 km uzakta `loiter` |
 | `rejoin` | Dağınık bir Hürjet, bir Anka-3 ve bir Kızılelma kola girer, Mogan Gölü üzerine gider ve orada tur atar. Kol konumdayken ayrılır: Kızılelma göl üzerinde kalır, Hürjet ve Anka-3 Akıncı'ya overhead break ile sırayla iner | `follow`, "önce kol, sonra git", `stop_following`, `land_flight` |
 | `circuit` | Hürkuş apron'dan taksi yapar, kalkar, Kahramankazan ve Etimesgut üzerinden tur atar, overhead break ile iner, 1.500 m'de durur ve apron'a geri taksi yapar | `TakeoffPlan::taxi/then`, `LandingOptions`, `taxi` |
@@ -86,8 +91,8 @@ varlık adları birbirinden farklıdır; bu sayede iki senaryo birbirinin uçakl
 | `recovery` | Esenboğa'nın 2.500 m üstündeki A400M ve Akıncı'nın 2.000 m üstündeki Aksungur iniş alır; önce alçalma turu atarlar, sonra stabil yaklaşmayla inerler | Yüksekten `land()` |
 | `relief` | Batıdaki görev noktasında Anka tur atar. Aksungur Akıncı'dan kalkar ve 300 m yukarıda görevi devralır. Dört dakika birlikte tur attıktan sonra Anka dönüp iner | Görev devri, yükseklik ayrımı |
 
-Repoda resim API'sinin bir taklidiyle (stub) başsız olarak, 60 Hz'de çalıştırıldığında
-günlükler (özet):
+Testlerde (`ctest -R fm_resim`) günlükler (özet). On iki senaryo birlikte, 27 uçakla kare
+başına ~0,2 ms sürer:
 
 ```
 [rejoin]   t=457s formed up over Mogan lake (worst slot 0 m, the Hurjet waited for the UAVs): split

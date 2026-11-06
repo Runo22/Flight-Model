@@ -346,7 +346,8 @@ speed in the game: a formation that forms up and splits (two land, one orbits), 
 circuit with taxiing, a waypoint tour, a four-ship flypast over Anitkabir, converging traffic,
 a low-level helicopter flight, landings from high above the field, a UAV station relief and
 more. Each scenario gives its first commands and registers logic that runs
-every frame for the later ones. They need the game's headers and are not built here. See
+every frame for the later ones. They need the game's headers; the `fm_resim_*` tests fly
+them against a stand-in of those (`tests/resim/stub`). See
 [`docs/DEMOS.md`](docs/DEMOS.md) (Turkish).
 
 ## Limitations

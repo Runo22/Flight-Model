@@ -22,7 +22,7 @@ namespace demo
     void anka3_tour();
 
     // A Kaan with two Anka-3 in vic flies to Akinci at 320 knots and orbits it; a Hurkus orbits
-    // over Golbasi.
+    // over Golbasi at 6,000 m.
     void formation_goto();
 
     // A Hurjet orbits over northern Syria (far from the Ankara origin: the projection is still

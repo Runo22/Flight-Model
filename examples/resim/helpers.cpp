@@ -329,7 +329,7 @@ void bind_world(flecs::world& world, const DemoSetup& setup)
     // In the module scope: fm::ecs::unload() deletes them with the module.
     const flecs::entity previous_scope = world.set_scope(module);
     world.component<RouteShown>();
-    if (!world.lookup("DemoScenarios"))
+    if (!module.lookup("DemoScenarios"))
     {
         // After PostUpdate: the flight model has stepped and the transforms are written.
         world.system("DemoScenarios")
@@ -355,8 +355,8 @@ void bind_world(flecs::world& world, const DemoSetup& setup)
                 height.value = ankara::terrain(t.latitude_deg, t.longitude_deg);
             });
     }
-    world.lookup("DemoRouteDisplay").enable(setup.show_routes);
-    world.lookup("DemoTerrain").enable(setup.synthetic_terrain);
+    module.lookup("DemoRouteDisplay").enable(setup.show_routes);
+    module.lookup("DemoTerrain").enable(setup.synthetic_terrain);
     world.set_scope(previous_scope);
 }
 
@@ -397,6 +397,11 @@ void every_frame(const char* name, std::vector<flecs::entity> actors, ScenarioSt
     s->step = std::move(step);
     s->on_stop = std::move(on_stop);
     scripts.push_back(std::move(s));
+}
+
+bool scenario_running(const char* name)
+{
+    return std::any_of(scripts.begin(), scripts.end(), [name](const std::unique_ptr<Script>& s) { return !s->done && s->name == name; });
 }
 
 void stop_scenario(const char* name)
@@ -440,6 +445,12 @@ flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, r
     }
 
     flecs::entity e = world.entity(name);
+    // Reused (the scenario runs again): no formation, flight sequence or route display left
+    // from the last run, or they would keep commanding the new agent.
+    e.remove<fm::ecs::FollowLeader>();
+    e.remove<fm::ecs::FlightSequence>();
+    e.remove<resim::core::WaypointList>();
+    e.remove<RouteShown>();
     e.is_a(resim::core::get_core_prefab(platform_type));
     e.set<resim::core::Transform>(t);
     e.set<resim::core::HotRequest>({ game::query_hot(t.latitude_deg, t.longitude_deg) });
@@ -463,6 +474,7 @@ const fm::ecs::FlightPose& pose(flecs::entity e)
 
 void show_waypoints(flecs::entity e, std::initializer_list<fm::GeoPoint> points)
 {
+    ensure_bound(); // RouteShown registered in the module scope
     resim::core::WaypointList list;
     list.waypoints.reserve(points.size());
     for (const fm::GeoPoint& p : points)

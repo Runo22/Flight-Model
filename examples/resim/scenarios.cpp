@@ -49,10 +49,10 @@ namespace demo
 
     void formation_goto()
     {
-        flecs::entity lead = spawn("Kaan", PlatformType::Kaan, { 40.19, 32.05, 5000.0, 0.0, 0.0, 20.0 }, 270.0);
+        flecs::entity lead = spawn("Kaan", PlatformType::Kaan, { 40.19, 32.05, 5000.0, 0.0, 0.0, 20.0 }, 250.0);
         for (int k = 0; k < 2; ++k)
         {
-            flecs::entity wing = spawn(k == 0 ? "Kaan Wing-1" : "Kaan Wing-2", PlatformType::Anka3, { 40.15 - 0.01 * k, 32.04 - 0.01 * k, 5000.0, 0.0, 0.0, 30.0 }, 320.0);
+            flecs::entity wing = spawn(k == 0 ? "Kaan Wing-1" : "Kaan Wing-2", PlatformType::Anka3, { 40.15 - 0.01 * k, 32.04 - 0.01 * k, 5000.0, 0.0, 0.0, 30.0 }, 185.0);
             fm::ecs::follow(wing, lead, fm::formation::vic(k, 40.0));
         }
 
@@ -63,16 +63,16 @@ namespace demo
         goto_opt.on_arrival = fm::EndBehavior::Loiter;
         fm::ecs::agent(lead)->go_to(local(40.0668, 32.5555, 835.0), goto_opt); // Akinci
 
-        const fm::GeoPoint golbasi { 39.99, 32.64, 10000.0 };
-        flecs::entity hurkus = spawn("Hurkus Golbasi", PlatformType::Hurkus, { 39.90, 32.86, 10000.0, 0.0, 0.0, 270.0 }, 180.0);
-        fm::ecs::agent(hurkus)->loiter(local(golbasi), 500.0);
+        const fm::GeoPoint golbasi { 39.99, 32.64, 6000.0 };
+        flecs::entity hurkus = spawn("Hurkus Golbasi", PlatformType::Hurkus, { 39.90, 32.86, 6000.0, 0.0, 0.0, 270.0 }, 125.0);
+        fm::ecs::agent(hurkus)->loiter(local(golbasi), 2000.0);
         show_waypoints(hurkus, { golbasi });
     }
 
     void syria_orbit()
     {
         const fm::GeoPoint center { 36.79, 39.85, 10000.0 };
-        flecs::entity hjt = spawn("Hurjet Syria", PlatformType::Hurjet, { 36.78, 39.85, 10000.0, 0.0, 0.0, 270.0 }, 350.0);
+        flecs::entity hjt = spawn("Hurjet Syria", PlatformType::Hurjet, { 36.78, 39.85, 10000.0, 0.0, 0.0, 270.0 }, 240.0);
         fm::ecs::agent(hjt)->loiter(local(center), 5000.0);
         show_waypoints(hjt, { center });
     }
