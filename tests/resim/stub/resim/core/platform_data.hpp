@@ -2,10 +2,24 @@
 #pragma once
 #include "components.hpp"
 
-namespace resim::core {
+namespace resim::core
+{
 
-enum class PlatformCategory { Fighter, Propeller, UAV, Helicopter, Support, Ship, Munnition, Unknown };
+    enum class PlatformCategory
+    {
+        Fighter,
+        Propeller,
+        UAV,
+        Helicopter,
+        Support,
+        Ship,
+        Munnition,
+        Unknown
+    };
 
-inline PlatformCategory get_platform_category(PlatformType) { return PlatformCategory::Unknown; }
+    inline PlatformCategory get_platform_category(PlatformType)
+    {
+        return PlatformCategory::Unknown;
+    }
 
-}  // namespace resim::core
+} // namespace resim::core

@@ -353,7 +353,7 @@ namespace demo
                                                { "Anka-3 Traffic", PlatformType::Anka3, 90.0, 150.0 },
                                                { "Anka Traffic", PlatformType::Anka, 180.0, 50.0 },
                                                { "Aksungur Traffic", PlatformType::Aksungur, 270.0, 52.0 } };
-        stop_scenario("traffic"); // a previous run restores collision avoidance when it ends
+        stop_scenario("traffic");         // a previous run restores collision avoidance when it ends
         constexpr double arrival = 150.0; // s, all at the same time
         const fm::Vec3 centre = local(ankara::kKizilay.lat, ankara::kKizilay.lon, 2500.0);
         // (Re)starts the encounter; the same entities both times.
@@ -377,6 +377,7 @@ namespace demo
             return aircraft;
         };
         const std::vector<flecs::entity> aircraft = encounter(false);
+        // clang-format off
         every_frame(
             "traffic", aircraft, [=, avoidance = false, start = 0.0, closest = 1e9, avoided = false](double t) mutable {
                 for (std::size_t a = 0; a < aircraft.size(); ++a)
@@ -409,6 +410,7 @@ namespace demo
                 flecs::world world = sim_world();
                 fm::ecs::set_collision_avoidance(world, true); // the default
             });
+        // clang-format on
     }
 
     void lowlevel()

@@ -6,144 +6,188 @@
 
 #include "fm/math.hpp"
 
-namespace fm {
+namespace fm
+{
 
-inline constexpr double kUnknown = std::numeric_limits<double>::quiet_NaN();
+    inline constexpr double kUnknown = std::numeric_limits<double>::quiet_NaN();
 
-// Per-step environment input.
-struct Environment {
-    // Terrain (ground) elevation directly below the vehicle, same datum as position.z.
-    // NaN when unknown. Only the value at the current position is needed.
-    double terrain_elevation = kUnknown;
-    Vec3 wind{};                     // m/s, ENU, air mass velocity
-    double temperature_offset = 0.0; // ISA deviation, K
-};
+    // Per-step environment input.
+    struct Environment
+    {
+        // Terrain (ground) elevation directly below the vehicle, same datum as position.z.
+        // NaN when unknown. Only the value at the current position is needed.
+        double terrain_elevation = kUnknown;
+        Vec3 wind {};                    // m/s, ENU, air mass velocity
+        double temperature_offset = 0.0; // ISA deviation, K
+    };
 
-// `env` with unusable values replaced: non-finite wind or temperature offset by calm ISA
-// air, a non-finite terrain elevation by "unknown".
-inline Environment sanitized(Environment env) {
-    if (!std::isfinite(env.terrain_elevation)) env.terrain_elevation = kUnknown;
-    if (!is_finite(env.wind)) env.wind = {};
-    if (!std::isfinite(env.temperature_offset)) env.temperature_offset = 0.0;
-    return env;
-}
-
-enum class FlightMode {
-    Cruise,   // no target: straight and level on the held heading/altitude/speed
-    GoTo,     // fly to a point
-    Route,    // follow a waypoint route / trajectory
-    Loiter,   // orbit a point
-    Takeoff,  // takeoff run / vertical takeoff and initial climb (fixed-wing: taxi and
-              // line-up first when needed)
-    Taxi,     // fixed-wing: taxiing on the ground to a parking position
-    Land,      // rotorcraft vertical landing
-    Hover,     // rotorcraft position hold; ship: station keeping
-    Formation, // keep a slot relative to a leader entity
-};
-
-enum class FlightPhase {
-    Parked,
-    Taxi,            // fixed-wing: moving on the ground under its own power
-    LineUp,          // fixed-wing: turning onto the runway centerline before the run
-    TakeoffRoll,
-    Rotation,
-    InitialClimb,
-    Airborne,
-    Approach,        // fixed-wing: positioning and final approach to a runway
-    GoAround,        // fixed-wing: unstable approach, climbing out for another attempt
-    Flare,           // fixed-wing: last meters before touchdown
-    Landing,         // rotorcraft: vertical descent
-    Rollout,         // fixed-wing: braking on the runway after touchdown
-    Landed,
-    TerrainContact,  // touched the ground while airborne (crash / unplanned); ship: aground
-    Underway,        // ship: moving (stopped ships are Parked)
-};
-
-constexpr const char* to_string(FlightMode m) {
-    switch (m) {
-        case FlightMode::Cruise: return "Cruise";
-        case FlightMode::GoTo: return "GoTo";
-        case FlightMode::Route: return "Route";
-        case FlightMode::Loiter: return "Loiter";
-        case FlightMode::Takeoff: return "Takeoff";
-        case FlightMode::Taxi: return "Taxi";
-        case FlightMode::Land: return "Land";
-        case FlightMode::Hover: return "Hover";
-        case FlightMode::Formation: return "Formation";
+    // `env` with unusable values replaced: non-finite wind or temperature offset by calm ISA
+    // air, a non-finite terrain elevation by "unknown".
+    inline Environment sanitized(Environment env)
+    {
+        if (!std::isfinite(env.terrain_elevation))
+        {
+            env.terrain_elevation = kUnknown;
+        }
+        if (!is_finite(env.wind))
+        {
+            env.wind = {};
+        }
+        if (!std::isfinite(env.temperature_offset))
+        {
+            env.temperature_offset = 0.0;
+        }
+        return env;
     }
-    return "?";
-}
 
-constexpr const char* to_string(FlightPhase p) {
-    switch (p) {
-        case FlightPhase::Parked: return "Parked";
-        case FlightPhase::Taxi: return "Taxi";
-        case FlightPhase::LineUp: return "LineUp";
-        case FlightPhase::TakeoffRoll: return "TakeoffRoll";
-        case FlightPhase::Rotation: return "Rotation";
-        case FlightPhase::InitialClimb: return "InitialClimb";
-        case FlightPhase::Airborne: return "Airborne";
-        case FlightPhase::Approach: return "Approach";
-        case FlightPhase::GoAround: return "GoAround";
-        case FlightPhase::Flare: return "Flare";
-        case FlightPhase::Landing: return "Landing";
-        case FlightPhase::Rollout: return "Rollout";
-        case FlightPhase::Landed: return "Landed";
-        case FlightPhase::TerrainContact: return "TerrainContact";
-        case FlightPhase::Underway: return "Underway";
+    enum class FlightMode
+    {
+        Cruise,    // no target: straight and level on the held heading/altitude/speed
+        GoTo,      // fly to a point
+        Route,     // follow a waypoint route / trajectory
+        Loiter,    // orbit a point
+        Takeoff,   // takeoff run / vertical takeoff and initial climb (fixed-wing: taxi and
+                   // line-up first when needed)
+        Taxi,      // fixed-wing: taxiing on the ground to a parking position
+        Land,      // rotorcraft vertical landing
+        Hover,     // rotorcraft position hold; ship: station keeping
+        Formation, // keep a slot relative to a leader entity
+    };
+
+    enum class FlightPhase
+    {
+        Parked,
+        Taxi,   // fixed-wing: moving on the ground under its own power
+        LineUp, // fixed-wing: turning onto the runway centerline before the run
+        TakeoffRoll,
+        Rotation,
+        InitialClimb,
+        Airborne,
+        Approach, // fixed-wing: positioning and final approach to a runway
+        GoAround, // fixed-wing: unstable approach, climbing out for another attempt
+        Flare,    // fixed-wing: last meters before touchdown
+        Landing,  // rotorcraft: vertical descent
+        Rollout,  // fixed-wing: braking on the runway after touchdown
+        Landed,
+        TerrainContact, // touched the ground while airborne (crash / unplanned); ship: aground
+        Underway,       // ship: moving (stopped ships are Parked)
+    };
+
+    constexpr const char* to_string(FlightMode m)
+    {
+        switch (m)
+        {
+        case FlightMode::Cruise:
+            return "Cruise";
+        case FlightMode::GoTo:
+            return "GoTo";
+        case FlightMode::Route:
+            return "Route";
+        case FlightMode::Loiter:
+            return "Loiter";
+        case FlightMode::Takeoff:
+            return "Takeoff";
+        case FlightMode::Taxi:
+            return "Taxi";
+        case FlightMode::Land:
+            return "Land";
+        case FlightMode::Hover:
+            return "Hover";
+        case FlightMode::Formation:
+            return "Formation";
+        }
+        return "?";
     }
-    return "?";
-}
 
-// Output of the models: everything a renderer or game logic needs.
-struct FlightState {
-    Vec3 position{};               // m, ENU (z = altitude above datum)
-    Vec3 velocity{};               // m/s, ground-relative, ENU
-    Attitude attitude{};           // body orientation (heading/pitch/roll)
-    double airspeed = 0.0;         // m/s, true airspeed (ship: speed through the water)
-    double calibrated_airspeed = 0.0;   // m/s, CAS: what an airspeed indicator shows (IAS)
-    double equivalent_airspeed = 0.0;   // m/s, EAS
-    double dynamic_pressure = 0.0;      // Pa, 0.5 rho V^2
-    double ground_speed = 0.0;     // m/s, horizontal
-    double vertical_speed = 0.0;   // m/s
-    double track = 0.0;            // rad, ground track
-    double flight_path_angle = 0.0;// rad, air-relative
-    double angle_of_attack = 0.0;  // rad
-    double sideslip_angle = 0.0;   // rad, positive = relative wind from the right
-    double load_factor = 1.0;      // g, normal load factor
-    // Acceleration felt on board in g, body axes: x forward, y right, z up. Level
-    // unaccelerated flight (or standing still): {0, 0, 1}; a 60 deg banked turn: {0, 0, 2}.
-    Vec3 g_force{0.0, 0.0, 1.0};
-    Vec3 acceleration{};           // m/s^2, ground-relative, ENU
-    double turn_rate = 0.0;        // rad/s, heading change, positive = right
-    double pitch_rate = 0.0;       // rad/s, pitch angle change
-    double roll_rate = 0.0;        // rad/s, roll angle change, positive = right wing down
-    double throttle = 0.0;         // 0..1
-    double mach = 0.0;
-    double mass = 0.0;             // kg, now
-    double fuel = kUnknown;        // kg left (NaN = fuel not modelled)
-    double fuel_flow = 0.0;        // kg/s
-    double height_above_terrain = kUnknown;  // m
-    bool on_ground = false;
-    bool avoiding_traffic = false;  // climbing or descending away from a predicted conflict
-    bool speed_brake = false;
-    bool flaps = false;
-    bool gear_down = true;         // gear selected down (the lever)
-    // Gear position: 0 up and locked, 1 down and locked, in between while it travels
-    // (fixed gear: always 1).
-    double gear_position = 1.0;
-    FlightPhase phase = FlightPhase::Airborne;
-};
+    constexpr const char* to_string(FlightPhase p)
+    {
+        switch (p)
+        {
+        case FlightPhase::Parked:
+            return "Parked";
+        case FlightPhase::Taxi:
+            return "Taxi";
+        case FlightPhase::LineUp:
+            return "LineUp";
+        case FlightPhase::TakeoffRoll:
+            return "TakeoffRoll";
+        case FlightPhase::Rotation:
+            return "Rotation";
+        case FlightPhase::InitialClimb:
+            return "InitialClimb";
+        case FlightPhase::Airborne:
+            return "Airborne";
+        case FlightPhase::Approach:
+            return "Approach";
+        case FlightPhase::GoAround:
+            return "GoAround";
+        case FlightPhase::Flare:
+            return "Flare";
+        case FlightPhase::Landing:
+            return "Landing";
+        case FlightPhase::Rollout:
+            return "Rollout";
+        case FlightPhase::Landed:
+            return "Landed";
+        case FlightPhase::TerrainContact:
+            return "TerrainContact";
+        case FlightPhase::Underway:
+            return "Underway";
+        }
+        return "?";
+    }
 
-// Starting conditions in ENU meters. Airborne: position is the vehicle reference point.
-// On the ground: position.z is the ground elevation and the model raises its reference
-// point by the gear height.
-struct InitialConditions {
-    Vec3 position{};
-    double heading = 0.0;   // rad
-    double speed = 0.0;     // m/s true airspeed (0 with on_ground = parked)
-    bool on_ground = false;
-    double fuel = kUnknown; // kg on board (NaN = full tanks); models with fuel only
-};
+    // Output of the models: everything a renderer or game logic needs.
+    struct FlightState
+    {
+        Vec3 position {};                 // m, ENU (z = altitude above datum)
+        Vec3 velocity {};                 // m/s, ground-relative, ENU
+        Attitude attitude {};             // body orientation (heading/pitch/roll)
+        double airspeed = 0.0;            // m/s, true airspeed (ship: speed through the water)
+        double calibrated_airspeed = 0.0; // m/s, CAS: what an airspeed indicator shows (IAS)
+        double equivalent_airspeed = 0.0; // m/s, EAS
+        double dynamic_pressure = 0.0;    // Pa, 0.5 rho V^2
+        double ground_speed = 0.0;        // m/s, horizontal
+        double vertical_speed = 0.0;      // m/s
+        double track = 0.0;               // rad, ground track
+        double flight_path_angle = 0.0;   // rad, air-relative
+        double angle_of_attack = 0.0;     // rad
+        double sideslip_angle = 0.0;      // rad, positive = relative wind from the right
+        double load_factor = 1.0;         // g, normal load factor
+        // Acceleration felt on board in g, body axes: x forward, y right, z up. Level
+        // unaccelerated flight (or standing still): {0, 0, 1}; a 60 deg banked turn: {0, 0, 2}.
+        Vec3 g_force { 0.0, 0.0, 1.0 };
+        Vec3 acceleration {};    // m/s^2, ground-relative, ENU
+        double turn_rate = 0.0;  // rad/s, heading change, positive = right
+        double pitch_rate = 0.0; // rad/s, pitch angle change
+        double roll_rate = 0.0;  // rad/s, roll angle change, positive = right wing down
+        double throttle = 0.0;   // 0..1
+        double mach = 0.0;
+        double mass = 0.0;                      // kg, now
+        double fuel = kUnknown;                 // kg left (NaN = fuel not modelled)
+        double fuel_flow = 0.0;                 // kg/s
+        double height_above_terrain = kUnknown; // m
+        bool on_ground = false;
+        bool avoiding_traffic = false; // climbing or descending away from a predicted conflict
+        bool speed_brake = false;
+        bool flaps = false;
+        bool gear_down = true; // gear selected down (the lever)
+        // Gear position: 0 up and locked, 1 down and locked, in between while it travels
+        // (fixed gear: always 1).
+        double gear_position = 1.0;
+        FlightPhase phase = FlightPhase::Airborne;
+    };
 
-}  // namespace fm
+    // Starting conditions in ENU meters. Airborne: position is the vehicle reference point.
+    // On the ground: position.z is the ground elevation and the model raises its reference
+    // point by the gear height.
+    struct InitialConditions
+    {
+        Vec3 position {};
+        double heading = 0.0; // rad
+        double speed = 0.0;   // m/s true airspeed (0 with on_ground = parked)
+        bool on_ground = false;
+        double fuel = kUnknown; // kg on board (NaN = full tanks); models with fuel only
+    };
+
+} // namespace fm

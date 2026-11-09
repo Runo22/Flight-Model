@@ -14,205 +14,217 @@
 #include "fm/ecs/flight_module.hpp"
 #include "fm/presets.hpp"
 
-namespace game {
+namespace game
+{
 
-struct Transform {
-    double latitude_deg = 0.0;
-    double longitude_deg = 0.0;
-    double alt_m = 0.0;
-    double roll_deg = 0.0;
-    double pitch_deg = 0.0;
-    double yaw_deg = 0.0;  // true heading
-};
+    struct Transform
+    {
+        double latitude_deg = 0.0;
+        double longitude_deg = 0.0;
+        double alt_m = 0.0;
+        double roll_deg = 0.0;
+        double pitch_deg = 0.0;
+        double yaw_deg = 0.0; // true heading
+    };
 
-struct Hot {
-    double height = 0.0;  // m, terrain height under the entity
-};
+    struct Hot
+    {
+        double height = 0.0; // m, terrain height under the entity
+    };
 
-// A command the game puts on an entity: fly to a point (and orbit / hover there).
-struct FlyTo {
-    double lat = 0.0;
-    double lon = 0.0;
-    double alt = 0.0;
-    bool loiter = true;
-};
+    // A command the game puts on an entity: fly to a point (and orbit / hover there).
+    struct FlyTo
+    {
+        double lat = 0.0;
+        double lon = 0.0;
+        double alt = 0.0;
+        bool loiter = true;
+    };
 
-double query_hot(double lat, double lon) {
-    if (lat < 40.85) return 0.0;  // sea: the height of the sea surface
-    return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
-}
+    double query_hot(double lat, double lon)
+    {
+        if (lat < 40.85)
+        {
+            return 0.0; // sea: the height of the sea surface
+        }
+        return 120.0 + 60.0 * std::sin((lat - 41.0) * 40.0) * std::cos((lon - 29.0) * 30.0);
+    }
 
-}  // namespace game
+} // namespace game
 
-namespace {
+namespace
+{
 
-int failures = 0;
+    int failures = 0;
 
-void check(bool ok, const char* what) {
-    std::printf("[%s] %s\n", ok ? " OK " : "FAIL", what);
-    if (!ok) ++failures;
-}
+    void check(bool ok, const char* what)
+    {
+        std::printf("[%s] %s\n", ok ? " OK " : "FAIL", what);
+        if (!ok)
+        {
+            ++failures;
+        }
+    }
 
-flecs::world make_world() {
-    flecs::world world;
-    fm::ecs::load(world);
-    fm::ecs::set_geo_origin(world, 41.1, 29.1);
-    world.system<const game::Transform, game::Hot>("game::HotSystem")
-        .kind(flecs::PreUpdate)
-        .each([](const game::Transform& t, game::Hot& hot) {
-            hot.height = game::query_hot(t.latitude_deg, t.longitude_deg);
-        });
-    world.system<const game::Hot, fm::ecs::TerrainHeight>("TerrainIn")
-        .kind(flecs::PreUpdate)
-        .each([](const game::Hot& hot, fm::ecs::TerrainHeight& t) { t.value = hot.height; });
-    fm::ecs::bind_geo_transform<game::Transform>(world);
+    flecs::world make_world()
+    {
+        flecs::world world;
+        fm::ecs::load(world);
+        fm::ecs::set_geo_origin(world, 41.1, 29.1);
+        world.system<const game::Transform, game::Hot>("game::HotSystem")
+            .kind(flecs::PreUpdate)
+            .each([](const game::Transform& t, game::Hot& hot) {
+                hot.height = game::query_hot(t.latitude_deg, t.longitude_deg);
+            });
+        world.system<const game::Hot, fm::ecs::TerrainHeight>("TerrainIn")
+            .kind(flecs::PreUpdate)
+            .each([](const game::Hot& hot, fm::ecs::TerrainHeight& t) { t.value = hot.height; });
+        fm::ecs::bind_geo_transform<game::Transform>(world);
 
-    // --- Commands as a game component ------------------------------------------------
-    // Only entities that already have an agent match, so a command given before the agent
-    // exists waits for it.
-    world.system<const game::FlyTo, fm::ecs::FlightController>("FlyToCommand")
-        .kind(flecs::PreUpdate)
-        .each([](flecs::entity e, const game::FlyTo& c, fm::ecs::FlightController& fc) {
-            fm::GoToOptions opt;
-            opt.on_arrival =
-                c.loiter ? fm::EndBehavior::Loiter : fm::EndBehavior::ContinueStraight;
-            flecs::world w = e.world();
-            fc.agent->go_to(fm::ecs::to_local(w, {c.lat, c.lon, c.alt}), opt);
-            e.remove<game::FlyTo>();  // command done
-        });
-    return world;
-}
+        // --- Commands as a game component ------------------------------------------------
+        // Only entities that already have an agent match, so a command given before the agent
+        // exists waits for it.
+        world.system<const game::FlyTo, fm::ecs::FlightController>("FlyToCommand")
+            .kind(flecs::PreUpdate)
+            .each([](flecs::entity e, const game::FlyTo& c, fm::ecs::FlightController& fc) {
+                fm::GoToOptions opt;
+                opt.on_arrival = c.loiter ? fm::EndBehavior::Loiter : fm::EndBehavior::ContinueStraight;
+                flecs::world w = e.world();
+                fc.agent->go_to(fm::ecs::to_local(w, { c.lat, c.lon, c.alt }), opt);
+                e.remove<game::FlyTo>(); // command done
+            });
+        return world;
+    }
 
-flecs::entity spawn(flecs::world& world, const char* name, const fm::VehicleParams& params,
-                    game::Transform t, double speed, bool on_ground) {
-    if (on_ground) t.alt_m = game::query_hot(t.latitude_deg, t.longitude_deg);
-    flecs::entity e = world.entity(name)
-                          .set<game::Transform>(t)
-                          .set<game::Hot>({game::query_hot(t.latitude_deg, t.longitude_deg)})
-                          .set<fm::ecs::TerrainHeight>({game::query_hot(t.latitude_deg, t.longitude_deg)});
-    fm::ecs::attach_geo(e, params, {t.latitude_deg, t.longitude_deg, t.alt_m}, t.yaw_deg, speed, on_ground);
-    return e;
-}
+    flecs::entity spawn(flecs::world& world, const char* name, const fm::VehicleParams& params, game::Transform t, double speed, bool on_ground)
+    {
+        if (on_ground)
+        {
+            t.alt_m = game::query_hot(t.latitude_deg, t.longitude_deg);
+        }
+        flecs::entity e = world.entity(name)
+                              .set<game::Transform>(t)
+                              .set<game::Hot>({ game::query_hot(t.latitude_deg, t.longitude_deg) })
+                              .set<fm::ecs::TerrainHeight>({ game::query_hot(t.latitude_deg, t.longitude_deg) });
+        fm::ecs::attach_geo(e, params, { t.latitude_deg, t.longitude_deg, t.alt_m }, t.yaw_deg, speed, on_ground);
+        return e;
+    }
 
-// A waypoint at latitude/longitude; `alt` is read according to `ref`.
-fm::Waypoint wp(flecs::world& world, double lat, double lon, double alt,
-                fm::AltitudeRef ref = fm::AltitudeRef::Absolute) {
-    fm::Waypoint w;
-    w.position = fm::ecs::to_local(world, {lat, lon, alt});  // z = alt
-    w.altitude_ref = ref;
-    return w;
-}
+    // A waypoint at latitude/longitude; `alt` is read according to `ref`.
+    fm::Waypoint wp(flecs::world& world, double lat, double lon, double alt, fm::AltitudeRef ref = fm::AltitudeRef::Absolute)
+    {
+        fm::Waypoint w;
+        w.position = fm::ecs::to_local(world, { lat, lon, alt }); // z = alt
+        w.altitude_ref = ref;
+        return w;
+    }
 
-const game::Transform& transform(flecs::entity e) {
-    return *e.try_get<game::Transform>();
-}
+    const game::Transform& transform(flecs::entity e)
+    {
+        return *e.try_get<game::Transform>();
+    }
 
-const fm::ecs::FlightPose& pose(flecs::entity e) {
-    return *e.try_get<fm::ecs::FlightPose>();
-}
+    const fm::ecs::FlightPose& pose(flecs::entity e)
+    {
+        return *e.try_get<fm::ecs::FlightPose>();
+    }
 
-// Horizontal distance (m) from the entity to a latitude/longitude.
-double distance(flecs::world& world, flecs::entity e, double lat, double lon) {
-    const game::Transform& t = transform(e);
-    const fm::Vec3 a = fm::ecs::to_local(world, {t.latitude_deg, t.longitude_deg, 0.0});
-    const fm::Vec3 b = fm::ecs::to_local(world, {lat, lon, 0.0});
-    return (a - b).xy().length();
-}
+    // Horizontal distance (m) from the entity to a latitude/longitude.
+    double distance(flecs::world& world, flecs::entity e, double lat, double lon)
+    {
+        const game::Transform& t = transform(e);
+        const fm::Vec3 a = fm::ecs::to_local(world, { t.latitude_deg, t.longitude_deg, 0.0 });
+        const fm::Vec3 b = fm::ecs::to_local(world, { lat, lon, 0.0 });
+        return (a - b).xy().length();
+    }
 
-double height_above_terrain(flecs::entity e) {
-    const game::Transform& t = transform(e);
-    return t.alt_m - game::query_hot(t.latitude_deg, t.longitude_deg);
-}
+    double height_above_terrain(flecs::entity e)
+    {
+        const game::Transform& t = transform(e);
+        return t.alt_m - game::query_hot(t.latitude_deg, t.longitude_deg);
+    }
 
-void run(flecs::world& world, double seconds) {
-    for (int i = 0; i < static_cast<int>(seconds * 60.0); ++i) world.progress(1.0f / 60.0f);
-}
+    void run(flecs::world& world, double seconds)
+    {
+        for (int i = 0; i < static_cast<int>(seconds * 60.0); ++i)
+        {
+            world.progress(1.0f / 60.0f);
+        }
+    }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     flecs::world world = make_world();
 
     // 1) Go to a point, then orbit it.
-    flecs::entity turboprop = spawn(world, "Turboprop", fm::presets::regional_turboprop(),
-                                    {41.00, 29.00, 1500.0, 0, 0, 0}, 0.0, false);
+    flecs::entity turboprop = spawn(world, "Turboprop", fm::presets::regional_turboprop(), { 41.00, 29.00, 1500.0, 0, 0, 0 }, 0.0, false);
     {
         fm::GoToOptions opt;
-        opt.speed = 120.0;                         // m/s; leave it out to keep the current speed
-        opt.on_arrival = fm::EndBehavior::Loiter;  // aircraft orbit, drones hover over it
-        fm::ecs::agent(turboprop)->go_to(fm::ecs::to_local(world, {41.20, 29.20, 2500.0}), opt);
+        opt.speed = 120.0;                        // m/s; leave it out to keep the current speed
+        opt.on_arrival = fm::EndBehavior::Loiter; // aircraft orbit, drones hover over it
+        fm::ecs::agent(turboprop)->go_to(fm::ecs::to_local(world, { 41.20, 29.20, 2500.0 }), opt);
     }
 
     // 2) Loiter: a drone hovering 60 m above the terrain over a point (radius 0) and one
     //    orbiting another point with a 40 m radius.
-    flecs::entity hover_drone = spawn(world, "HoverDrone", fm::presets::multirotor(),
-                                      {41.05, 29.05, 0.0, 0, 0, 0}, 0.0, true);
+    flecs::entity hover_drone = spawn(world, "HoverDrone", fm::presets::multirotor(), { 41.05, 29.05, 0.0, 0, 0, 0 }, 0.0, true);
     fm::ecs::agent(hover_drone)
-        ->loiter(fm::ecs::to_local(world, {41.0505, 29.0505, 60.0}), 0.0, true,
-                 fm::AltitudeRef::AboveTerrain);
-    flecs::entity orbit_drone = spawn(world, "OrbitDrone", fm::presets::multirotor(),
-                                      {41.06, 29.06, 300.0, 0, 0, 0}, 0.0, false);
-    fm::ecs::agent(orbit_drone)->loiter(fm::ecs::to_local(world, {41.0605, 29.0605, 300.0}), 40.0);
+        ->loiter(fm::ecs::to_local(world, { 41.0505, 29.0505, 60.0 }), 0.0, true, fm::AltitudeRef::AboveTerrain);
+    flecs::entity orbit_drone = spawn(world, "OrbitDrone", fm::presets::multirotor(), { 41.06, 29.06, 300.0, 0, 0, 0 }, 0.0, false);
+    fm::ecs::agent(orbit_drone)->loiter(fm::ecs::to_local(world, { 41.0605, 29.0605, 300.0 }), 40.0);
 
     // 3) Route: fly-over waypoint with its own speed, a terrain-following last waypoint,
     //    orbit at the end.
-    flecs::entity jet = spawn(world, "Jet", fm::presets::fast_jet(),
-                              {41.10, 28.80, 3000.0, 0, 0, 90.0}, 220.0, false);
+    flecs::entity jet = spawn(world, "Jet", fm::presets::fast_jet(), { 41.10, 28.80, 3000.0, 0, 0, 90.0 }, 220.0, false);
     {
         fm::Route r;
-        r.waypoints = {wp(world, 41.10, 29.10, 3000.0), wp(world, 41.30, 29.30, 2000.0),
-                       wp(world, 41.30, 29.60, 500.0, fm::AltitudeRef::AboveTerrain)};
-        r.waypoints[1].fly_over = true;  // pass right over it instead of cutting the corner
-        r.waypoints[1].speed = 180.0;    // m/s from this waypoint on
+        r.waypoints = { wp(world, 41.10, 29.10, 3000.0), wp(world, 41.30, 29.30, 2000.0), wp(world, 41.30, 29.60, 500.0, fm::AltitudeRef::AboveTerrain) };
+        r.waypoints[1].fly_over = true; // pass right over it instead of cutting the corner
+        r.waypoints[1].speed = 180.0;   // m/s from this waypoint on
         r.on_end = fm::EndBehavior::Loiter;
-        r.loiter_radius = 4000.0;        // 0 = from turn performance
+        r.loiter_radius = 4000.0; // 0 = from turn performance
         fm::ecs::agent(jet)->follow_route(r);
     }
 
     // 4) Patrol loop.
-    flecs::entity uav = spawn(world, "PatrolUAV", fm::presets::propeller_uav(),
-                              {41.00, 29.20, 600.0, 0, 0, 0}, 0.0, false);
+    flecs::entity uav = spawn(world, "PatrolUAV", fm::presets::propeller_uav(), { 41.00, 29.20, 600.0, 0, 0, 0 }, 0.0, false);
     {
         fm::Route r;
-        r.waypoints = {wp(world, 41.02, 29.20, 600.0), wp(world, 41.02, 29.24, 600.0),
-                       wp(world, 41.00, 29.24, 600.0)};
-        r.loop = true;  // after the last waypoint, back to the first
+        r.waypoints = { wp(world, 41.02, 29.20, 600.0), wp(world, 41.02, 29.24, 600.0), wp(world, 41.00, 29.24, 600.0) };
+        r.loop = true; // after the last waypoint, back to the first
         fm::ecs::agent(uav)->follow_route(r);
     }
 
     // 5) Drone survey: hover 10 s at the first waypoint, land at the last one. The parked
     //    drone takes off first.
-    flecs::entity survey = spawn(world, "SurveyDrone", fm::presets::multirotor(),
-                                 {41.07, 29.07, 0.0, 0, 0, 0}, 0.0, true);
+    flecs::entity survey = spawn(world, "SurveyDrone", fm::presets::multirotor(), { 41.07, 29.07, 0.0, 0, 0, 0 }, 0.0, true);
     {
         fm::Route r;
-        r.waypoints = {wp(world, 41.0710, 29.0700, 40.0, fm::AltitudeRef::AboveTerrain),
-                       wp(world, 41.0710, 29.0715, 40.0, fm::AltitudeRef::AboveTerrain)};
-        r.waypoints[0].hold_time = 10.0;   // hover 10 s here
-        r.on_end = fm::EndBehavior::Land;  // land at the last waypoint
+        r.waypoints = { wp(world, 41.0710, 29.0700, 40.0, fm::AltitudeRef::AboveTerrain),
+                        wp(world, 41.0710, 29.0715, 40.0, fm::AltitudeRef::AboveTerrain) };
+        r.waypoints[0].hold_time = 10.0;  // hover 10 s here
+        r.on_end = fm::EndBehavior::Land; // land at the last waypoint
         fm::ecs::agent(survey)->follow_route(r);
     }
 
     // 6) A parked aircraft given a go_to takes off first.
-    flecs::entity light = spawn(world, "Light", fm::presets::light_propeller(),
-                                {41.02, 28.95, 0.0, 0, 0, 90.0}, 0.0, true);
-    fm::ecs::agent(light)->go_to(fm::ecs::to_local(world, {41.06, 29.00, 800.0}),
-                                 {.on_arrival = fm::EndBehavior::Loiter});
+    flecs::entity light = spawn(world, "Light", fm::presets::light_propeller(), { 41.02, 28.95, 0.0, 0, 0, 90.0 }, 0.0, true);
+    fm::ecs::agent(light)->go_to(fm::ecs::to_local(world, { 41.06, 29.00, 800.0 }), { .on_arrival = fm::EndBehavior::Loiter });
 
     // 7) Takeoff from a runway, a route, then landing back on the same runway.
-    const fm::GeoPoint threshold{40.95, 29.30, game::query_hot(40.95, 29.30)};
-    const double runway_heading = fm::ecs::local_heading(world, 90.0, threshold);  // true 090
-    flecs::entity shuttle = spawn(world, "Shuttle", fm::presets::light_propeller(),
-                                  {threshold.latitude, threshold.longitude, 0.0, 0, 0, 90.0},
-                                  0.0, true);
+    const fm::GeoPoint threshold { 40.95, 29.30, game::query_hot(40.95, 29.30) };
+    const double runway_heading = fm::ecs::local_heading(world, 90.0, threshold); // true 090
+    flecs::entity shuttle = spawn(world, "Shuttle", fm::presets::light_propeller(), { threshold.latitude, threshold.longitude, 0.0, 0, 0, 90.0 }, 0.0, true);
     {
         fm::Route r;
-        r.waypoints = {wp(world, 40.95, 29.36, 600.0), wp(world, 40.99, 29.36, 600.0)};
+        r.waypoints = { wp(world, 40.95, 29.36, 600.0), wp(world, 40.99, 29.36, 600.0) };
         r.on_end = fm::EndBehavior::Land;
-        r.runway = fm::Runway{fm::ecs::to_local(world, threshold), runway_heading};
+        r.runway = fm::Runway { fm::ecs::to_local(world, threshold), runway_heading };
         fm::TakeoffPlan plan;
-        plan.runway = fm::Runway{fm::ecs::to_local(world, threshold), runway_heading};
-        plan.climb_height = 300.0;  // m above the runway where the takeoff ends
+        plan.runway = fm::Runway { fm::ecs::to_local(world, threshold), runway_heading };
+        plan.climb_height = 300.0; // m above the runway where the takeoff ends
         plan.then = r;
         fm::ecs::agent(shuttle)->takeoff(plan);
     }
@@ -221,40 +233,37 @@ int main() {
     const auto airfield = [&](double along, double right) {
         const fm::Vec2 dir = fm::heading_vector(runway_heading);
         const fm::Vec2 p = runway_start.xy() + dir * along + fm::right_of(dir) * right;
-        return fm::Vec3{p.x, p.y, 0.0};  // z is ignored on the ground
+        return fm::Vec3 { p.x, p.y, 0.0 }; // z is ignored on the ground
     };
 
     // 8) Straight and level on a true course, altitude and speed.
-    flecs::entity cruiser = spawn(world, "Cruiser", fm::presets::airliner_jet(),
-                                  {40.90, 28.90, 6000.0, 0, 0, 0}, 220.0, false);
+    flecs::entity cruiser = spawn(world, "Cruiser", fm::presets::airliner_jet(), { 40.90, 28.90, 6000.0, 0, 0, 0 }, 220.0, false);
     {
         const game::Transform& t = transform(cruiser);
-        const double course = fm::ecs::local_heading(world, 45.0, {t.latitude_deg, t.longitude_deg, t.alt_m});
-        fm::ecs::agent(cruiser)->hold(course, 7000.0, 230.0);  // true course 045, 7000 m, 230 m/s
+        const double course = fm::ecs::local_heading(world, 45.0, { t.latitude_deg, t.longitude_deg, t.alt_m });
+        fm::ecs::agent(cruiser)->hold(course, 7000.0, 230.0); // true course 045, 7000 m, 230 m/s
     }
 
     // 9) A command given as a game component before the agent exists.
     flecs::entity late = world.entity("LateDrone")
-                             .set<game::Transform>({41.09, 29.09, 200.0, 0, 0, 0})
-                             .set<game::FlyTo>({41.0910, 29.0910, 200.0, true});
-    run(world, 0.5);  // the command waits: no agent yet
-    fm::ecs::attach_geo(late, fm::presets::multirotor(), {41.09, 29.09, 200.0}, 0.0, 0.0, false);
+                             .set<game::Transform>({ 41.09, 29.09, 200.0, 0, 0, 0 })
+                             .set<game::FlyTo>({ 41.0910, 29.0910, 200.0, true });
+    run(world, 0.5); // the command waits: no agent yet
+    fm::ecs::attach_geo(late, fm::presets::multirotor(), { 41.09, 29.09, 200.0 }, 0.0, 0.0, false);
 
     // 10) A ship: sail a route, stop at the last waypoint and keep station there. It stays on
     //     the sea surface (the altitude of the waypoints is ignored).
-    flecs::entity carrier = spawn(world, "Carrier", fm::presets::carrier_ship(),
-                                  {40.80, 29.00, 0.0, 0, 0, 90.0}, 8.0, false);
+    flecs::entity carrier = spawn(world, "Carrier", fm::presets::carrier_ship(), { 40.80, 29.00, 0.0, 0, 0, 90.0 }, 8.0, false);
     {
         fm::Route r;
-        r.waypoints = {wp(world, 40.80, 29.03, 0.0), wp(world, 40.785, 29.03, 0.0)};
-        r.on_end = fm::EndBehavior::Land;  // ships: stop and keep station there
+        r.waypoints = { wp(world, 40.80, 29.03, 0.0), wp(world, 40.785, 29.03, 0.0) };
+        r.on_end = fm::EndBehavior::Land; // ships: stop and keep station there
         fm::ecs::agent(carrier)->follow_route(r);
     }
 
     // 11) A helicopter lands on the carrier's flight deck and rides on it. takeoff() lifts it
     //     off the moving deck again.
-    flecs::entity seahawk = spawn(world, "DeckHeli", fm::presets::attack_helicopter(),
-                                  {40.78, 28.98, 300.0, 0, 0, 0}, 0.0, false);
+    flecs::entity seahawk = spawn(world, "DeckHeli", fm::presets::attack_helicopter(), { 40.78, 28.98, 300.0, 0, 0, 0 }, 0.0, false);
     const fm::DeckSpot spot = fm::ecs::agent(carrier)->ship()->params().deck_spots[1];
     fm::ecs::land_on(seahawk, carrier, spot);
 
@@ -262,12 +271,11 @@ int main() {
     //     the shuttle has left and takes off. Then it comes back for an overhead break, rolls
     //     to a set stop point and taxis back into its hangar (see the loop).
     const fm::GeoPoint hangar = fm::ecs::geo(world)->to_geo(airfield(-80.0, 150.0));
-    flecs::entity viper = spawn(world, "Viper", fm::presets::single_engine_fighter(),
-                                {hangar.latitude, hangar.longitude, 0.0, 0, 0, 0.0}, 0.0, true);
+    flecs::entity viper = spawn(world, "Viper", fm::presets::single_engine_fighter(), { hangar.latitude, hangar.longitude, 0.0, 0, 0, 0.0 }, 0.0, true);
     {
         fm::TakeoffPlan plan;
-        plan.taxi = {airfield(-80.0, 60.0), airfield(0.0, 60.0)};  // out, along the taxiway
-        plan.runway = fm::Runway{runway_start, runway_heading};     // then lined up from here
+        plan.taxi = { airfield(-80.0, 60.0), airfield(0.0, 60.0) }; // out, along the taxiway
+        plan.runway = fm::Runway { runway_start, runway_heading };  // then lined up from here
         plan.climb_height = 600.0;
         fm::ecs::agent(viper)->takeoff(plan);
     }
@@ -275,45 +283,44 @@ int main() {
     // 13) A flight of four fighters at the air base: out of the shelters along the taxiway,
     //     staggered on the runway, takeoffs 10 s apart, the wingmen rejoin their leader.
     //     Later the flight comes back for an overhead break and lands one after another.
-    const fm::GeoPoint base{40.90, 29.50, game::query_hot(40.90, 29.50)};
-    const double base_heading = fm::ecs::local_heading(world, 270.0, base);  // true 270
+    const fm::GeoPoint base { 40.90, 29.50, game::query_hot(40.90, 29.50) };
+    const double base_heading = fm::ecs::local_heading(world, 270.0, base); // true 270
     const fm::Vec3 base_start = fm::ecs::to_local(world, base);
     const auto air_base = [&](double along, double right) {
         const fm::Vec2 dir = fm::heading_vector(base_heading);
         const fm::Vec2 p = base_start.xy() + dir * along + fm::right_of(dir) * right;
-        return fm::Vec3{p.x, p.y, 0.0};
+        return fm::Vec3 { p.x, p.y, 0.0 };
     };
     std::vector<flecs::entity> vipers;
-    for (int k = 0; k < 4; ++k) {  // shelters south of the runway, noses north
+    for (int k = 0; k < 4; ++k)
+    { // shelters south of the runway, noses north
         const fm::GeoPoint shelter = fm::ecs::geo(world)->to_geo(air_base(100.0 + 60.0 * k, -250.0));
         const std::string name = "Viper" + std::to_string(k + 1);
-        vipers.push_back(spawn(world, name.c_str(), fm::presets::single_engine_fighter(),
-                               {shelter.latitude, shelter.longitude, 0.0, 0, 0, 0.0}, 0.0, true));
+        vipers.push_back(spawn(world, name.c_str(), fm::presets::single_engine_fighter(), { shelter.latitude, shelter.longitude, 0.0, 0, 0, 0.0 }, 0.0, true));
     }
-    const fm::Runway base_runway{base_start, base_heading};
+    const fm::Runway base_runway { base_start, base_heading };
     {
         fm::TakeoffPlan plan;
         plan.runway = base_runway;
-        plan.taxi = {air_base(100.0, -180.0), air_base(-20.0, -180.0), air_base(-20.0, -70.0)};
+        plan.taxi = { air_base(100.0, -180.0), air_base(-20.0, -180.0), air_base(-20.0, -70.0) };
         plan.climb_height = 600.0;
-        fm::Route r;  // the leader orbits east of the base, the wingmen join it
-        r.waypoints = {wp(world, 40.93, 29.64, 2000.0)};
+        fm::Route r; // the leader orbits east of the base, the wingmen join it
+        r.waypoints = { wp(world, 40.93, 29.64, 2000.0) };
         r.on_end = fm::EndBehavior::Loiter;
         plan.then = r;
         fm::ecs::FlightTakeoff options;
         options.interval = 10.0;
-        fm::ecs::takeoff_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, plan, options);
+        fm::ecs::takeoff_flight(vipers[0], { vipers[1], vipers[2], vipers[3] }, plan, options);
     }
 
     // 14) A UAV parked on a field strip takes off towards a given heading: no runway, it
     //     turns to true 045 at taxi speed, lines up and starts the run.
-    flecs::entity strip_uav = spawn(world, "StripUAV", fm::presets::propeller_uav(),
-                                    {41.00, 29.20, 0.0, 0, 0, 0.0}, 0.0, true);
+    flecs::entity strip_uav = spawn(world, "StripUAV", fm::presets::propeller_uav(), { 41.00, 29.20, 0.0, 0, 0, 0.0 }, 0.0, true);
     {
         fm::TakeoffPlan plan;
-        plan.heading = fm::ecs::local_heading(world, 45.0, {41.00, 29.20, 0.0});  // true 045
+        plan.heading = fm::ecs::local_heading(world, 45.0, { 41.00, 29.20, 0.0 }); // true 045
         fm::Route r;
-        r.waypoints = {wp(world, 41.05, 29.27, 1200.0)};
+        r.waypoints = { wp(world, 41.05, 29.27, 1200.0) };
         r.on_end = fm::EndBehavior::Loiter;
         plan.then = r;
         fm::ecs::agent(strip_uav)->takeoff(plan);
@@ -321,14 +328,13 @@ int main() {
 
     // 15) A trainer lines up on a runway and waits until the game clears it for takeoff
     //     (release_takeoff() at t = 120 s, see the loop).
-    const fm::GeoPoint strip{41.12, 28.80, game::query_hot(41.12, 28.80)};
-    flecs::entity trainer = spawn(world, "Trainer", fm::presets::turboprop_trainer(),
-                                  {strip.latitude, strip.longitude, 0.0, 0, 0, 180.0}, 0.0, true);
+    const fm::GeoPoint strip { 41.12, 28.80, game::query_hot(41.12, 28.80) };
+    flecs::entity trainer = spawn(world, "Trainer", fm::presets::turboprop_trainer(), { strip.latitude, strip.longitude, 0.0, 0, 0, 180.0 }, 0.0, true);
     {
         fm::TakeoffPlan plan;
-        plan.runway = fm::Runway{fm::ecs::to_local(world, strip),
-                                 fm::ecs::local_heading(world, 180.0, strip)};  // true 180
-        plan.hold = true;  // line up and wait
+        plan.runway = fm::Runway { fm::ecs::to_local(world, strip),
+                                   fm::ecs::local_heading(world, 180.0, strip) }; // true 180
+        plan.hold = true;                                                         // line up and wait
         fm::ecs::agent(trainer)->takeoff(plan);
     }
 
@@ -339,170 +345,155 @@ int main() {
     bool shuttle_taxi = false;
     bool viper_lined_up = false;
     bool viper_flew = false;
-    bool viper_overhead = false;  // overhead landing commanded
-    bool viper_broke = false;     // seen in the break
+    bool viper_overhead = false; // overhead landing commanded
+    bool viper_broke = false;    // seen in the break
     bool viper_taxi_in = false;
     bool flight_joined = false;
     bool flight_landed = false;
-    std::vector<flecs::entity> taxi_order;  // back to the shelters in this order
-    int flight_taxi_in = 0;                 // vipers sent back to their shelters
-    int next_taxi_in = 0;                   // s, when the next one may go
+    std::vector<flecs::entity> taxi_order; // back to the shelters in this order
+    int flight_taxi_in = 0;                // vipers sent back to their shelters
+    int next_taxi_in = 0;                  // s, when the next one may go
     std::vector<double> flight_touchdown(4, -1.0);
     bool strip_lined_up = false;
-    double strip_liftoff_yaw = -1.0;  // true heading when 20 m above the strip
+    double strip_liftoff_yaw = -1.0; // true heading when 20 m above the strip
     bool trainer_waited = false;
     bool trainer_flew = false;
     double cruiser_yaw_settled = 0.0;
-    for (int second = 0; second < 1100; ++second) {
+    for (int second = 0; second < 1100; ++second)
+    {
         run(world, 1.0);
-        if (second == 400) cruiser_yaw_settled = transform(cruiser).yaw_deg;
+        if (second == 400)
+        {
+            cruiser_yaw_settled = transform(cruiser).yaw_deg;
+        }
         const std::size_t index = fm::ecs::agent(uav)->fixed_wing()->route().index();
-        if (index == 0 && last_index != 0) ++patrol_laps;
+        if (index == 0 && last_index != 0)
+        {
+            ++patrol_laps;
+        }
         last_index = index;
         shuttle_flew = shuttle_flew || height_above_terrain(shuttle) > 250.0;
         // 7) After the landing roll the shuttle taxis to its parking spot, nose south.
-        if (shuttle_flew && !shuttle_taxi && pose(shuttle).phase == fm::FlightPhase::Landed) {
-            const std::vector<fm::Vec3> to_apron{airfield(150.0, 60.0), airfield(150.0, 100.0)};
+        if (shuttle_flew && !shuttle_taxi && pose(shuttle).phase == fm::FlightPhase::Landed)
+        {
+            const std::vector<fm::Vec3> to_apron { airfield(150.0, 60.0), airfield(150.0, 100.0) };
             shuttle_taxi = fm::ecs::agent(shuttle)->taxi(to_apron, runway_heading + fm::kPi / 2.0);
         }
         viper_lined_up = viper_lined_up || pose(viper).phase == fm::FlightPhase::LineUp;
         // 13) Once joined up, the flight comes back for an overhead break.
-        if (second == 420) {
+        if (second == 420)
+        {
             flight_joined = std::all_of(vipers.begin() + 1, vipers.end(), [](flecs::entity v) {
                 return pose(v).mode == fm::FlightMode::Formation;
             });
             fm::ecs::FlightLanding landing;
-            landing.interval = 12.0;  // s between touchdowns
-            fm::ecs::land_flight(vipers[0], {vipers[1], vipers[2], vipers[3]}, base_runway, landing);
+            landing.interval = 12.0; // s between touchdowns
+            fm::ecs::land_flight(vipers[0], { vipers[1], vipers[2], vipers[3] }, base_runway, landing);
         }
-        for (int k = 0; k < 4; ++k) {
+        for (int k = 0; k < 4; ++k)
+        {
             if (second > 420 && flight_touchdown[k] < 0.0 && pose(vipers[k]).on_ground)
+            {
                 flight_touchdown[k] = second;
+            }
         }
         viper_flew = viper_flew || height_above_terrain(viper) > 300.0;
         // 12) Takeoff done: overhead landing, the roll ends 1200 m down the runway, then the
         //     viper taxis back into its hangar, nose first.
-        if (viper_flew && !viper_overhead && pose(viper).mode == fm::FlightMode::Cruise) {
+        if (viper_flew && !viper_overhead && pose(viper).mode == fm::FlightMode::Cruise)
+        {
             fm::LandingOptions options;
             options.pattern = fm::LandingPattern::Overhead;
-            options.break_distance = 300.0;  // m past the threshold
-            options.stop_distance = 1200.0;  // m past the threshold
-            viper_overhead = fm::ecs::agent(viper)->land(fm::Runway{runway_start, runway_heading},
-                                                          options);
+            options.break_distance = 300.0; // m past the threshold
+            options.stop_distance = 1200.0; // m past the threshold
+            viper_overhead = fm::ecs::agent(viper)->land(fm::Runway { runway_start, runway_heading }, options);
         }
-        viper_broke = viper_broke || (pose(viper).mode == fm::FlightMode::Land &&
-                                      fm::ecs::agent(viper)->fixed_wing()->landing_stage() ==
-                                          fm::FixedWingAgent::LandingStage::Break);
-        if (viper_overhead && !viper_taxi_in && pose(viper).phase == fm::FlightPhase::Landed) {
-            const std::vector<fm::Vec3> to_hangar{airfield(1250.0, 60.0), airfield(-80.0, 60.0),
-                                                  airfield(-80.0, 150.0)};
+        viper_broke = viper_broke || (pose(viper).mode == fm::FlightMode::Land && fm::ecs::agent(viper)->fixed_wing()->landing_stage() == fm::FixedWingAgent::LandingStage::Break);
+        if (viper_overhead && !viper_taxi_in && pose(viper).phase == fm::FlightPhase::Landed)
+        {
+            const std::vector<fm::Vec3> to_hangar { airfield(1250.0, 60.0), airfield(-80.0, 60.0), airfield(-80.0, 150.0) };
             viper_taxi_in = fm::ecs::agent(viper)->taxi(to_hangar, runway_heading + fm::kPi / 2.0);
         }
         // 13) Landed: back to the shelters, the last one down (nearest to them) first.
-        if (!flight_landed && second > 420 && !fm::ecs::flight_sequence_active(vipers[0]) &&
-            std::all_of(vipers.begin(), vipers.end(), [](flecs::entity v) {
+        if (!flight_landed && second > 420 && !fm::ecs::flight_sequence_active(vipers[0]) && std::all_of(vipers.begin(), vipers.end(), [](flecs::entity v) {
                 return pose(v).phase == fm::FlightPhase::Landed;
-            })) {
+            }))
+        {
             flight_landed = true;
-            taxi_order = vipers;  // by the stop position, the one closest to the shelters first
+            taxi_order = vipers; // by the stop position, the one closest to the shelters first
             std::sort(taxi_order.begin(), taxi_order.end(), [&](flecs::entity a, flecs::entity b) {
-                return distance(world, a, base.latitude, base.longitude) <
-                       distance(world, b, base.latitude, base.longitude);
+                return distance(world, a, base.latitude, base.longitude) < distance(world, b, base.latitude, base.longitude);
             });
         }
-        if (flight_landed && flight_taxi_in < 4 && second >= next_taxi_in) {
+        if (flight_landed && flight_taxi_in < 4 && second >= next_taxi_in)
+        {
             const flecs::entity v = taxi_order[static_cast<std::size_t>(flight_taxi_in)];
             const auto k = std::find(vipers.begin(), vipers.end(), v) - vipers.begin();
-            const fm::Vec3 here = fm::ecs::to_local(world, {transform(v).latitude_deg, transform(v).longitude_deg, 0.0});
+            const fm::Vec3 here = fm::ecs::to_local(world, { transform(v).latitude_deg, transform(v).longitude_deg, 0.0 });
             const double along = dot(here.xy() - base_start.xy(), fm::heading_vector(base_heading));
-            const std::vector<fm::Vec3> to_shelter{air_base(along - 50.0, -180.0),
-                                                   air_base(100.0 + 60.0 * static_cast<double>(k), -180.0),
-                                                   air_base(100.0 + 60.0 * static_cast<double>(k), -250.0)};
-            fm::ecs::agent(v)->taxi(to_shelter, base_heading - fm::kPi / 2.0);  // nose south
+            const std::vector<fm::Vec3> to_shelter { air_base(along - 50.0, -180.0),
+                                                     air_base(100.0 + 60.0 * static_cast<double>(k), -180.0),
+                                                     air_base(100.0 + 60.0 * static_cast<double>(k), -250.0) };
+            fm::ecs::agent(v)->taxi(to_shelter, base_heading - fm::kPi / 2.0); // nose south
             ++flight_taxi_in;
-            next_taxi_in = second + 15;  // the next one 15 s later
+            next_taxi_in = second + 15; // the next one 15 s later
         }
         // 14) Field strip takeoff on a heading.
         strip_lined_up = strip_lined_up || pose(strip_uav).phase == fm::FlightPhase::LineUp;
         if (strip_liftoff_yaw < 0.0 && height_above_terrain(strip_uav) > 20.0)
+        {
             strip_liftoff_yaw = transform(strip_uav).yaw_deg;
+        }
         // 15) The game clears the trainer for takeoff.
         if (second == 119)
+        {
             trainer_waited = pose(trainer).on_ground && pose(trainer).phase == fm::FlightPhase::LineUp;
-        if (second == 120) fm::ecs::agent(trainer)->release_takeoff();
+        }
+        if (second == 120)
+        {
+            fm::ecs::agent(trainer)->release_takeoff();
+        }
         trainer_flew = trainer_flew || height_above_terrain(trainer) > 200.0;
-        if (second % 150 == 0) {
-            std::printf("t=%3d s  Turboprop %-7s | Jet %-6s wp %zu | Shuttle %-7s %-12s\n",
-                        second, fm::to_string(pose(turboprop).mode), fm::to_string(pose(jet).mode),
-                        fm::ecs::agent(jet)->fixed_wing()->route().index(),
-                        fm::to_string(pose(shuttle).mode), fm::to_string(pose(shuttle).phase));
+        if (second % 150 == 0)
+        {
+            std::printf("t=%3d s  Turboprop %-7s | Jet %-6s wp %zu | Shuttle %-7s %-12s\n", second, fm::to_string(pose(turboprop).mode), fm::to_string(pose(jet).mode), fm::ecs::agent(jet)->fixed_wing()->route().index(), fm::to_string(pose(shuttle).mode), fm::to_string(pose(shuttle).phase));
         }
     }
 
     std::printf("\n");
-    check(pose(turboprop).mode == fm::FlightMode::Loiter &&
-              distance(world, turboprop, 41.20, 29.20) < 6000.0 &&
-              std::abs(transform(turboprop).alt_m - 2500.0) < 20.0,
-          "1  go_to, then orbit the point");
-    check(distance(world, hover_drone, 41.0505, 29.0505) < 1.0 &&
-              std::abs(height_above_terrain(hover_drone) - 60.0) < 1.0,
-          "2a drone hovers 60 m above the terrain over the point");
-    check(pose(orbit_drone).mode == fm::FlightMode::Loiter &&
-              std::abs(distance(world, orbit_drone, 41.0605, 29.0605) - 40.0) < 6.0,
-          "2b drone orbits the point");
-    check(pose(jet).mode == fm::FlightMode::Loiter &&
-              std::abs(distance(world, jet, 41.30, 29.60) - 4000.0) < 300.0 &&
-              std::abs(height_above_terrain(jet) - 500.0) < 30.0,
-          "3  route flown, orbiting the last waypoint 500 m above the terrain");
+    check(pose(turboprop).mode == fm::FlightMode::Loiter && distance(world, turboprop, 41.20, 29.20) < 6000.0 && std::abs(transform(turboprop).alt_m - 2500.0) < 20.0, "1  go_to, then orbit the point");
+    check(distance(world, hover_drone, 41.0505, 29.0505) < 1.0 && std::abs(height_above_terrain(hover_drone) - 60.0) < 1.0, "2a drone hovers 60 m above the terrain over the point");
+    check(pose(orbit_drone).mode == fm::FlightMode::Loiter && std::abs(distance(world, orbit_drone, 41.0605, 29.0605) - 40.0) < 6.0, "2b drone orbits the point");
+    check(pose(jet).mode == fm::FlightMode::Loiter && std::abs(distance(world, jet, 41.30, 29.60) - 4000.0) < 300.0 && std::abs(height_above_terrain(jet) - 500.0) < 30.0, "3  route flown, orbiting the last waypoint 500 m above the terrain");
     check(patrol_laps >= 3, "4  patrol loop keeps going round");
-    check(pose(survey).on_ground && distance(world, survey, 41.0710, 29.0715) < 1.0,
-          "5  survey drone landed at the last waypoint");
-    check(pose(light).mode == fm::FlightMode::Loiter && !pose(light).on_ground,
-          "6  parked aircraft took off and orbits the point");
+    check(pose(survey).on_ground && distance(world, survey, 41.0710, 29.0715) < 1.0, "5  survey drone landed at the last waypoint");
+    check(pose(light).mode == fm::FlightMode::Loiter && !pose(light).on_ground, "6  parked aircraft took off and orbits the point");
     const fm::GeoPoint apron = fm::ecs::geo(world)->to_geo(airfield(150.0, 100.0));
-    check(shuttle_flew && shuttle_taxi && pose(shuttle).phase == fm::FlightPhase::Parked &&
-              distance(world, shuttle, apron.latitude, apron.longitude) < 3.0,
-          "7  takeoff, route, landing back on the runway and taxi to the apron");
+    check(shuttle_flew && shuttle_taxi && pose(shuttle).phase == fm::FlightPhase::Parked && distance(world, shuttle, apron.latitude, apron.longitude) < 3.0, "7  takeoff, route, landing back on the runway and taxi to the apron");
     // hold() intercepts the line through the point where it was given, then flies it
     // straight: 200 km later the true course has turned by ~1 deg (like a great circle).
-    check(std::abs(transform(cruiser).alt_m - 7000.0) < 20.0 &&
-              std::abs(std::remainder(cruiser_yaw_settled - 45.0, 360.0)) < 0.6 &&
-              std::abs(std::remainder(transform(cruiser).yaw_deg - 45.0, 360.0)) < 2.0,
-          "8  holds true course 045 at 7000 m");
-    check(!late.has<game::FlyTo>() && distance(world, late, 41.0910, 29.0910) < 1.0,
-          "9  command component waited for the agent and was carried out");
-    check(pose(carrier).mode == fm::FlightMode::Hover &&
-              pose(carrier).phase == fm::FlightPhase::Parked &&
-              distance(world, carrier, 40.785, 29.03) < 30.0 && transform(carrier).alt_m == 0.0,
-          "10 ship sailed the route and stopped at the last waypoint");
-    check(pose(seahawk).phase == fm::FlightPhase::Landed &&
-              fm::ecs::agent(seahawk)->rotorcraft()->on_deck() &&
-              std::abs(transform(seahawk).alt_m - spot.offset.z -
-                       fm::presets::attack_helicopter().gear_height) < 0.1,
-          "11 helicopter landed on the carrier's deck");
+    check(std::abs(transform(cruiser).alt_m - 7000.0) < 20.0 && std::abs(std::remainder(cruiser_yaw_settled - 45.0, 360.0)) < 0.6 && std::abs(std::remainder(transform(cruiser).yaw_deg - 45.0, 360.0)) < 2.0, "8  holds true course 045 at 7000 m");
+    check(!late.has<game::FlyTo>() && distance(world, late, 41.0910, 29.0910) < 1.0, "9  command component waited for the agent and was carried out");
+    check(pose(carrier).mode == fm::FlightMode::Hover && pose(carrier).phase == fm::FlightPhase::Parked && distance(world, carrier, 40.785, 29.03) < 30.0 && transform(carrier).alt_m == 0.0, "10 ship sailed the route and stopped at the last waypoint");
+    check(pose(seahawk).phase == fm::FlightPhase::Landed && fm::ecs::agent(seahawk)->rotorcraft()->on_deck() && std::abs(transform(seahawk).alt_m - spot.offset.z - fm::presets::attack_helicopter().gear_height) < 0.1, "11 helicopter landed on the carrier's deck");
     const fm::GeoPoint viper_hangar = fm::ecs::geo(world)->to_geo(airfield(-80.0, 150.0));
-    check(viper_lined_up && viper_flew && viper_broke && viper_taxi_in &&
-              pose(viper).phase == fm::FlightPhase::Parked &&
-              distance(world, viper, viper_hangar.latitude, viper_hangar.longitude) < 3.0 &&
-              std::abs(std::remainder(transform(viper).yaw_deg - 180.0, 360.0)) < 5.0,
-          "12 fighter: hangar, takeoff, overhead break, landing, back into the hangar");
+    check(viper_lined_up && viper_flew && viper_broke && viper_taxi_in && pose(viper).phase == fm::FlightPhase::Parked && distance(world, viper, viper_hangar.latitude, viper_hangar.longitude) < 3.0 && std::abs(std::remainder(transform(viper).yaw_deg - 180.0, 360.0)) < 5.0, "12 fighter: hangar, takeoff, overhead break, landing, back into the hangar");
     std::vector<double> touchdowns = flight_touchdown;
     std::sort(touchdowns.begin(), touchdowns.end());
     bool spaced = touchdowns.front() > 0.0;
     for (std::size_t k = 1; k < touchdowns.size(); ++k)
+    {
         spaced = spaced && touchdowns[k] - touchdowns[k - 1] >= 8.0;
-    check(flight_joined && spaced && flight_landed,
-          "13 flight took off in sequence, rejoined, and landed one by one after the break");
+    }
+    check(flight_joined && spaced && flight_landed, "13 flight took off in sequence, rejoined, and landed one by one after the break");
     bool sheltered = flight_taxi_in == 4;
-    for (int k = 0; k < 4; ++k) {
+    for (int k = 0; k < 4; ++k)
+    {
         const fm::GeoPoint shelter = fm::ecs::geo(world)->to_geo(air_base(100.0 + 60.0 * k, -250.0));
-        sheltered = sheltered && pose(vipers[k]).phase == fm::FlightPhase::Parked &&
-                    distance(world, vipers[k], shelter.latitude, shelter.longitude) < 3.0;
+        sheltered = sheltered && pose(vipers[k]).phase == fm::FlightPhase::Parked && distance(world, vipers[k], shelter.latitude, shelter.longitude) < 3.0;
     }
     check(sheltered, "13 flight taxied back into its shelters one after another");
-    check(strip_lined_up && std::abs(std::remainder(strip_liftoff_yaw - 45.0, 360.0)) < 3.0 &&
-              pose(strip_uav).mode == fm::FlightMode::Loiter,
-          "14 UAV turned to true 045 on the strip, took off and orbits");
+    check(strip_lined_up && std::abs(std::remainder(strip_liftoff_yaw - 45.0, 360.0)) < 3.0 && pose(strip_uav).mode == fm::FlightMode::Loiter, "14 UAV turned to true 045 on the strip, took off and orbits");
     check(trainer_waited && trainer_flew, "15 trainer waited lined up until cleared, took off");
     std::printf("\n%s\n", failures == 0 ? "all examples OK" : "SOME EXAMPLES FAILED");
     return failures == 0 ? 0 : 1;

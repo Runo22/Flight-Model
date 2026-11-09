@@ -2,8 +2,9 @@
 #pragma once
 #include <flecs_includer.h>
 
-namespace resim::core {
+namespace resim::core
+{
 
-flecs::world get_world();
+    flecs::world get_world();
 
-}  // namespace resim::core
+} // namespace resim::core

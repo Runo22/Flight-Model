@@ -3,11 +3,13 @@
 
 #include "fm/math.hpp"
 
-namespace fm {
+namespace fm
+{
 
-struct Traffic {
-    Vec3 position{};  // m, ENU
-    Vec3 velocity{};  // m/s, ground-relative ENU
-};
+    struct Traffic
+    {
+        Vec3 position {}; // m, ENU
+        Vec3 velocity {}; // m/s, ground-relative ENU
+    };
 
-}  // namespace fm
+} // namespace fm

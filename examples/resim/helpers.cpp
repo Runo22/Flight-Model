@@ -162,7 +162,9 @@ namespace
     {
         const std::vector<fm::Waypoint>& waypoints = route.waypoints;
         std::size_t h = 2 * waypoints.size() + (route.loop ? 1 : 0) + 1;
+        // clang-format off
         const auto mix = [&h](double v) { h ^= std::hash<double> {}(v) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
+        // clang-format on
         for (const fm::Waypoint& w : waypoints)
         {
             mix(w.position.x);

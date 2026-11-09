@@ -4,14 +4,16 @@
 
 #include "fm/math.hpp"
 
-namespace fm {
+namespace fm
+{
 
-// A landing spot in the level heading frame of the vehicle that carries it: x = right,
-// y = forward of its reference point, z = up from it. A ship's reference point is on the
-// waterline, so z is the height of the flight deck.
-struct DeckSpot {
-    Vec3 offset{};
-    double heading = 0.0;  // rad, landing heading relative to the carrier's heading
-};
+    // A landing spot in the level heading frame of the vehicle that carries it: x = right,
+    // y = forward of its reference point, z = up from it. A ship's reference point is on the
+    // waterline, so z is the height of the flight deck.
+    struct DeckSpot
+    {
+        Vec3 offset {};
+        double heading = 0.0; // rad, landing heading relative to the carrier's heading
+    };
 
-}  // namespace fm
+} // namespace fm
