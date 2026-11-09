@@ -3,6 +3,10 @@
 // flight at normal speed in the game's own frames: later commands (split, landing, taxi
 // back), milestones in the log. Running a scenario again restarts it.
 #pragma once
+///////////////////////////////////////////////////////////////////////////////
+// Standart Headers
+#include <string>
+///////////////////////////////////////////////////////////////////////////////
 
 namespace demo
 {
@@ -85,7 +89,8 @@ namespace demo
         { "relief", "Station relief: Aksungur takes over the orbit, Anka lands at Akinci", relief },
     };
 
-    // Runs the scenario called `name`; false when there is none.
-    bool run_scenario(const char* name);
+    // Runs the scenario called `name`. Returns its title, or an "[ERR] ..." message when there
+    // is no scenario with that name.
+    std::string run_scenario(const char* name);
 
 } // namespace demo

@@ -32,7 +32,7 @@ fm::ecs::set_geo_origin(world, 39.93, 32.80);               // isteğe bağlı: 
 fm::ecs::bind_geo_transform<resim::core::Transform>(world);
 bind_world(world);                                          // DemoSetup ile ayarlanabilir
 
-demo::run_scenario("flypast");                              // ya da demo_scenarios[i].run()
+const std::string title = demo::run_scenario("flypast");     // başlık ya da "[ERR] ..." metni
 
 // Kaldırırken
 unbind_world();

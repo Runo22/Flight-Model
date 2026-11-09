@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <format>
 #include <string>
 #include <vector>
 ///////////////////////////////////////////////////////////////////////////////
@@ -525,7 +526,7 @@ namespace demo
         });
     }
 
-    bool run_scenario(const char* name)
+    std::string run_scenario(const char* name)
     {
         for (const Scenario& s : demo_scenarios)
         {
@@ -533,10 +534,10 @@ namespace demo
             {
                 stop_scenario(s.name);
                 s.run();
-                return true;
+                return s.title;
             }
         }
-        return false;
+        return std::format("[ERR] Failed to find matching scenario: {}", name);
     }
 
 } // namespace demo

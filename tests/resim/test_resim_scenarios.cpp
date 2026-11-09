@@ -69,7 +69,11 @@ bool orbits(flecs::entity e, double lat, double lon, double radius, double alt, 
 
 void anka3_tour() {
     Game g;
-    demo::run_scenario("anka3_tour");
+    check(demo::run_scenario("no_such_scenario") ==
+              "[ERR] Failed to find matching scenario: no_such_scenario",
+          "an unknown name gives the error text");
+    check(demo::run_scenario("anka3_tour") == demo::demo_scenarios[0].title,
+          "run_scenario returns the title");
     check(g.finish("anka3_tour"), "flew the route and landed (scenario logic ended)");
     const fm::Runway rwy = runway({40.06563462482789, 32.55461880413686,
                                    ankara::terrain(40.06563462482789, 32.55461880413686)}, 32.5);
