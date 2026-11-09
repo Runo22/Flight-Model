@@ -81,7 +81,8 @@ struct DemoSetup
     // writes the real height of terrain (HOT).
     bool synthetic_terrain = true;
     // resim::core::WaypointList follows the route each agent flies (routes, go_to, the route
-    // after a takeoff), with current_index on the waypoint it flies to.
+    // after a takeoff, shown from the start of the takeoff), with current_index on the
+    // waypoint it flies to.
     bool show_routes = true;
 };
 

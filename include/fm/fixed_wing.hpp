@@ -143,6 +143,12 @@ namespace fm
         {
             return route_;
         }
+        // The route flown once the takeoff in progress ends (TakeoffPlan::then), e.g. to show
+        // it from the start of the takeoff; nullptr when there is none.
+        const Route* takeoff_route() const
+        {
+            return mode_ == FlightMode::Takeoff && takeoff_.then ? &*takeoff_.then : nullptr;
+        }
         LandingStage landing_stage() const
         {
             return landing_stage_;

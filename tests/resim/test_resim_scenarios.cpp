@@ -90,6 +90,23 @@ namespace
         Game g;
         check(demo::run_scenario("no_such_scenario") == "[ERR] Failed to find matching scenario: no_such_scenario", "an unknown name gives the error text");
         check(demo::run_scenario("anka3_tour") == demo::demo_scenarios[0].title, "run_scenario returns the title");
+        // The route is shown from the start of the takeoff, with the same points once flown.
+        bool shown_on_ground = true;
+        resim::core::WaypointList on_ground;
+        g.run(60.0, {}, [&] {
+            const auto* l = g["Anka-3"].try_get<resim::core::WaypointList>();
+            if (pose(g["Anka-3"]).mode == fm::FlightMode::Takeoff)
+            {
+                shown_on_ground = shown_on_ground && l && l->waypoints.size() == 2 && l->current_index == 0;
+                on_ground = l ? *l : resim::core::WaypointList {};
+            }
+        });
+        check(shown_on_ground, "WaypointList shows the route during the whole takeoff, on its first waypoint");
+        const auto* flying = g["Anka-3"].try_get<resim::core::WaypointList>();
+        const auto same = [](const resim::core::Waypoint& a, const resim::core::Waypoint& b) {
+            return a.latitude_deg == b.latitude_deg && a.longitude_deg == b.longitude_deg && a.altitude_m == b.altitude_m;
+        };
+        check(pose(g["Anka-3"]).mode == fm::FlightMode::Route && flying && flying->current_index == 0 && flying->waypoints.size() == 2 && same(flying->waypoints[0], on_ground.waypoints[0]) && same(flying->waypoints[1], on_ground.waypoints[1]), "the same points once the route is flown");
         check(g.finish("anka3_tour"), "flew the route and landed (scenario logic ended)");
         const fm::Runway rwy = runway({ 40.06563462482789, 32.55461880413686, ankara::terrain(40.06563462482789, 32.55461880413686) }, 32.5);
         check(landed_on(g["Anka-3"], rwy, ankara::kAkinci), "Anka-3 landed on runway 03");
@@ -131,6 +148,9 @@ namespace
     {
         Game g;
         demo::run_scenario("circuit");
+        g.run(1.0);
+        const auto* list = g["Hurkus"].try_get<resim::core::WaypointList>();
+        check(pose(g["Hurkus"]).phase == fm::FlightPhase::Taxi && list && list->waypoints.size() == 2 && list->current_index == 0, "the tour is shown while taxiing out");
         check(g.finish("circuit"), "taxi, takeoff, tour, overhead, taxi back (scenario logic ended)");
         flecs::entity hurkus = g["Hurkus"];
         check(pose(hurkus).phase == fm::FlightPhase::Parked && (position(hurkus) - field(ankara::kAkinci, 400.0, -250.0)).xy().length() < 3.0, "parked again on its apron spot");

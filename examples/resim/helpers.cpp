@@ -157,6 +157,20 @@ namespace
         return nullptr;
     }
 
+    // The route a takeoff in progress flies afterwards (TakeoffPlan::then).
+    const fm::Route* takeoff_route_of(const fm::FlightAgent& a)
+    {
+        if (const auto* m = a.fixed_wing())
+        {
+            return m->takeoff_route();
+        }
+        if (const auto* m = a.rotorcraft())
+        {
+            return m->takeoff_route();
+        }
+        return nullptr;
+    }
+
     // Changes when the agent starts another route.
     std::size_t signature(const fm::Route& route)
     {
@@ -183,12 +197,11 @@ namespace
         return w;
     }
 
-    void show_route(flecs::entity e, const fm::RouteTracker& tracker, const RouteShown* shown)
+    // `index`: the waypoint flown to (0 while taking off: the route comes next).
+    void show_route(flecs::entity e, const fm::Route& route, std::size_t index, const RouteShown* shown)
     {
-        const fm::Route& route = tracker.route();
         const std::vector<fm::Waypoint>& waypoints = route.waypoints;
         const std::size_t sig = signature(route);
-        const std::size_t index = tracker.index();
         if (!shown || shown->signature != sig)
         {
             // A new route: converted once, then only the index follows.
@@ -344,10 +357,20 @@ void bind_world(flecs::world& world, const DemoSetup& setup)
         world.system<const fm::ecs::FlightController, const RouteShown*>("DemoRouteDisplay")
             .kind(flecs::PostUpdate)
             .each([](flecs::entity e, const fm::ecs::FlightController& fc, const RouteShown* shown) {
-                const fm::RouteTracker* tracker = fc.agent ? route_of(*fc.agent) : nullptr;
+                if (!fc.agent)
+                {
+                    return;
+                }
+                const fm::RouteTracker* tracker = route_of(*fc.agent);
                 if (tracker && tracker->active() && !tracker->route().waypoints.empty())
                 {
-                    show_route(e, *tracker, shown);
+                    show_route(e, tracker->route(), tracker->index(), shown);
+                }
+                else if (const fm::Route* next = takeoff_route_of(*fc.agent); next && !next->waypoints.empty())
+                {
+                    // Shown from the start of the takeoff; the same route once flown, so only
+                    // the index follows then.
+                    show_route(e, *next, 0, shown);
                 }
             });
         world.system<const resim::core::Transform, fm::ecs::TerrainHeight>("DemoTerrain")
@@ -496,6 +519,10 @@ void show_waypoints(flecs::entity e, std::initializer_list<fm::GeoPoint> points)
         if (const fm::RouteTracker* tracker = route_of(*a); tracker && tracker->active())
         {
             shown.signature = signature(tracker->route());
+        }
+        else if (const fm::Route* next = takeoff_route_of(*a))
+        {
+            shown.signature = signature(*next);
         }
     }
     e.set<RouteShown>(shown);
