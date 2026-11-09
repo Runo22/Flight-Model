@@ -365,11 +365,13 @@ namespace demo
             {
                 const fm::Vec2 dir = fm::heading_vector(fm::deg2rad(in.bearing));
                 const fm::GeoPoint g = geo(centre + fm::Vec3 { dir.x, dir.y, 0.0 } * (in.speed * arrival));
-                flecs::entity e = spawn(in.name, in.type, { g.latitude, g.longitude, 2500.0, 0, 0, in.bearing + 180.0 }, in.speed);
                 fm::GoToOptions o;
                 o.speed = in.speed;
-                fm::ecs::agent(e)->go_to(centre, o); // and straight on
-                aircraft.push_back(e);
+                // The second pass starts in the scenario logic (a system): the command goes
+                // through spawn's setup, to the new agent.
+                aircraft.push_back(spawn(in.name, in.type, { g.latitude, g.longitude, 2500.0, 0, 0, in.bearing + 180.0 }, in.speed, false, [&](fm::FlightAgent& a) {
+                    a.go_to(centre, o); // and straight on
+                }));
             }
             RESIM_LOG(agent_demo, info, "[traffic] converging on Kizilay {} collision avoidance", avoidance ? "with" : "without");
             return aircraft;

@@ -355,8 +355,10 @@ void bind_world(flecs::world& world, const DemoSetup& setup)
                 height.value = ankara::terrain(t.latitude_deg, t.longitude_deg);
             });
     }
-    module.lookup("DemoRouteDisplay").enable(setup.show_routes);
-    module.lookup("DemoTerrain").enable(setup.synthetic_terrain);
+    // enable() / disable() without an argument: enable(x) would toggle component x.
+    const auto enable = [](flecs::entity system, bool on) { on ? system.enable() : system.disable(); };
+    enable(module.lookup("DemoRouteDisplay"), setup.show_routes);
+    enable(module.lookup("DemoTerrain"), setup.synthetic_terrain);
     world.set_scope(previous_scope);
 }
 
@@ -434,7 +436,7 @@ void stop_scenarios()
 ///////////////////////////////////////////////////////////////////////////////
 // Entities
 
-flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, resim::core::Transform t, double speed, bool on_ground)
+flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, resim::core::Transform t, double speed, bool on_ground, const fm::ecs::AgentSetup& setup)
 {
     flecs::world world = sim_world();
     // TODO: use real hot data from the HOT plugin in the future
@@ -456,7 +458,7 @@ flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, r
     e.set<resim::core::HotRequest>({ game::query_hot(t.latitude_deg, t.longitude_deg) });
     e.set<fm::ecs::TerrainHeight>({ ground });
 
-    fm::ecs::attach_geo(e, get_vehicle_params(platform_type), { t.latitude_deg, t.longitude_deg, t.alt_m }, t.yaw_deg, speed, on_ground);
+    fm::ecs::attach_geo(e, get_vehicle_params(platform_type), { t.latitude_deg, t.longitude_deg, t.alt_m }, t.yaw_deg, speed, on_ground, setup);
 
     set_custom_starting_location(e, t); // to prevent move to akinci on start
     return e;

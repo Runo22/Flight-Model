@@ -101,8 +101,11 @@ const fm::GeoProjection& projection();
 // Scenario logic, run every frame
 
 // `step` runs every frame after the flight model moved everyone and the game transforms were
-// written (phase PreStore, immediate: commands take effect at once). It gets the seconds since
-// the scenario started (paused time not counted) and returns true when the scenario is over.
+// written (phase PreStore). It runs inside a system: commands to existing agents (land, taxi,
+// loiter ...) take effect at once, but components added or removed (a new agent, follow(),
+// stop_following()) only when the system ends. Commands for an agent created there go through
+// spawn()'s `setup`. It gets the seconds since the scenario started (paused time not counted)
+// and returns true when the scenario is over.
 // The scenario also ends when one of `actors` is deleted (scene reset), when a scenario with
 // the same name starts again, or on stop_scenarios(). `on_stop` runs whenever it ends, e.g.
 // to restore a world setting.
@@ -123,7 +126,10 @@ bool scenario_running(const char* name);
 // aircraft `t.alt_m` is ignored and the ground height is used. An existing entity with the
 // same name is reused and starts clean (running a scenario again restarts it): its formation,
 // flight sequence and route display from the last run are removed.
-flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, resim::core::Transform t, double speed, bool on_ground = false);
+// `setup` gets the new agent before it is stored: its commands also work inside a system
+// (scenario logic), where Flecs adds the agent only when the system ends and
+// fm::ecs::agent(e) still returns the old one (or nullptr).
+flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, resim::core::Transform t, double speed, bool on_ground = false, const fm::ecs::AgentSetup& setup = {});
 
 const resim::core::Transform& transform(flecs::entity e);
 const fm::ecs::FlightPose& pose(flecs::entity e);

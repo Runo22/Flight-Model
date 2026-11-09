@@ -162,16 +162,32 @@ void traffic() {
     Game g;
     demo::run_scenario("traffic");
     const char* names[] = {"Hurkus Traffic", "Anka-3 Traffic", "Anka Traffic", "Aksungur Traffic"};
+    const double speeds[] = {110.0, 150.0, 50.0, 52.0};  // m/s TAS, commanded
     double closest[2] = {1e9, 1e9};  // without, with collision avoidance
+    int frames_in_second_pass = 0;
+    bool second_pass_commanded = false;
     g.run(1000.0, [] { return !scenario_running("traffic"); }, [&] {
         const bool avoidance = g.world.try_get<fm::ecs::FlightSettings>()->collision_avoidance;
         for (int a = 0; a < 4; ++a)
             for (int b = a + 1; b < 4; ++b)
                 closest[avoidance] = std::min(closest[avoidance], distance(g[names[a]], g[names[b]]));
+        // The second pass starts in the scenario logic (a system): 30 s in, every aircraft
+        // flies its go_to at its commanded speed (spawn's setup reached the new agent).
+        if (avoidance && ++frames_in_second_pass == 30 * 60) {
+            second_pass_commanded = true;
+            for (int k = 0; k < 4; ++k) {
+                const fm::ecs::FlightPose& p = pose(g[names[k]]);
+                std::printf("  second pass, 30 s in: %s %s at %.1f m/s (commanded %.0f)\n", names[k],
+                            fm::to_string(p.mode), p.airspeed, speeds[k]);
+                second_pass_commanded = second_pass_commanded && p.mode == fm::FlightMode::GoTo &&
+                                        std::abs(p.airspeed - speeds[k]) < 0.05 * speeds[k];
+            }
+        }
     });
     std::printf("  closest approach: %.0f m without, %.0f m with collision avoidance\n",
                 closest[0], closest[1]);
     check(!scenario_running("traffic"), "both encounters flown (scenario logic ended)");
+    check(second_pass_commanded, "second pass: go_to at the commanded speeds");
     check(closest[0] < 30.0, "near collisions without collision avoidance");
     check(closest[1] > 100.0, "kept 100 m apart with collision avoidance");
     check(g.world.try_get<fm::ecs::FlightSettings>()->collision_avoidance,

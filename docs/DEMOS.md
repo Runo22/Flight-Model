@@ -54,7 +54,7 @@ siler:
 
 | Sistem | Faz | İş |
 |---|---|---|
-| `DemoScenarios` | `PreStore`, immediate | Senaryo mantıkları. Uçuş modeli adım attıktan ve `Transform` yazıldıktan sonra çalışır; komutlar hemen etkili olur |
+| `DemoScenarios` | `PreStore`, immediate | Senaryo mantıkları. Uçuş modeli adım attıktan ve `Transform` yazıldıktan sonra çalışır. Bir sistemin içinde çalıştığı için var olan ajanlara verilen komutlar (iniş, taksi, tur) hemen etkili olur. Eklenen ya da silinen bileşenler (yeni ajan, `follow()`, `stop_following()`) ise sistem bitince işlenir. Orada oluşturulan bir ajanın komutu `spawn()`'ın `setup` parametresiyle verilir |
 | `DemoRouteDisplay` | `PostUpdate` | `resim::core::WaypointList`, her ajanın uçtuğu rotayı (rota, `go_to`, kalkıştan sonraki rota), `current_index` ile hedef noktayı ve `loop` ile rotanın döngü olup olmadığını gösterir. Rota yalnızca değiştiğinde bir kere dönüştürülür; sonra sadece indeks güncellenir. Rota olmayan şeyler (tur merkezi) için `show_waypoints()` |
 | `DemoTerrain` | `PreUpdate` | `fm::ecs::TerrainHeight`, `ankara::terrain()` ile doldurulur (`DemoSetup::synthetic_terrain`) |
 
