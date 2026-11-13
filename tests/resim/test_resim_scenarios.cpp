@@ -129,6 +129,10 @@ namespace
     {
         Game g;
         demo::run_scenario("syria_orbit");
+        // Spawned airborne: the game's transform has the trimmed attitude at once (it used to
+        // be level for the first frame, then jump to the model's pitch).
+        const double pitch = transform(g["Hurjet Syria"]).pitch_deg;
+        check(pitch > 0.5 && std::abs(pitch - fm::rad2deg(fm::ecs::agent(g["Hurjet Syria"])->state().attitude.pitch)) < 0.01, "spawned with its trimmed attitude");
         g.run(600.0);
         check(orbits(g["Hurjet Syria"], 36.79, 39.85, 5000.0, 10000.0, 300.0), "Hurjet orbits at 10,000 m, 5 km radius, 650 km from the origin");
     }

@@ -483,7 +483,19 @@ flecs::entity spawn(const char* name, resim::core::PlatformType platform_type, r
     e.set<resim::core::HotRequest>({ game::query_hot(t.latitude_deg, t.longitude_deg) });
     e.set<fm::ecs::TerrainHeight>({ ground });
 
-    fm::ecs::attach_geo(e, get_vehicle_params(platform_type), { t.latitude_deg, t.longitude_deg, t.alt_m }, t.yaw_deg, speed, on_ground, setup);
+    // The transform starts with the agent's own attitude (an airborne aircraft is trimmed,
+    // nose up by its angle of attack), not level for one frame until the model writes it.
+    fm::Attitude attitude {};
+    fm::ecs::attach_geo(e, get_vehicle_params(platform_type), { t.latitude_deg, t.longitude_deg, t.alt_m }, t.yaw_deg, speed, on_ground, [&](fm::FlightAgent& a) {
+        if (setup)
+        {
+            setup(a);
+        }
+        attitude = a.state().attitude;
+    });
+    t.roll_deg = fm::rad2deg(attitude.roll);
+    t.pitch_deg = fm::rad2deg(attitude.pitch);
+    e.set<resim::core::Transform>(t);
 
     set_custom_starting_location(e, t); // to prevent move to akinci on start
     return e;
