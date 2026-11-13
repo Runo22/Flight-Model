@@ -30,11 +30,12 @@ namespace
 
     struct TakeoffClimb
     {
-        double max_pitch_step = 0.0;     // deg per frame
-        double max_pitch = 0.0;          // deg, takeoff and the first minute of the route
-        double min_route_vs = 1e9;       // m/s, first 30 s of the route
-        double min_route_n = 1e9;        // g, first 30 s of the route
-        double route_start_height = 0.0; // m above the runway
+        double max_pitch_step = 0.0;      // deg per frame
+        double max_pitch = 0.0;           // deg, takeoff and the first minute of the route
+        double min_route_vs = 1e9;        // m/s, first 30 s of the route
+        double min_route_n = 1e9;         // g, first 30 s of the route
+        double max_route_nose_down = 0.0; // deg/s, first 10 s of the route
+        double route_start_height = 0.0;  // m above the runway
         bool route_started = false;
     };
 
@@ -62,6 +63,7 @@ namespace
             a.step(kDt, env);
             const FlightState& s = a.state();
             out.max_pitch_step = std::max(out.max_pitch_step, rad2deg(std::abs(s.attitude.pitch - pitch)));
+            const double pitch_rate = rad2deg(s.attitude.pitch - pitch) / kDt;
             pitch = s.attitude.pitch;
             if (!s.on_ground)
             {
@@ -80,6 +82,10 @@ namespace
                 {
                     out.min_route_vs = std::min(out.min_route_vs, s.vertical_speed);
                     out.min_route_n = std::min(out.min_route_n, s.load_factor);
+                }
+                if (route_time < 10.0)
+                {
+                    out.max_route_nose_down = std::max(out.max_route_nose_down, -pitch_rate);
                 }
             }
         }
@@ -163,9 +169,11 @@ TEST_CASE("attitude: takeoff and the climb on the route without pitch jumps, eve
         CHECK(c.max_pitch_step < 1.0);
         CHECK(c.max_pitch < 20.0);
         // Climbing on along the route from where the takeoff ended: no level-off, no
-        // push-over (it was 0 g).
+        // push-over (it was 0 g), and from the takeoff climb into the route's climb and
+        // acceleration gently (it was a 0.5 g nod of the nose at 30 deg/s).
         CHECK(c.min_route_vs > 0.0);
-        CHECK(c.min_route_n > 0.3); // a short unload to accelerate to the route's speed, no 0 g
+        CHECK(c.min_route_n > 0.7);
+        CHECK(c.max_route_nose_down < 5.0);
     }
 }
 

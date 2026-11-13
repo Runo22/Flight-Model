@@ -287,8 +287,12 @@ namespace fm
         double fuel_flow_ = 0.0;              // kg/s
         SpeedRef speed_ref_ = SpeedRef::True; // speed_target_ follows speed_command_ in this
         double speed_command_ = 0.0;
-        double temperature_offset_ = 0.0;   // K, last ISA deviation
-        bool climbing_ = false;             // climb mode: full power at the climb speed
+        double temperature_offset_ = 0.0; // K, last ISA deviation
+        bool climbing_ = false;           // climb mode: full power at the climb speed
+        // After a takeoff: the flight path command blends from the takeoff climb into what
+        // follows over this many seconds (no push-over when the route or course begins).
+        double takeoff_blend_ = 0.0;
+        double takeoff_blend_gamma_ = 0.0;
         double best_climb_speed_ = 0.0;     // m/s TAS, cached ...
         double best_climb_altitude_ = -1e9; // ... for this altitude
         FlightState out_ {};

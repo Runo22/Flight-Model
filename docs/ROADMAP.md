@@ -232,7 +232,5 @@ Helikopter ve drone için iniş / kalkış hazır (Faz 0). Sıradakiler:
   geminin arkasından yapılır. Güvertedeki araç gemiyle yatıp kalkmaz.
 - Helikopterde duruş birinci dereceden gecikmeyle izlenir; uçaktaki gibi açısal ivme sınırı
   yok (hover'dan çıkışta pitch hızı bir anda ~55°/s'ye çıkabilir, değer sürekli).
-- Kalkıştan rotaya geçerken hız komutu seyir hızına bir adımda geçer: jetlerde ~0,5 s'lik
-  0,4–0,7 g'lik bir boşaltma olur (sürekli, sıçrama değil).
 - Arazi öngörüsü geçmiş örneklere dayanır; ani dik yamaçlarda (ör. uçurum) koruma sınırlıdır.
   Oyun ileride ileriye dönük arazi sorgusu sağlarsa `TerrainMonitor` buna genişletilebilir.

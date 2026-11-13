@@ -42,6 +42,7 @@ namespace fm
         // Initial climb pitch attitude: rotation pitch plus this, at least the minimum.
         constexpr double kTakeoffPitchExtra = deg2rad(5.0);
         constexpr double kTakeoffPitchMin = deg2rad(10.0);
+        constexpr double kTakeoffBlendTime = 6.0;         // s, from the takeoff climb into what follows
         constexpr double kDefaultNavBank = deg2rad(30.0); // navigation turns without nav_bank
         // Routes: corners up to this course change are cut (fly-by, the turn tangent to both
         // legs); sharper ones are flown over, so the aircraft reaches the waypoint.
@@ -710,6 +711,7 @@ namespace fm
                 : gear_target;
             // The flaps too, in flight: their lift changes gradually (no lift step when they
             // come up after takeoff). On the ground they are set at once.
+            takeoff_blend_ = std::max(takeoff_blend_ - h, 0.0);
             const double flap_target = flaps_ ? 1.0 : 0.0;
             const double flap_time = p_.flaps_transit_time > 0.0 ? p_.flaps_transit_time : p_.gear_transit_time;
             flap_position_ = !on_ground_ && flap_time > 0.0 ? approach(flap_position_, flap_target, h / flap_time) : flap_target;
@@ -1082,6 +1084,8 @@ namespace fm
 
     void FixedWingAgent::finish_takeoff(double altitude)
     {
+        takeoff_blend_ = on_ground_ ? 0.0 : kTakeoffBlendTime;
+        takeoff_blend_gamma_ = gamma_;
         phase_ = FlightPhase::Airborne;
         flaps_ = false;
         resolved_altitude_target_ = altitude; // the route's first leg starts from here
@@ -1689,6 +1693,14 @@ namespace fm
             // the rotation; the climb steepens as the aircraft accelerates (smaller angle of
             // attack), not a pull-up to the stall right after lift-off.
             gamma_cmd = std::min(gamma_cmd, std::max(rotation_pitch() + kTakeoffPitchExtra, kTakeoffPitchMin) - alpha_);
+        }
+        else if (takeoff_blend_ > 0.0 && !cmd.terrain_alert && avoid_sense_ == 0 && (mode_ == FlightMode::Route || mode_ == FlightMode::GoTo || mode_ == FlightMode::Cruise))
+        {
+            // Just after the takeoff: from its climb into the new flight path smoothly (the
+            // route's gradient and the acceleration to its speed came in one step, a short
+            // 0.5 g push-over).
+            const double f = 1.0 - takeoff_blend_ / kTakeoffBlendTime;
+            gamma_cmd = takeoff_blend_gamma_ + (gamma_cmd - takeoff_blend_gamma_) * f * f * (3.0 - 2.0 * f);
         }
         c.gamma = gamma_cmd;
 

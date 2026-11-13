@@ -130,7 +130,8 @@ Sabit kanatlıda rota dönüşleri:
   besleme olarak uçulur, uçak profilin gerisinde kalmaz.
 * **Kalkıştan sonra:** `TakeoffPlan::then` ile rota varsa uçak flaplar toplanıp güvenli
   yüksekliğe çıkınca (`flaps_up_height` ile `min_terrain_clearance`'ın büyüğü) rotaya döner,
-  kalan tırmanışı rotada yapar: rotanın ilk bacağı o irtifadan başlar. `TakeoffPlan::climb_height`
+  kalan tırmanışı rotada yapar: rotanın ilk bacağı o irtifadan başlar. Kalkış tırmanışından
+  rotanın tırmanışına ve hızına 6 saniyede yumuşakça geçer (burun birkaç °/s ile iner). `TakeoffPlan::climb_height`
   verilmişse önce ona tırmanır.
 
 | `Route` alanı | Anlamı |
