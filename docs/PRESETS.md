@@ -54,7 +54,10 @@ Bu sınırlar (`load_factor_max`, `bank_max`, `climb_angle_max`, `climb_rate_max
 yalnızca AI'nin davranışı değişir. Sıradan seyrüseferde (rota, hedefe gitme, yön değiştirme)
 uçaklar sınırlarına yatmaz: `nav_bank` kullanılır (savaş uçakları 45°, yani ~1,4 g; İHA'lar
 25°). `bank_max` kol uçuşu, overhead break ve ancak sert dönüşle ulaşılabilen noktalar
-içindir.
+içindir. Roll da öyle: seyrüseferde `nav_roll_rate` (varsayılan `nav_bank`'a 3 s'de), kol
+uçuşu ve overhead break'te `roll_rate_max`. Burun (pitch) hareketleri `pitch_rate_max` ile
+sınırlıdır; seyrüseferde AI stall'a 1,2 pay bırakır (yük faktörü en çok stall'ınkinin
+1/1,2'si), manevralarda bırakmaz.
 
 ## Sabit kanat
 
@@ -68,13 +71,13 @@ Veri: kanat alanı 300 ft² (27,87 m²), hava-hava yüklü kütle 26.463 lb, F11
 |---|---|---|
 | Top speed at 40,000 ft | 1125 kt TAS (M1.96) | M2.05 |
 | Top speed at sea level (with limits) | 800 kt | 800 KCAS (limit) |
-| Best climb at sea level | 48,015 ft/min at 600 kt | 50,000 ft/min |
+| Best climb at sea level | 48,403 ft/min at 600 kt | 50,000 ft/min |
 | Service ceiling (100 ft/min) | 58,728 ft | 50,000+ ft |
 | Stall speed, clean / landing flaps | 128 / 117 kt |  |
-| Takeoff: ground roll, lift-off, over 50 ft | 352 m, 162 kt, 505 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 168 kt, 160 kt (12.6 deg AoA), 1102 m, 1531 m |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 352 m, 162 kt, 680 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 168 kt, 160 kt (12.6 deg AoA), 1103 m, 1527 m |  |
 | Landing at 9778 kg (30% fuel): approach, touchdown, roll | 152 kt, 144 kt (12.6 deg AoA), 921 m | ~150-160 kt at 11 deg AoA, touchdown at 13 deg, ~3,000 ft roll |
-| AI turn at cruise speed, 10,000 ft | 2.3 deg/s at 45 deg bank |  |
+| AI turn at cruise speed, 10,000 ft | 2.4 deg/s at 45 deg bank |  |
 | Endurance on 3175 kg of fuel, 30,000 ft | 3 h 30 min at 467 kt, 1054 kg/h full |  |
 
 Tepe hız, gerçekçi sürükleme değerleriyle %4 düşük kaldı. Sürüklemeyi gerçek dışı küçültmek
@@ -93,13 +96,13 @@ bir başlangıç.
 |---|---|---|
 | Top speed at 40,000 ft | 1352 kt TAS (M2.36) | M2.5+ |
 | Top speed at sea level (with limits) | 800 kt | M1.2 (800 KCAS) |
-| Best climb at sea level | 53,262 ft/min at 611 kt | > 50,000 ft/min |
+| Best climb at sea level | 53,252 ft/min at 598 kt | > 50,000 ft/min |
 | Service ceiling (100 ft/min) | 66,802 ft | 60,000-65,000 ft |
 | Stall speed, clean / landing flaps | 122 / 113 kt |  |
-| Takeoff: ground roll, lift-off, over 50 ft | 316 m, 153 kt, 465 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 164 kt, 157 kt (11.5 deg AoA), 1024 m, 1457 m |  |
-| Landing at 15,930 kg (30% fuel): approach, touchdown, roll | 145 kt, 139 kt (11.5 deg AoA), 830 m | ~1,070 m landing (unverified) |
-| AI turn at cruise speed, 10,000 ft | 2.2 deg/s at 45 deg bank |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 316 m, 153 kt, 623 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 164 kt, 157 kt (11.5 deg AoA), 1024 m, 1453 m |  |
+| Landing at 15,930 kg (30% fuel): approach, touchdown, roll | 145 kt, 139 kt (11.5 deg AoA), 831 m | ~1,070 m landing (unverified) |
+| AI turn at cruise speed, 10,000 ft | 2.3 deg/s at 45 deg bank |  |
 | Endurance on 6100 kg of fuel, 30,000 ft | 4 h 02 min at 486 kt, 1718 kg/h full |  |
 
 Tepe hız %6 düşük; sebep F-16'daki ile aynı. İniş hücum açısıyla, en çok 12° ile teker
@@ -116,13 +119,13 @@ stall 77 KCAS, 50 ft engeli aşarak kalkış 489 m, 50 ft'ten iniş 593 m, +7 / 
 |---|---|---|
 | Top speed at 30,000 ft | 290 kt TAS (M0.49) | 288 KTAS max cruise |
 | Top speed at sea level (with limits) | 310 kt | 310 KCAS |
-| Best climb at sea level | 4414 ft/min at 127 kt | 4,370 ft/min |
+| Best climb at sea level | 4440 ft/min at 127 kt | 4,370 ft/min |
 | Service ceiling (100 ft/min) | 35,852 ft | 34,700-39,270 ft |
 | Stall speed, clean / landing flaps | 92 / 78 kt | 77 KCAS landing config |
-| Takeoff: ground roll, lift-off, over 50 ft | 319 m, 94 kt, 452 m | 489 m over 50 ft |
-| Landing: approach, touchdown, roll, from 50 ft | 98 kt, 91 kt (8.4 deg AoA), 316 m, 690 m |  |
-| Landing at 2919 kg (30% fuel): approach, touchdown, roll | 92 kt, 85 kt (8.5 deg AoA), 281 m |  |
-| Short-field landing (4 deg approach): from 50 ft | 623 m | 593 m from 50 ft |
+| Takeoff: ground roll, lift-off, over 50 ft | 319 m, 94 kt, 542 m | 489 m over 50 ft |
+| Landing: approach, touchdown, roll, from 50 ft | 98 kt, 91 kt (8.2 deg AoA), 319 m, 683 m |  |
+| Landing at 2919 kg (30% fuel): approach, touchdown, roll | 92 kt, 86 kt (8.3 deg AoA), 284 m |  |
+| Short-field landing (4 deg approach): from 50 ft | 618 m | 593 m from 50 ft |
 | AI turn at cruise speed, 10,000 ft | 4.4 deg/s at 45 deg bank |  |
 | Endurance on 544 kg of fuel, 15,000 ft | 4 h 16 min at 188 kt, 139 kg/h full | 4 h 15 min at 15,000 ft (798 nm) |
 
@@ -149,13 +152,13 @@ daha hafif ve daha az itkilidir (itki/ağırlık ~1), Mach 1,4'te kalır, kanopi
 |---|---|---|
 | Top speed at 36,000 ft | 810 kt TAS (M1.41) | M1.4 |
 | Top speed at sea level (with limits) | 600 kt |  |
-| Best climb at sea level | 39,833 ft/min at 591 kt | 39,000 ft/min |
+| Best climb at sea level | 40,034 ft/min at 591 kt | 39,000 ft/min |
 | Service ceiling (100 ft/min) | 56,518 ft | 45,000 ft (operating limit) |
 | Stall speed, clean / landing flaps | 116 / 106 kt |  |
-| Takeoff: ground roll, lift-off, over 50 ft | 312 m, 145 kt, 451 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 148 kt, 141 kt (12.5 deg AoA), 848 m, 1267 m |  |
-| Landing at 6905 kg (30% fuel): approach, touchdown, roll | 136 kt, 129 kt (12.5 deg AoA), 727 m | T-50: Vref 130 kt, lands in 2,320 ft (707 m) |
-| AI turn at cruise speed, 10,000 ft | 2.3 deg/s at 45 deg bank |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 312 m, 145 kt, 603 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 148 kt, 141 kt (12.5 deg AoA), 849 m, 1263 m |  |
+| Landing at 6905 kg (30% fuel): approach, touchdown, roll | 136 kt, 130 kt (12.5 deg AoA), 728 m | T-50: Vref 130 kt, lands in 2,320 ft (707 m) |
+| AI turn at cruise speed, 10,000 ft | 2.4 deg/s at 45 deg bank |  |
 | Sustained turn at 15,000 ft, M0.9 | 5.50 g | 5.5 g |
 | Endurance on 1850 kg of fuel, 30,000 ft | 2 h 33 min at 467 kt, 787 kg/h full | 2,222 km range (2 h 34 min at 240 m/s) |
 
@@ -178,12 +181,12 @@ belirsizdir.
 |---|---|---|
 | Top speed at 30,000 ft | 527 kt TAS (M0.89) | M0.9 |
 | Top speed at sea level (with limits) | 467 kt |  |
-| Best climb at sea level | 9513 ft/min at 353 kt |  |
+| Best climb at sea level | 9526 ft/min at 353 kt |  |
 | Service ceiling (100 ft/min) | 41,523 ft | 12,000-14,000 m |
 | Stall speed, clean / landing flaps | 100 / 91 kt |  |
-| Takeoff: ground roll, lift-off, over 50 ft | 560 m, 128 kt, 685 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt (13.1 deg AoA), 644 m, 1049 m |  |
-| Landing at 4705 kg (30% fuel): approach, touchdown, roll | 106 kt, 97 kt (13.4 deg AoA), 509 m |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 560 m, 128 kt, 828 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 119 kt, 111 kt (13.0 deg AoA), 650 m, 1044 m |  |
+| Landing at 4705 kg (30% fuel): approach, touchdown, roll | 106 kt, 98 kt (13.2 deg AoA), 516 m |  |
 | AI turn at cruise speed, 10,000 ft | 1.8 deg/s at 30 deg bank |  |
 | Endurance on 1850 kg of fuel, 30,000 ft | 5 h 10 min at 354 kt, 398 kg/h full | ~5 h |
 
@@ -209,12 +212,12 @@ gücün çoğunu kullanır, tırmanmaya az güç kalır).
 |---|---|---|
 | Top speed at 20,000 ft | 145 kt TAS (M0.24) |  |
 | Top speed at sea level (with limits) | 117 kt | 117 kt (217 km/h) |
-| Best climb at sea level | 683 ft/min at 79 kt |  |
+| Best climb at sea level | 686 ft/min at 79 kt |  |
 | Service ceiling (100 ft/min) | 30,085 ft | 30,000 ft |
 | Stall speed, clean / landing flaps | 63 / 57 kt |  |
-| Takeoff: ground roll, lift-off, over 50 ft | 449 m, 66 kt, 714 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 74 kt, 70 kt (7.4 deg AoA), 281 m, 643 m |  |
-| Landing at 1430 kg (30% fuel): approach, touchdown, roll | 68 kt, 64 kt (7.4 deg AoA), 237 m |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 449 m, 66 kt, 703 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 74 kt, 70 kt (7.2 deg AoA), 283 m, 637 m |  |
+| Landing at 1430 kg (30% fuel): approach, touchdown, roll | 68 kt, 64 kt (7.3 deg AoA), 239 m |  |
 | AI turn at cruise speed, 10,000 ft | 5.5 deg/s at 25 deg bank |  |
 | Endurance on 385 kg of fuel, 20,000 ft | 29 h 44 min at 113 kt, 16 kg/h full | 30 h |
 
@@ -237,13 +240,13 @@ bir görev irtifasıdır, servis tavanı değil. Model 3.300 kg'da 33.700 ft'e t
 |---|---|---|
 | Top speed at 20,000 ft | 164 kt TAS (M0.27) |  |
 | Top speed at sea level (with limits) | 135 kt | 135 kt (250 km/h) |
-| Best climb at sea level | 792 ft/min at 82 kt |  |
-| Service ceiling (100 ft/min) | 33,738 ft | 25,000 ft operating altitude with 750 kg payload |
+| Best climb at sea level | 795 ft/min at 82 kt |  |
+| Service ceiling (100 ft/min) | 33,834 ft | 25,000 ft operating altitude with 750 kg payload |
 | Service ceiling at 2700 kg | 38,736 ft | 35,000 ft with 150 kg payload; 40,000 ft maximum |
 | Stall speed, clean / landing flaps | 66 / 59 kt |  |
-| Takeoff: ground roll, lift-off, over 50 ft | 454 m, 69 kt, 703 m |  |
-| Landing: approach, touchdown, roll, from 50 ft | 77 kt, 73 kt (7.0 deg AoA), 313 m, 676 m |  |
-| Landing at 2817 kg (30% fuel): approach, touchdown, roll | 71 kt, 67 kt (7.1 deg AoA), 268 m |  |
+| Takeoff: ground roll, lift-off, over 50 ft | 454 m, 69 kt, 696 m |  |
+| Landing: approach, touchdown, roll, from 50 ft | 77 kt, 73 kt (7.0 deg AoA), 314 m, 672 m |  |
+| Landing at 2817 kg (30% fuel): approach, touchdown, roll | 71 kt, 68 kt (7.0 deg AoA), 269 m |  |
 | AI turn at cruise speed, 10,000 ft | 5.2 deg/s at 25 deg bank |  |
 | Endurance on 690 kg of fuel, 20,000 ft | 31 h 32 min at 117 kt, 26 kg/h full | 12 h with 750 kg payload (TAI, a lighter fuel load) |
 | Endurance at 2700 kg, 20,000 ft | 44 h 32 min at 106 kt, 19 kg/h full | 40 h (EO payload), 49 h demonstrated |
@@ -498,14 +501,15 @@ yüzünden azaltılmış yakıtla ve dış yük direnciyle uçulan bir görevdir
 | Tırmanma | itki / güç fazlası; AI sınırı `climb_rate_max`, `climb_angle_max` | `profile_power`, `induced_power_factor`, güç |
 | Tavan | `engine.density_exponent`, `engine.critical_altitude`, `induced_drag_k`, `mass` | `power_lapse_exponent`, `profile_power` |
 | Stall / yaklaşma hızı | `cl_max`, `flaps_dcl_max`, `approach_speed_factor`; jetlerde `touchdown_aoa` (teker koyma AoA'sı, yaklaşma ~2° altı) | — |
-| Kalkış | `rotate_speed`, `rotation_pitch`, `cl_alpha`, `cl0` + `flaps_dcl0` | yer etkisi, güç fazlası |
+| Kalkış | `rotate_speed`, `rotation_pitch` (ilk tırmanışta AI burnu en çok bunun 5° üstünde, en az 10° tutar), `cl_alpha`, `cl0` + `flaps_dcl0`, `flaps_transit_time` (havada flap hareketi; 0 = `gear_transit_time`) | yer etkisi, güç fazlası |
 | İniş mesafesi | `touchdown_distance`, `brake_deceleration` (tekerlek sürtünmesi en çok 0,4 × tekerlere binen ağırlık), `speedbrake_dcd0` (> 0: koşuda yer spoiler'ları, yoksa flaplar toplanır), `approach_speed_factor` | — |
 | İniş takımı | `retractable_gear`, `gear_transit_time` (indirme/toplama süresi), `gear_dcd0` (seçildiği an tam; toplanırken pozisyonla azalır), `gear_up_height` | — |
 | Taksi | `taxi_speed` (düz taksi yolu), `taxi_turn_radius` (burun tekeri; köşe hızı √(1.5·r)) | — |
 | Komutsuz hız | `cruise_speed` + `cruise_altitude` (altında aynı CAS; negatif = her irtifada aynı TAS), yörüngede `loiter_speed` (0 = dayanım hızı) | `cruise_speed` |
 | Overhead pattern | `pattern_height` (jetler 450 m, diğerleri 300 m), break yatışı `bank_max` (en çok 60°), pattern hızları iniş hızından | — |
 | Seyirde burun açısı | `cl0`, `cl_alpha` | `flat_plate_area` |
-| Dönüş | AI: rota dönüşlerinde `nav_bank` (0 = en çok 30°), manevrada `bank_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |
+| Dönüş | AI: rota dönüşlerinde `nav_bank` (0 = en çok 30°) ve `nav_roll_rate` (0 = `nav_bank`'a 3 s'de), manevrada `bank_max` ve `roll_rate_max`, `load_factor_max` | `bank_max` (`max_tilt` en az 5° fazla olmalı) |
+| Burun tepkisi | `pitch_rate_max` (0 = 4 × `rotation_rate`, en az 10°/s), `gamma_time_constant` (hücum açısı bunun dörtte biri sürede, sönümlü izler) | `attitude_time_constant` |
 | Sürekli dönüş (g) | `induced_drag_k`, transonikte `wave_drag` / `mach_critical`, itki | — |
 | İvmelenme | itki | `max_acceleration` (yalnız hız değişimi), `velocity_time_constant` |
 

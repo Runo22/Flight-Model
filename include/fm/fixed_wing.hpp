@@ -185,6 +185,7 @@ namespace fm
             bool taxi = false;                // ground: taxi_accel with thrust and wheel brakes
             double taxi_accel = 0.0;          // m/s^2
             double taxi_max_brake = 0.0;      // m/s^2, 0 = taxi default
+            bool maneuver = false;            // roll at roll_rate_max, not the navigation rate
         };
         struct Control
         {
@@ -196,7 +197,9 @@ namespace fm
             bool rotate = false;
             bool speed_brake = false;
             bool taxi = false;
-            double brake = 0.0; // m/s^2, wheel brake deceleration while taxiing
+            double brake = 0.0;     // m/s^2, wheel brake deceleration while taxiing
+            double roll_rate = 0.0; // rad/s, the most the bank changes at
+            bool maneuver = false;  // formation, overhead pattern: no stall margin on the pull
         };
 
         Command guidance(const AtmosphereSample& atm, const Vec3& wind, const SlotReference& slot_ref);
@@ -223,6 +226,9 @@ namespace fm
         void hold_course(double course, const Vec2& anchor, double altitude, double speed, AltitudeRef altitude_ref);
         // L1 for turns at `bank` (NaN = bank_max).
         L1Settings l1_settings(double ground_speed, double bank = kUnknown) const;
+        double rotation_pitch() const;
+        double pitch_rate_max() const;
+        double nav_roll_rate() const;
         double nav_bank() const; // bank of navigation turns
         double turn_radius(double speed, double bank) const;
         double ground_elevation() const;
@@ -293,12 +299,14 @@ namespace fm
         double heading_ = 0.0; // air-relative heading
         double gamma_ = 0.0;   // air-relative flight path angle
         double bank_ = 0.0;
+        double roll_rate_ = 0.0; // rad/s
         double throttle_ = 0.0;
         double ground_pitch_ = 0.0;
         double alpha_ = 0.0;
         double load_factor_ = 1.0;
         bool on_ground_ = false;
-        bool flaps_ = false;
+        bool flaps_ = false;         // flaps selected
+        double flap_position_ = 0.0; // 0 up .. 1 extended, travels to the selected position
         bool speed_brake_ = false;
         bool gear_down_ = true;
         double gear_position_ = 1.0; // 0 up .. 1 down
@@ -315,6 +323,10 @@ namespace fm
 
         RouteTracker route_;
         bool direct_to_ = false; // turning straight at the route's waypoint, off its leg
+        // A waypoint the navigation turn would miss: turning straight at it (tighter) until it
+        // is passed, decided once (no switching back and forth between the two guidance laws).
+        bool tight_turn_ = false;
+        Vec2 tight_turn_at_ {};
         Vec3 loiter_center_ {};
         double loiter_radius_ = 0.0;
         bool loiter_clockwise_ = true;

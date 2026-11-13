@@ -128,6 +128,10 @@ dinamik → 6-DOF) diğerlerine dokunmadan değiştirilebilir.
 - [x] Overhead pattern (initial, break, downwind, base, kısa final), kapalı pattern ile pas
   geçme, inişte durma noktası.
 - [x] Kol halinde sıralı kalkış ve iniş (`fm::ecs::takeoff_flight` / `land_flight`).
+- [x] Duruş sürekliliği: hücum açısı durum değişkeni (`pitch_rate_max`), roll hızı ivme
+  sınırlı, seyrüseferde `nav_roll_rate`; flaplar havada kademeli (`flaps_transit_time`);
+  kalkışta burun sınırı ve stall payı, rotaya o irtifadan tırmanarak geçiş; rota irtifa
+  profilinde dikey hız ileri beslemesi. Pitch ve roll hiçbir geçişte kareden kareye sıçramaz.
 - [ ] Yerde çarpışma önleme (taksi yolunda sıra bekleme).
 - [ ] Bağımsız trafik için pist sıralaması (ATC benzeri: farklı kollardan gelenleri tek
   sıraya koyma, düz yaklaşmada aralık).
@@ -226,5 +230,9 @@ Helikopter ve drone için iniş / kalkış hazır (Faz 0). Sıradakiler:
   vurmasıdır. Liman manevrası (yanaşma, römorkör) yok.
 - Araçlar gemiyle çarpışmaz (helikopter adanın içinden geçebilir). Bu yüzden iniş yaklaşması
   geminin arkasından yapılır. Güvertedeki araç gemiyle yatıp kalkmaz.
+- Helikopterde duruş birinci dereceden gecikmeyle izlenir; uçaktaki gibi açısal ivme sınırı
+  yok (hover'dan çıkışta pitch hızı bir anda ~55°/s'ye çıkabilir, değer sürekli).
+- Kalkıştan rotaya geçerken hız komutu seyir hızına bir adımda geçer: jetlerde ~0,5 s'lik
+  0,4–0,7 g'lik bir boşaltma olur (sürekli, sıçrama değil).
 - Arazi öngörüsü geçmiş örneklere dayanır; ani dik yamaçlarda (ör. uçurum) koruma sınırlıdır.
   Oyun ileride ileriye dönük arazi sorgusu sağlarsa `TerrainMonitor` buna genişletilebilir.

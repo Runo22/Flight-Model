@@ -19,6 +19,9 @@ namespace fm
         // The current leg starts again at `from` (the vehicle was moved): same target, the
         // altitude profile begins at `from_altitude`.
         void restart_leg(const Vec3& from, double from_altitude);
+        // The current leg is flown from `from` (straight to the waypoint, off the leg); the
+        // altitude profile goes on: linear in the distance still to go to the waypoint.
+        void redirect(const Vec2& from);
         void clear()
         {
             active_ = false;
@@ -60,6 +63,9 @@ namespace fm
         // Resolves a waypoint altitude to an absolute value. `fallback` is used for Keep.
         static double resolve_altitude(const Waypoint& wp, const TerrainMonitor& terrain, double lookahead, double fallback);
         double altitude_target(const LegProgress& lp, const TerrainMonitor& terrain, double lookahead, double fallback) const;
+        // Climb (+) or descent gradient of the altitude profile on the current leg (0 with
+        // VerticalProfile::Immediate): the vertical speed feedforward per m flown.
+        double profile_gradient(const TerrainMonitor& terrain, double lookahead, double fallback) const;
 
         // Moves to the next leg. Returns false when the route is complete.
         bool advance(const Vec3& position, double current_altitude_target);
@@ -69,6 +75,7 @@ namespace fm
         std::size_t index_ = 0;
         Waypoint leg_start_wp_ {};
         Vec3 leg_start_ {};
+        double profile_length_ = 0.0; // m from where the altitude profile starts to the target
         bool active_ = false;
     };
 

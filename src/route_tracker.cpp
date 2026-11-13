@@ -21,6 +21,12 @@ namespace fm
         leg_start_wp_ = Waypoint {};
         leg_start_wp_.position = { from.x, from.y, from_altitude };
         leg_start_wp_.altitude_ref = AltitudeRef::Absolute;
+        profile_length_ = active_ ? (leg_end() - from.xy()).length() : 0.0;
+    }
+
+    void RouteTracker::redirect(const Vec2& from)
+    {
+        leg_start_ = { from.x, from.y, leg_start_.z };
     }
 
     const Waypoint* RouteTracker::next() const
@@ -67,7 +73,21 @@ namespace fm
             return end;
         }
         const double begin = resolve_altitude(leg_start_wp_, terrain, lookahead, end);
-        return lerp(begin, end, std::clamp(lp.along / lp.length, 0.0, 1.0));
+        // Share of the profile flown: by the distance still to go, so that it goes on while
+        // the leg is redirected (on the leg itself the same as along / length).
+        const double share = profile_length_ > 1.0 ? 1.0 - lp.remaining() / profile_length_ : lp.along / lp.length;
+        return lerp(begin, end, std::clamp(share, 0.0, 1.0));
+    }
+
+    double RouteTracker::profile_gradient(const TerrainMonitor& terrain, double lookahead, double fallback) const
+    {
+        if (!active_ || route_.vertical == VerticalProfile::Immediate || profile_length_ <= 1.0)
+        {
+            return 0.0;
+        }
+        const double end = resolve_altitude(target(), terrain, lookahead, fallback);
+        const double begin = resolve_altitude(leg_start_wp_, terrain, lookahead, end);
+        return (end - begin) / profile_length_;
     }
 
     bool RouteTracker::advance(const Vec3& position, double current_altitude_target)
@@ -94,6 +114,7 @@ namespace fm
         // altitude there is frozen to the altitude being held now.
         leg_start_ = { reached.position.x, reached.position.y, position.z };
         leg_start_wp_ = reached;
+        profile_length_ = (leg_end() - leg_start_.xy()).length();
         if (reached.altitude_ref == AltitudeRef::Keep)
         {
             leg_start_wp_.altitude_ref = AltitudeRef::Absolute;

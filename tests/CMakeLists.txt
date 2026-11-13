@@ -1,5 +1,6 @@
 add_executable(fm_tests
   test_main.cpp
+  test_attitude.cpp
   test_basics.cpp
   test_deck.cpp
   test_fixed_wing.cpp

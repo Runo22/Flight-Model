@@ -108,20 +108,30 @@ Sabit kanatlıda rota dönüşleri:
   `nav_bank` ile uçulur: savaş uçakları ve Hürjet / Hürkuş 45°, Anka / Aksungur 25°, yolcu
   uçakları 25°, diğerleri 30°. `bank_max` manevralar içindir: kol uçuşu, overhead break,
   istenen dar tur yarıçapları.
-* **Köşeler:** 90°'ye kadar köşe kesilir; dönüş iki bacağa teğettir, noktadan en çok ~0,4
-  dönüş yarıçapı içeriden geçilir. Daha keskin köşede (ör. geri dönüş) uçak noktanın
+* **Roll:** seyrüsefer dönüşlerine otopilot gibi `nav_roll_rate` ile girilir (varsayılan
+  `nav_bank`'a 3 saniyede: savaş uçakları ve Hürjet / Hürkuş 15°/s, Kızılelma 10°/s, Anka /
+  Aksungur 8°/s, yolcu jetleri 7°/s). `roll_rate_max` kol uçuşu ve overhead pattern içindir.
+  Roll hızı da bir anda değil ~0,5 s'de oluşur ve hedef yatışta aşmadan durur: uçak dönüşe
+  "çakılmaz", nokta geçilince ani roll yapmaz.
+* **Köşeler:** 90°'ye kadar köşe kesilir; dönüş iki bacağa teğettir (roll'a giriş payı kadar
+  erken başlar), noktadan en çok ~0,4 dönüş yarıçapı içeriden geçilir. Daha keskin köşede (ör. geri dönüş) uçak noktanın
   üstünden geçip öyle döner.
 * **Doğrudan noktaya:** rotanın ilk bacağı uçağın bulunduğu yerden başlar: uçak burnu noktaya
   dönene kadar ona yönelir, sonra o çizgiyi izler; dönerken S çizmez. Bir bacaktan dönüş
   yarıçapından fazla uzaklaşırsa (keskin köşe sonrası, rüzgâr, ışınlama) aynı şekilde
-  doğrudan noktaya gider.
+  doğrudan noktaya gider. Bu sırada irtifa profili noktaya kalan mesafeyle ilerlemeye devam
+  eder (irtifa hedefi donmaz).
 * **Sertleşme:** nokta seyrüsefer yatışıyla ulaşılamayacak kadar dönüşün içinde kalırsa
-  (100 m'den fazla ıskalanacaksa) uçak `bank_max`'a kadar sertleşerek noktaya döner. Bununla
-  da ulaşılamıyorsa noktanın yanından geçip sıradakine devam eder; noktanın etrafında
+  (100 m'den fazla ıskalanacaksa) uçak `bank_max`'a kadar sertleşerek noktaya döner. Bu
+  karar nokta geçilene kadar değişmez (iki yönlendirme arasında gidip gelip roll titretmez).
+  Bununla da ulaşılamıyorsa noktanın yanından geçip sıradakine devam eder; noktanın etrafında
   dönmez.
+* **Tırmanış / alçalış:** bacak boyunca irtifa doğrusal değişir; profilin dikey hızı ileri
+  besleme olarak uçulur, uçak profilin gerisinde kalmaz.
 * **Kalkıştan sonra:** `TakeoffPlan::then` ile rota varsa uçak flaplar toplanıp güvenli
   yüksekliğe çıkınca (`flaps_up_height` ile `min_terrain_clearance`'ın büyüğü) rotaya döner,
-  kalan tırmanışı rotada yapar. `TakeoffPlan::climb_height` verilmişse önce ona tırmanır.
+  kalan tırmanışı rotada yapar: rotanın ilk bacağı o irtifadan başlar. `TakeoffPlan::climb_height`
+  verilmişse önce ona tırmanır.
 
 | `Route` alanı | Anlamı |
 |---|---|
@@ -167,6 +177,10 @@ fm::ecs::agent(e)->takeoff(plan);
 ```
 
 * `takeoff({})`: bulunduğu yerden, burnunun baktığı yöne kalkar.
+* İlk tırmanışta burun rotasyon açısının en çok 5° üstüne (en az 10°) kalkar; uçak hızlandıkça
+  tırmanış dikleşir. Tekerler kesildikten sonra stall'a çekmez. Flaplar havada
+  `flaps_transit_time` saniyede toplanır (varsayılan iniş takımıyla aynı); burun açısı hiçbir
+  geçişte (teker kesilmesi, flap, mod değişimi) sıçramaz.
 * `Runway` verildiğinde kalkış pist ekseninde yapılır: uçak pistin üzerindeyse (eksene 30 m'den
   yakın) bulunduğu yerden eksene hizalanıp koşuya başlar; değilse önce `start` noktasına
   taksi yapar.

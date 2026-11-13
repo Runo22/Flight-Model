@@ -68,6 +68,9 @@ namespace fm
         bool retractable_gear = true;
         double gear_dcd0 = 0.015;       // extra drag with a retractable gear down
         double gear_transit_time = 6.0; // s, retractable gear travel between up and down
+        // s, flap travel between up and extended in flight (on the ground they are set at once).
+        // 0 = gear_transit_time.
+        double flaps_transit_time = 0.0;
 
         EngineParams engine;
 
@@ -78,8 +81,16 @@ namespace fm
         // Bank for navigation turns (routes, go-to, heading changes, approach positioning);
         // bank_max is kept for maneuvering (formation, overhead break, loiter radii asked
         // for). 0 = min(bank_max, 30 deg).
-        double nav_bank = 0.0;           // rad
-        double roll_rate_max = 0.35;     // rad/s
+        double nav_bank = 0.0;       // rad
+        double roll_rate_max = 0.35; // rad/s
+        // Roll rate of navigation turns (routes, go-to, orbits, takeoff and straight-in
+        // approaches), like an autopilot; roll_rate_max is kept for formation flying and the
+        // overhead break. 0 = rolling into nav_bank in 3 s, at most roll_rate_max.
+        double nav_roll_rate = 0.0; // rad/s
+        // Pitch rate of the attitude changes the AI pilot flies (the angle of attack follows the
+        // flight path command at most this fast). 0 = four times the rotation rate, at least
+        // 10 deg/s.
+        double pitch_rate_max = 0.0;     // rad/s
         double climb_angle_max = 0.26;   // rad
         double descent_angle_max = 0.12; // rad
         double climb_rate_max = 15.0;    // m/s

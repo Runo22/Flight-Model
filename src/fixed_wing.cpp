@@ -31,7 +31,17 @@ namespace fm
         // the final approach fix distance before the fix.
         constexpr double kApproachDeceleration = 1.0; // m/s^2
         constexpr double kMinSlowDownShare = 0.3;
-        constexpr double kTurnStallMargin = 1.2;          // bank limited to keep n <= n_stall / 1.2
+        constexpr double kTurnStallMargin = 1.2; // bank limited to keep n <= n_stall / 1.2
+        // Angle of attack response time constant, as a share of the flight path one (0.25:
+        // critically damped flight path response).
+        constexpr double kAlphaTauShare = 0.25;
+        // Roll: seconds to reach the roll rate in use (roll acceleration), and to roll into the
+        // navigation bank at the default navigation roll rate.
+        constexpr double kRollRateRise = 0.5;
+        constexpr double kNavRollInTime = 3.0;
+        // Initial climb pitch attitude: rotation pitch plus this, at least the minimum.
+        constexpr double kTakeoffPitchExtra = deg2rad(5.0);
+        constexpr double kTakeoffPitchMin = deg2rad(10.0);
         constexpr double kDefaultNavBank = deg2rad(30.0); // navigation turns without nav_bank
         // Routes: corners up to this course change are cut (fly-by, the turn tangent to both
         // legs); sharper ones are flown over, so the aircraft reaches the waypoint.
@@ -698,6 +708,11 @@ namespace fm
             gear_position_ = p_.gear_transit_time > 0.0
                 ? approach(gear_position_, gear_target, h / p_.gear_transit_time)
                 : gear_target;
+            // The flaps too, in flight: their lift changes gradually (no lift step when they
+            // come up after takeoff). On the ground they are set at once.
+            const double flap_target = flaps_ ? 1.0 : 0.0;
+            const double flap_time = p_.flaps_transit_time > 0.0 ? p_.flaps_transit_time : p_.gear_transit_time;
+            flap_position_ = !on_ground_ && flap_time > 0.0 ? approach(flap_position_, flap_target, h / flap_time) : flap_target;
         }
         update_output(atm, env.wind);
         motion_.update(out_, dt);
@@ -778,6 +793,9 @@ namespace fm
         default:
             break;
         }
+        // Formation flying and the overhead pattern roll at the full rate; everything else at the
+        // navigation rate.
+        cmd.maneuver = mode_ == FlightMode::Formation || (mode_ == FlightMode::Land && landing_.pattern == LandingPattern::Overhead);
         const bool own_speed = mode_ == FlightMode::Takeoff || mode_ == FlightMode::Formation || mode_ == FlightMode::Land || mode_ == FlightMode::Taxi;
         if (!own_speed)
         {
@@ -825,6 +843,8 @@ namespace fm
         double bank = nav_bank();
         double radius = turn_radius(gs, bank);
         LegProgress lp = route_.progress(pos);
+        // Distance flown while rolling into a turn, about half of it before the turn starts.
+        const double roll_in = gs * 0.5 * (bank / nav_roll_rate() + kRollRateRise);
 
         const Waypoint& wp = route_.target();
         const Waypoint* next = route_.next();
@@ -837,8 +857,10 @@ namespace fm
             const double turn = std::abs(angle_right(lp.direction, next_leg.normalized()));
             if (turn <= kMaxFlyByTurn)
             {
+                // Earlier by the roll-in, so that the turn (not the roll-in) is tangent to both
+                // legs.
                 switch_distance = std::min(
-                    { radius * std::tan(turn / 2.0), 0.5 * lp.length, 0.5 * next_leg.length() });
+                    { radius * std::tan(turn / 2.0) + roll_in, 0.5 * lp.length, 0.5 * next_leg.length() });
             }
         }
         if (lp.remaining() <= switch_distance)
@@ -859,7 +881,7 @@ namespace fm
         // waypoint, then from there. Not when close to the waypoint: the leg stays put, so that
         // passing the waypoint abeam ends it (no circling around a waypoint out of reach).
         const bool room = lp.remaining() > kDirectToRoom * radius;
-        if (std::abs(lp.crosstrack) > radius && room)
+        if (std::abs(lp.crosstrack) > radius + roll_in && room)
         {
             direct_to_ = true;
         }
@@ -870,7 +892,7 @@ namespace fm
             {
                 direct_to_ = false;
             }
-            route_.restart_leg(position_, resolved_altitude_target_);
+            route_.redirect(pos);
             lp = route_.progress(pos);
         }
 
@@ -884,7 +906,16 @@ namespace fm
         const double off = angle_right(vg, to_wp);
         const double reach = to_wp.length() / (2.0 * std::max(std::sin(std::abs(off)), 1e-6));
         const Vec2 centre = right_of(vg / gs) * (off >= 0.0 ? radius : -radius);
-        const bool tighten = reach < radius && radius - (to_wp - centre).length() > kWaypointMissAllowed;
+        if (tight_turn_ && (tight_turn_at_ - target.position.xy()).length() > 1e-6)
+        {
+            tight_turn_ = false; // another waypoint
+        }
+        if (!tight_turn_ && reach < radius && radius - (to_wp - centre).length() > kWaypointMissAllowed)
+        {
+            tight_turn_ = true;
+            tight_turn_at_ = target.position.xy();
+        }
+        const bool tighten = tight_turn_;
         if (tighten)
         {
             bank = std::min(p_.bank_max, std::atan(gs * gs / (kGravity * kTightTurnShare * reach)));
@@ -895,6 +926,14 @@ namespace fm
         cmd.lateral_accel = tighten ? l1_point(target.position.xy(), pos, vg, l1_settings(gs, bank))
                                     : l1_leg(route_.leg_start(), route_.leg_end(), pos, vg, l1_settings(gs, bank));
         cmd.altitude = route_.altitude_target(lp, terrain_, lookahead, resolved_altitude_target_);
+        // Climbing or descending along the profile: its vertical speed as a feedforward, so that
+        // the aircraft flies the profile instead of trailing it (and does not level off on it
+        // first, e.g. right after a takeoff).
+        if (lp.remaining() > 1.0)
+        {
+            const Vec2 to_target = (route_.leg_end() - pos).normalized();
+            cmd.vertical_speed_ff = route_.profile_gradient(terrain_, lookahead, resolved_altitude_target_) * std::max(dot(vg, to_target), 0.0);
+        }
     }
 
     void FixedWingAgent::finish_route(EndBehavior behavior)
@@ -997,12 +1036,16 @@ namespace fm
         {
             // Never back down when placed above the climb height (relocation).
             finish_takeoff(std::max(runway_elevation_ + climb_height, position_.z));
+            cmd.altitude = resolved_altitude_target_; // this frame too: what follows starts here
         }
         else if (takeoff_.then && !(takeoff_.climb_height > 0.0) && !flaps_ && height >= std::max(p_.flaps_up_height, p_.min_terrain_clearance))
         {
             // A route follows: clean and at a safe height, turn towards it and climb on along it
-            // (an explicit climb height is flown first).
+            // (an explicit climb height is flown first). The route's first leg starts at this
+            // altitude, also in this frame, not at the takeoff's climb height (which made the
+            // aircraft pull up hard and push over when the route began).
             finish_takeoff(position_.z);
+            cmd.altitude = resolved_altitude_target_;
         }
     }
 
@@ -1582,6 +1625,8 @@ namespace fm
             bank_cmd = std::atan(v * turn_rate / g);
         }
         c.bank = std::clamp(bank_cmd, -bank_limit, bank_limit);
+        c.roll_rate = cmd.maneuver ? p_.roll_rate_max : nav_roll_rate();
+        c.maneuver = cmd.maneuver;
 
         const double hdot_cmd = std::clamp(
             cmd.vertical_speed_ff + (cmd.altitude - position_.z) / p_.altitude_time_constant,
@@ -1638,6 +1683,13 @@ namespace fm
             gamma_hi = std::max(gamma_hi, std::min(gamma_cmd, 0.0));
         }
         gamma_cmd = std::clamp(gamma_cmd, gamma_lo, std::max(gamma_lo, gamma_hi));
+        if (mode_ == FlightMode::Takeoff)
+        {
+            // Initial climb: the nose no higher than a takeoff pitch attitude a little above
+            // the rotation; the climb steepens as the aircraft accelerates (smaller angle of
+            // attack), not a pull-up to the stall right after lift-off.
+            gamma_cmd = std::min(gamma_cmd, std::max(rotation_pitch() + kTakeoffPitchExtra, kTakeoffPitchMin) - alpha_);
+        }
         c.gamma = gamma_cmd;
 
         const double n_cmd = std::cos(gamma_cmd) / std::max(std::cos(c.bank), 0.05);
@@ -1681,8 +1733,16 @@ namespace fm
         const double w = m * g;
         speed_brake_ = c.speed_brake;
 
-        const double roll_rate = std::clamp((c.bank - bank_) / p_.roll_time_constant, -p_.roll_rate_max, p_.roll_rate_max);
-        bank_ += roll_rate * dt;
+        // Roll rate as a state: it builds up and slows down at a limited roll acceleration, and
+        // never faster than what still stops at the commanded bank (no snap into a turn, no
+        // overshoot).
+        const double rate_limit = c.roll_rate > 0.0 ? std::min(c.roll_rate, p_.roll_rate_max) : p_.roll_rate_max;
+        const double roll_accel = std::max(rate_limit, std::abs(roll_rate_)) / kRollRateRise;
+        const double bank_error = c.bank - bank_;
+        const double stop_rate = std::sqrt(2.0 * roll_accel * std::abs(bank_error));
+        const double wanted_rate = std::clamp(bank_error / p_.roll_time_constant, -std::min(rate_limit, stop_rate), std::min(rate_limit, stop_rate));
+        roll_rate_ = approach(roll_rate_, wanted_rate, roll_accel * dt);
+        bank_ += roll_rate_ * dt;
 
         // Load factor needed to follow the commanded flight path, limited by structure/stall.
         const double v = std::max(tas_, kMinAirspeed);
@@ -1692,13 +1752,31 @@ namespace fm
         const double cos_bank = std::max(std::cos(bank_), 0.05);
         const double gamma_tau = c.gamma_time_constant > 0.0 ? c.gamma_time_constant : p_.gamma_time_constant;
         const double gamma_rate_cmd = (c.gamma - gamma_) / gamma_tau;
-        const double n = std::clamp((std::cos(gamma_) + v * gamma_rate_cmd / g) / cos_bank, n_lo, n_hi);
+        // Navigating, the pilot keeps a stall margin (like in turns); maneuvering (formation,
+        // overhead pattern) up to the limits.
+        const double n_pull = c.maneuver ? n_hi : std::max(n_lo, std::min(n_hi, qs * cl_max() / (w * kTurnStallMargin)));
+        const double n_cmd = std::clamp((std::cos(gamma_) + v * gamma_rate_cmd / g) / cos_bank, n_lo, n_pull);
+        // The angle of attack is a state: it follows the one the commanded load factor needs
+        // (short-period response, critically damped with the flight path loop) at no more than
+        // the pitch rate limit, and the lift follows from it. The attitude never jumps, also
+        // when the command does (lift-off, mode changes, flaps).
+        const double alpha_cmd = (n_cmd * w / qs - cl0()) / p_.cl_alpha;
+        const double alpha_rate = std::clamp((alpha_cmd - alpha_) / (kAlphaTauShare * gamma_tau), -pitch_rate_max(), pitch_rate_max());
+        alpha_ += alpha_rate * dt;
+        // The pilot's limits (n_lo, n_hi) bound the command; the lift of the angle of attack
+        // held is only bounded by the stall and the structure (e.g. flaps coming up lower it).
+        const double n_stall = qs * cl_max() / w;
+        double n = (cl0() + p_.cl_alpha * alpha_) * qs / w;
+        if (n > std::min(p_.load_factor_max, n_stall) || n < -0.5 * n_stall)
+        {
+            n = std::clamp(n, -0.5 * n_stall, std::min(p_.load_factor_max, n_stall));
+            alpha_ = (n * w / qs - cl0()) / p_.cl_alpha;
+        }
         load_factor_ = n;
 
         // Point-mass equations of motion in the wind axes.
         const double gamma_dot = g / v * (n * std::cos(bank_) - std::cos(gamma_));
         const double heading_dot = g * n * std::sin(bank_) / (v * std::max(std::cos(gamma_), 0.1));
-        alpha_ = (n * w / qs - cl0()) / p_.cl_alpha;
         const double thrust = throttle_ * thrust_available(v, atm);
         const double v_dot = (thrust * std::cos(alpha_) - drag(v, n, atm, speed_brake_)) / m - g * std::sin(gamma_);
 
@@ -1718,6 +1796,7 @@ namespace fm
             ground_pitch_ = std::max(0.0, gamma_ + alpha_);
             gamma_ = 0.0;
             bank_ = 0.0;
+            roll_rate_ = 0.0;
             if (mode_ == FlightMode::Takeoff && gentle)
             {
                 // Wheels touched again right after lift-off (e.g. rising ground): keep rolling.
@@ -1767,13 +1846,7 @@ namespace fm
         // radius (no turning on the spot), gently at speed.
         const double steer_rate = std::min(v / std::max(p_.taxi_turn_radius, 1.0), std::max(kGroundLateralAccel / std::max(v, 0.1), kSteerRateAtSpeed));
         heading_ = wrap_2pi(heading_ + std::clamp(wrap_pi(c.steer_heading - heading_), -steer_rate * dt, steer_rate * dt));
-        double rotation_pitch = p_.rotation_pitch;
-        if (rotation_pitch <= 0.0)
-        {
-            const double cl_liftoff = cl_max() / 1.3225; // lift-off near 1.15 Vs
-            rotation_pitch = std::clamp((cl_liftoff - cl0()) / p_.cl_alpha, deg2rad(5.0), deg2rad(12.0));
-        }
-        ground_pitch_ = approach(ground_pitch_, c.rotate ? rotation_pitch : 0.0, p_.rotation_rate * dt);
+        ground_pitch_ = approach(ground_pitch_, c.rotate ? rotation_pitch() : 0.0, p_.rotation_rate * dt);
         alpha_ = ground_pitch_;
 
         const double qs = 0.5 * atm.density * v * v * p_.wing_area;
@@ -1828,6 +1901,7 @@ namespace fm
         load_factor_ = lift / w;
         gamma_ = slope; // the velocity follows the runway surface; lift-off starts from here
         bank_ = 0.0;
+        roll_rate_ = 0.0;
 
         if (mode_ == FlightMode::Takeoff && lift > w)
         {
@@ -1929,6 +2003,7 @@ namespace fm
         tas_ = std::max(tas_, cruise_speed_at(isa(position_.z)));
         ground_pitch_ = 0.0;
         flaps_ = false;
+        flap_position_ = 0.0;
         speed_brake_ = false;
         gear_down_ = !p_.retractable_gear;
         gear_position_ = gear_down_ ? 1.0 : 0.0;
@@ -1951,6 +2026,7 @@ namespace fm
     {
         gamma_ = 0.0;
         bank_ = 0.0;
+        roll_rate_ = 0.0;
         load_factor_ = 1.0;
         const double t_req = drag(tas_, 1.0, atm, false);
         throttle_ = std::clamp(t_req / std::max(thrust_available(tas_, atm), 1e-6), p_.engine.idle_throttle, 1.0);
@@ -1964,6 +2040,27 @@ namespace fm
         const double radius = turn_radius(ground_speed, std::isfinite(bank) ? bank : p_.bank_max);
         s.min_distance = kL1TurnFactor * l1_distance_for_turn_radius(s, radius);
         return s;
+    }
+
+    double FixedWingAgent::rotation_pitch() const
+    {
+        if (p_.rotation_pitch > 0.0)
+        {
+            return p_.rotation_pitch;
+        }
+        const double cl_liftoff = cl_max() / 1.3225; // lift-off near 1.15 Vs
+        return std::clamp((cl_liftoff - cl0()) / p_.cl_alpha, deg2rad(5.0), deg2rad(12.0));
+    }
+
+    double FixedWingAgent::pitch_rate_max() const
+    {
+        return p_.pitch_rate_max > 0.0 ? p_.pitch_rate_max : std::max(4.0 * p_.rotation_rate, deg2rad(10.0));
+    }
+
+    double FixedWingAgent::nav_roll_rate() const
+    {
+        const double rate = p_.nav_roll_rate > 0.0 ? p_.nav_roll_rate : nav_bank() / kNavRollInTime;
+        return std::min(rate, p_.roll_rate_max);
     }
 
     double FixedWingAgent::nav_bank() const
@@ -2044,15 +2141,15 @@ namespace fm
 
     double FixedWingAgent::cl0() const
     {
-        return p_.cl0 + (flaps_ ? p_.flaps_dcl0 : 0.0);
+        return p_.cl0 + flap_position_ * p_.flaps_dcl0;
     }
     double FixedWingAgent::cl_max() const
     {
-        return p_.cl_max + (flaps_ ? p_.flaps_dcl_max : 0.0);
+        return p_.cl_max + flap_position_ * p_.flaps_dcl_max;
     }
     double FixedWingAgent::cd0() const
     {
-        return p_.cd0 + (flaps_ ? p_.flaps_dcd0 : 0.0);
+        return p_.cd0 + flap_position_ * p_.flaps_dcd0;
     }
 
     double FixedWingAgent::stall_speed(double density, bool flaps) const

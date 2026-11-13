@@ -60,7 +60,8 @@ TEST_CASE("outputs: g force, turn rate and acceleration in a level turn")
     const double pitch = a.state().attitude.pitch;
     CHECK((a.state().g_force - Vec3 { std::sin(pitch), 0.0, std::cos(pitch) }).length() < 0.005);
     CHECK(a.state().acceleration.length() < 0.05);
-    CHECK_NEAR(a.state().dynamic_pressure, 0.5 * isa(1500.0).density * a.state().airspeed * a.state().airspeed, 1e-6);
+    CHECK_NEAR(a.state().dynamic_pressure, 0.5 * isa(a.state().position.z).density * a.state().airspeed * a.state().airspeed, 1e-6);
+    CHECK_NEAR(a.state().position.z, 1500.0, 0.01);
     CHECK(a.state().calibrated_airspeed < a.state().airspeed);
 
     a.hold(deg2rad(180.0), 1500.0, p.cruise_speed);
